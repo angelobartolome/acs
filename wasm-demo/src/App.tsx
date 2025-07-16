@@ -109,7 +109,7 @@ export default function App() {
         cellColor={"#e0e0e0"}
         cellThickness={1}
         cellSize={0.1}
-        sectionColor={"#7095faff"}
+        sectionColor={"#7095fa"}
         sectionSize={1}
         sectionThickness={1}
         infiniteGrid

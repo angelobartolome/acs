@@ -8,6 +8,8 @@ This project is a work in progress and is not yet feature-complete. Contribution
 
 ACS is a library for solving geometric constraint systems.
 
+![Demo of Horizontal and Vertical Constraints](/docs/demo.gif)
+
 ## Features
 
 - **Geometric Primitives**:
