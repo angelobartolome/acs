@@ -10,3 +10,9 @@ pub use dogleg_solver::*;
 pub use geometry::*;
 pub use newton_raphson_solver::*;
 pub use solver::*;
+
+// WebAssembly bindings
+pub mod bindings {
+    pub mod geometry;
+    pub mod solver;
+}
