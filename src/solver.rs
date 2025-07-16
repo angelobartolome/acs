@@ -123,8 +123,8 @@ impl ConstraintSolver {
         self.geometry.add_point(point)
     }
 
-    pub fn add_line(&mut self, start: usize, end: usize) -> Result<usize, String> {
-        self.geometry.add_line(start, end)
+    pub fn add_line(&mut self, line: crate::geometry::Line) -> usize {
+        self.geometry.add_line(line)
     }
 
     pub fn add_constraint(&mut self, constraint_type: ConstraintType) -> Result<(), String> {
@@ -170,5 +170,25 @@ impl ConstraintSolver {
         }
 
         println!("Total constraint error: {:.9}", self.get_constraint_error());
+    }
+
+    pub fn get_state_as_string(&self) -> String {
+        let mut state = String::new();
+        state.push_str("Points:\n");
+        for (id, point) in self.geometry.get_all_points() {
+            state.push_str(&format!("  {}: ({:.6}, {:.6})\n", id, point.x, point.y));
+        }
+
+        state.push_str("Lines:\n");
+        for (id, line) in self.geometry.get_all_lines() {
+            state.push_str(&format!("  {}: {} -> {}\n", id, line.start, line.end));
+        }
+
+        state.push_str(&format!(
+            "Total constraint error: {:.9}\n",
+            self.get_constraint_error()
+        ));
+
+        state
     }
 }
