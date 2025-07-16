@@ -23,39 +23,48 @@ export default function App() {
     setPrimitives([pA, pB, pL1]);
   }, [setPrimitives]);
 
-  const solve = useCallback(() => {
-    let solver = new ConstraintSolver();
+  const solve = useCallback(
+    (type: "vertical" | "horizontal") => {
+      let solver = new ConstraintSolver();
 
-    primitives.forEach((primitive) => {
-      if (primitive instanceof Point) {
-        solver.add_point(primitive);
-      } else if (primitive instanceof Line) {
-        solver.add_line(primitive);
-      }
-    });
+      primitives.forEach((primitive) => {
+        if (primitive instanceof Point) {
+          solver.add_point(primitive);
+        } else if (primitive instanceof Line) {
+          solver.add_line(primitive);
+        }
+      });
 
-    console.log(solver.print_state());
+      console.log(solver.print_state());
 
-    solver.add_vertical_constraint(2);
-
-    solver.solve();
-    console.log(solver.print_state());
-
-    // Pull back the points to update their positions
-    const updatedPrimitives = primitives.map((primitive) => {
-      if (primitive instanceof Point) {
-        return solver.get_point(primitive.id);
-      } else if (primitive instanceof Line) {
-        const start = solver.get_point(primitive.start);
-        const end = solver.get_point(primitive.end);
-        return new Line(primitive.id, start!.id, end!.id);
+      if (type === "horizontal") {
+        // Add horizontal constraints
+        solver.add_horizontal_constraint(2);
+      } else if (type === "vertical") {
+        solver.add_vertical_constraint(2);
       }
 
-      return primitive;
-    });
+      solver.solve();
 
-    setPrimitives(updatedPrimitives as Primitive[]);
-  }, [primitives]);
+      console.log(solver.print_state());
+
+      // Pull back the points to update their positions
+      const updatedPrimitives = primitives.map((primitive) => {
+        if (primitive instanceof Point) {
+          return solver.get_point(primitive.id);
+        } else if (primitive instanceof Line) {
+          const start = solver.get_point(primitive.start);
+          const end = solver.get_point(primitive.end);
+          return new Line(primitive.id, start!.id, end!.id);
+        }
+
+        return primitive;
+      });
+
+      setPrimitives(updatedPrimitives as Primitive[]);
+    },
+    [primitives]
+  );
 
   const renderPrimitives = (primitives: Primitive[]) => {
     return primitives.map((primitive) => {
@@ -118,9 +127,16 @@ export default function App() {
             backgroundColor: "rgba(0, 0, 0, 0.5)",
             padding: "10px",
             borderRadius: "5px",
+            display: "flex",
+            gap: "10px",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
           }}
         >
-          <button onClick={() => solve()}>Solve</button>
+          <button onClick={() => solve("vertical")}>Solve Vertical</button>
+          <button onClick={() => solve("horizontal")}>Solve Horizontal</button>
         </div>
       </Html>
     </Canvas>

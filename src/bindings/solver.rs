@@ -17,6 +17,7 @@ impl WrappedConstraintSolver {
         }
     }
 
+    // TODO: Those methods are during development, they will change to be more generic
     pub fn add_point(&mut self, point: &crate::Point) -> usize {
         self.inner.add_point(*point)
     }
@@ -28,6 +29,11 @@ impl WrappedConstraintSolver {
     pub fn add_vertical_constraint(&mut self, line_id: usize) -> Result<(), String> {
         self.inner
             .add_constraint(crate::ConstraintType::Vertical(line_id))
+    }
+
+    pub fn add_horizontal_constraint(&mut self, line_id: usize) -> Result<(), String> {
+        self.inner
+            .add_constraint(crate::ConstraintType::Horizontal(line_id))
     }
 
     pub fn solve(&mut self) -> Result<String, String> {
