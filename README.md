@@ -50,21 +50,23 @@ acs = { path = "../path/to/acs" }
 ### Rust Usage
 
 ```rust
-use acs::{ConstraintSolver, ConstraintType, Point, SolverResult};
+use acs::{ConstraintSolver, ConstraintType, Line, Point, SolverResult};
 
 fn main() {
     // Create a new constraint solver
     let mut solver = ConstraintSolver::new();
 
     // Add points
-    let p1 = solver.add_point(Point::new(0.0, 0.0));
-    let p2 = solver.add_point(Point::new(1.0, 1.0));
+    let p1_id = solver.add_point(Point::new(0, 0.0, 0.0));
+    let p2_id = solver.add_point(Point::new(1, 1.0, 1.0));
 
     // Create a line between the points
-    let line = solver.add_line(p1, p2).unwrap();
+    let line = solver.add_line(Line::new(2, p1_id, p2_id));
 
     // Add a vertical constraint to the line
-    solver.add_constraint(ConstraintType::Vertical(line)).unwrap();
+    solver
+        .add_constraint(ConstraintType::Vertical(line))
+        .unwrap();
 
     // Solve the constraint system
     let result = solver.solve().unwrap();
@@ -79,10 +81,11 @@ fn main() {
     }
 
     // Get the final positions
-    let start = solver.get_point(p1).unwrap();
-    let end = solver.get_point(p2).unwrap();
+    let start = solver.get_point(p1_id).unwrap();
+    let end = solver.get_point(p2_id).unwrap();
     println!("Line endpoints: ({}, {}) to ({}, {})", start.x, start.y, end.x, end.y);
 }
+
 ```
 
 ## Building
@@ -113,7 +116,7 @@ The project includes comprehensive tests:
 cargo test
 
 # Run specific test
-cargo test vertical_test
+cargo test --test vertical_test
 
 # Run with output
 cargo test -- --nocapture
