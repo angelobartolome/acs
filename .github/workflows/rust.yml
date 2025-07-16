@@ -6,6 +6,7 @@ on:
     paths:
       - "Cargo.toml"
       - "src/**"
+      - ".github/workflows/rust.yml"
   pull_request:
     branches: [ "main" ]
     paths:
@@ -30,7 +31,7 @@ jobs:
       run: |
         wasm-pack build --target web --out-dir pkg
     - name: Upload WebAssembly package
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wasm-package
         path: pkg
