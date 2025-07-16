@@ -1,10 +1,12 @@
-# ACS - Angelo's Constraint Solver (or Algorithmic Constraint Solver if you prefer)
+# ACS - Constraint Solver
 
 A geometric constraint solver written in Rust with WebAssembly bindings for web applications.
+This is me learning Rust, thus Angelo's Constraint Solver.
+This project is a work in progress and is not yet feature-complete. Contributions are welcome!
 
 ## Overview
 
-ACS (Algorithmic Constraint Solver) is a library for solving geometric constraint systems.
+ACS is a library for solving geometric constraint systems.
 
 ## Features
 
@@ -31,18 +33,17 @@ ACS (Algorithmic Constraint Solver) is a library for solving geometric constrain
 
 ### As a Rust Crate
 
-````
 Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
 acs = { path = "../path/to/acs" }
-````
+```
 
 ### WebAssembly Package
 
 > [!IMPORTANT]
-> The WebAssembly package is not yet published to npm. You can build it from source.
+> The WebAssembly package is not yet published to npm. You can build it from source, check the [Building](#building) section for details.
 
 ## Quick Start
 

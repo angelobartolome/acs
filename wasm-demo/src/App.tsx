@@ -1,9 +1,19 @@
-import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
-import { Line2D } from "./components/Line2D";
-import { Grid } from "@react-three/drei";
+import { Grid, Html } from "@react-three/drei";
+import { useCallback, useState } from "react";
+import { PointPrimitive, Primitive } from "./types";
 
 export default function App() {
+  const [primitives, setPrimitives] = useState<Primitive[]>([
+    new PointPrimitive(0, 0),
+    new PointPrimitive(1, 1),
+  ]);
+
+  const solve = useCallback(() => {
+    console.log("Solve function called");
+    // TODO
+  }, []);
+
   return (
     <Canvas
       orthographic
@@ -12,7 +22,7 @@ export default function App() {
       style={{ height: "100vh", width: "100vw" }}
     >
       <ambientLight intensity={Math.PI / 2} />
-      <Line2D points={[new THREE.Vector2(0, 0), new THREE.Vector2(1, 1)]} />
+      {}
 
       <Grid
         cellColor={"#a0a0a0"}
@@ -24,6 +34,22 @@ export default function App() {
         infiniteGrid
         rotation={[Math.PI / 2, 0, 0]}
       />
+
+      <Html fullscreen>
+        <div
+          style={{
+            position: "absolute",
+            top: "10px",
+            left: "10px",
+            color: "white",
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            padding: "10px",
+            borderRadius: "5px",
+          }}
+        >
+          <button onClick={() => solve()}>Solve</button>
+        </div>
+      </Html>
     </Canvas>
   );
 }
