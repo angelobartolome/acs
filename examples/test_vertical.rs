@@ -1,13 +1,14 @@
-use acs::{ConstraintSolver, ConstraintType, Point};
+use acs::{ConstraintSolver, ConstraintType, Line, Point};
 
 fn main() {
     println!("Testing vertical constraint with dogleg solver...");
 
     let mut solver = ConstraintSolver::new();
 
-    let p1 = solver.add_point(Point::new(0.0, 0.0));
-    let p2 = solver.add_point(Point::new(1.0, 1.0));
-    let line = solver.add_line(p1, p2).unwrap();
+    let p1 = solver.add_point(Point::new(1, 0.0, 0.0));
+    let p2 = solver.add_point(Point::new(2, 1.0, 1.0));
+
+    let line = solver.add_line(Line::new(1, p1, p2));
 
     println!("Initial state:");
     solver.print_state();

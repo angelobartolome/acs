@@ -1,17 +1,21 @@
-use acs::{ConstraintSolver, ConstraintType, Point, SolverResult};
+use acs::{ConstraintSolver, ConstraintType, Line, Point, SolverResult};
 
 #[test]
 fn test_vertical_constraint() {
     // let mut solver = ConstraintSolver::new();
 
     let mut solver = ConstraintSolver::new();
+    let p1 = Point::new(1, 0.0, 0.0);
+    let p2 = Point::new(2, 1.0, 1.0);
 
-    let p1 = solver.add_point(Point::new(0.0, 0.0));
-    let p2 = solver.add_point(Point::new(1.0, 1.0));
-    let line = solver.add_line(p1, p2).unwrap();
+    solver.add_point(p1);
+    solver.add_point(p2);
+
+    let line = Line::new(1, p1.id, p2.id);
+    solver.add_line(line);
 
     solver
-        .add_constraint(ConstraintType::Vertical(line))
+        .add_constraint(ConstraintType::Vertical(line.id))
         .unwrap();
     let result = solver.solve().unwrap();
 
@@ -22,8 +26,8 @@ fn test_vertical_constraint() {
         _ => panic!("Solver should have converged"),
     }
 
-    let start = solver.get_point(p1).unwrap();
-    let end = solver.get_point(p2).unwrap();
+    let start = solver.get_point(p1.id).unwrap();
+    let end = solver.get_point(p2.id).unwrap();
     solver.print_state();
 
     assert!(

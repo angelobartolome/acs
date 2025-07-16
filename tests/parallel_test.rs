@@ -1,19 +1,27 @@
-use acs::{ConstraintSolver, ConstraintType, Point, SolverResult};
+use acs::{ConstraintSolver, ConstraintType, Line, Point, SolverResult};
 
 #[test]
 fn test_parallel_constraint() {
     let mut solver = ConstraintSolver::new();
 
-    let p1 = solver.add_point(Point::new(0.0, 0.0));
-    let p2 = solver.add_point(Point::new(1.0, 1.0));
-    let line1 = solver.add_line(p1, p2).unwrap();
+    let p1 = Point::new(1, 0.0, 0.0);
+    let p2 = Point::new(2, 1.0, 1.0);
+    solver.add_point(p1);
+    solver.add_point(p2);
 
-    let p3 = solver.add_point(Point::new(0.0, 1.0));
-    let p4 = solver.add_point(Point::new(1.0, 2.0));
-    let line2 = solver.add_line(p3, p4).unwrap();
+    let line1 = Line::new(1, p1.id, p2.id);
+    solver.add_line(line1);
+
+    let p3 = Point::new(3, 0.0, 1.0);
+    let p4 = Point::new(4, 1.0, 2.0);
+    solver.add_point(p3);
+    solver.add_point(p4);
+
+    let line2 = Line::new(2, p3.id, p4.id);
+    solver.add_line(line2);
 
     solver
-        .add_constraint(ConstraintType::Parallel(line1, line2))
+        .add_constraint(ConstraintType::Parallel(line1.id, line2.id))
         .unwrap();
     let result = solver.solve().unwrap();
 
@@ -24,8 +32,8 @@ fn test_parallel_constraint() {
         _ => panic!("Solver should have converged"),
     }
 
-    let start = solver.get_point(p1).unwrap();
-    let end = solver.get_point(p2).unwrap();
+    let start = solver.get_point(p1.id).unwrap();
+    let end = solver.get_point(p2.id).unwrap();
     solver.print_state();
 
     let get_angle = |start: &Point, end: &Point| {
