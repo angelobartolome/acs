@@ -1,4 +1,3 @@
-// lib.rs
 pub mod constraints;
 pub mod geometry;
 pub mod solver;

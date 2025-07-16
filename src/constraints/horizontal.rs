@@ -1,16 +1,18 @@
 use crate::constraints::base::Constraint;
 use crate::geometry::GeometrySystem;
+use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen]
 pub struct HorizontalConstraint {
     line_id: usize,
 }
 
+#[wasm_bindgen]
 impl HorizontalConstraint {
     pub fn new(line_id: usize) -> Self {
         Self { line_id }
     }
 }
-
 impl Constraint for HorizontalConstraint {
     fn error(&self, geometry: &GeometrySystem) -> f64 {
         if let Some(line) = geometry.get_line(self.line_id) {
