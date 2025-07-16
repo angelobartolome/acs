@@ -1,18 +1,91 @@
 import { Canvas } from "@react-three/fiber";
 import { Grid, Html } from "@react-three/drei";
-import { useCallback, useState } from "react";
-import { PointPrimitive, Primitive } from "./types";
+import { useCallback, useEffect, useState } from "react";
+import { Point2D } from "./components/Point2D";
+import { Vector2 } from "three";
+import { Line2D } from "./components/Line2D";
+import init, { ConstraintSolver, Line, Point } from "acs";
+
+await init().then(() => {
+  console.log("ACS initialized");
+});
+
+type Primitive = Point | Line;
 
 export default function App() {
-  const [primitives, setPrimitives] = useState<Primitive[]>([
-    new PointPrimitive(0, 0),
-    new PointPrimitive(1, 1),
-  ]);
+  const [primitives, setPrimitives] = useState<Primitive[]>([]);
+
+  useEffect(() => {
+    const pA = new Point(0, 0, 0);
+    const pB = new Point(1, 1, 1);
+    const pL1 = new Line(2, pA.id, pB.id);
+
+    setPrimitives([pA, pB, pL1]);
+  }, [setPrimitives]);
 
   const solve = useCallback(() => {
-    console.log("Solve function called");
-    // TODO
-  }, []);
+    let solver = new ConstraintSolver();
+
+    primitives.forEach((primitive) => {
+      if (primitive instanceof Point) {
+        solver.add_point(primitive);
+      } else if (primitive instanceof Line) {
+        solver.add_line(primitive);
+      }
+    });
+
+    console.log(solver.print_state());
+
+    solver.add_vertical_constraint(2);
+
+    solver.solve();
+    console.log(solver.print_state());
+
+    // Pull back the points to update their positions
+    const updatedPrimitives = primitives.map((primitive) => {
+      if (primitive instanceof Point) {
+        return solver.get_point(primitive.id);
+      } else if (primitive instanceof Line) {
+        const start = solver.get_point(primitive.start);
+        const end = solver.get_point(primitive.end);
+        return new Line(primitive.id, start!.id, end!.id);
+      }
+
+      return primitive;
+    });
+
+    setPrimitives(updatedPrimitives as Primitive[]);
+  }, [primitives]);
+
+  const renderPrimitives = (primitives: Primitive[]) => {
+    return primitives.map((primitive) => {
+      if (primitive instanceof Point) {
+        return (
+          <Point2D
+            position={new Vector2(primitive.x, primitive.y)}
+            key={`p-${primitive.id}`}
+          />
+        );
+      } else if (primitive instanceof Line) {
+        return (
+          <Line2D
+            points={[
+              new Vector2(
+                primitives.find((p) => p.id === primitive.start)?.x || 0,
+                primitives.find((p) => p.id === primitive.start)?.y || 0
+              ),
+              new Vector2(
+                primitives.find((p) => p.id === primitive.end)?.x || 0,
+                primitives.find((p) => p.id === primitive.end)?.y || 0
+              ),
+            ]}
+            key={`l-${primitive.id}`}
+          />
+        );
+      }
+      return null;
+    });
+  };
 
   return (
     <Canvas
@@ -22,10 +95,9 @@ export default function App() {
       style={{ height: "100vh", width: "100vw" }}
     >
       <ambientLight intensity={Math.PI / 2} />
-      {}
 
       <Grid
-        cellColor={"#a0a0a0"}
+        cellColor={"#e0e0e0"}
         cellThickness={1}
         cellSize={0.1}
         sectionColor={"#7095faff"}
@@ -34,6 +106,7 @@ export default function App() {
         infiniteGrid
         rotation={[Math.PI / 2, 0, 0]}
       />
+      {renderPrimitives(primitives)}
 
       <Html fullscreen>
         <div

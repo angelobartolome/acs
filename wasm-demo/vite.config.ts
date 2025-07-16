@@ -22,4 +22,9 @@ export default defineConfig({
     "**/*.woff",
     "**/*.ttf",
   ],
+  server: {
+    fs: {
+      allow: [".."],
+    },
+  },
 });

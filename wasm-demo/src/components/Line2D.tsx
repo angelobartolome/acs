@@ -7,7 +7,7 @@ export const Line2D = ({
 }: {
   points: [THREE.Vector2, THREE.Vector2];
 }) => {
-  const line2DWidth = 1;
+  const line2DWidth = 2;
   const line2DColor = "#000";
 
   return (
