@@ -3,6 +3,9 @@ name = "acs"
 version = "0.1.0"
 edition = "2024"
 authors = ["Angelo Bartolome <angelo.m.bartolome@gmail.com>"]
+description = "A geometric constraint solver written in Rust with WebAssembly bindings for web applications."
+license = "MIT"
+repository = "https://github.com/angelobartolome/acs"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
