@@ -3,8 +3,14 @@ name: Rust
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - "Cargo.toml"
+      - "src/**"
   pull_request:
     branches: [ "main" ]
+    paths:
+          - "Cargo.toml"
+          - "src/**"
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,3 +26,11 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Build WebAssembly
+      run: |
+        wasm-pack build --target web --out-dir pkg
+    - name: Upload WebAssembly package
+      uses: actions/upload-artifact@v3
+      with:
+        name: wasm-package
+        path: pkg
