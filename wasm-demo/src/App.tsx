@@ -16,8 +16,8 @@ export default function App() {
   const [primitives, setPrimitives] = useState<Primitive[]>([]);
 
   useEffect(() => {
-    const pA = new Point(0, 0, 0);
-    const pB = new Point(1, 1, 1);
+    const pA = new Point(0, 0, 0, true);
+    const pB = new Point(1, 1, 1, false);
     const pL1 = new Line(2, pA.id, pB.id);
 
     setPrimitives([pA, pB, pL1]);
