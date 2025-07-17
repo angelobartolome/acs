@@ -9,12 +9,13 @@ pub trait Constraint {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConstraintType {
-    Vertical(usize),          // Line ID
-    Horizontal(usize),        // Line ID
-    Parallel(usize, usize),   // Line IDs
-    Coincident(usize, usize), // Point IDs
-    EqualX(usize, f64),       // Point ID and X value
-    EqualY(usize, f64),       // Point ID and Y value
+    Vertical(usize),           // Line ID
+    Horizontal(usize),         // Line ID
+    Parallel(usize, usize),    // Line IDs
+    Coincident(usize, usize),  // Point IDs
+    EqualX(usize, f64),        // Point ID and X value
+    EqualY(usize, f64),        // Point ID and Y value
+    PointOnLine(usize, usize), // Point ID and Line ID
 }
 
 pub fn create_constraint(
@@ -72,6 +73,17 @@ pub fn create_constraint(
             }
             Ok(Box::new(
                 crate::constraints::equal_y::EqualYConstraint::new(point_id, y_value),
+            ))
+        }
+        ConstraintType::PointOnLine(point_id, line_id) => {
+            if !geometry.get_all_points().contains_key(&point_id) {
+                return Err("Invalid point ID".to_string());
+            }
+            if !geometry.get_all_lines().contains_key(&line_id) {
+                return Err("Invalid line ID".to_string());
+            }
+            Ok(Box::new(
+                crate::constraints::point_on_line::PointOnLineConstraint::new(point_id, line_id),
             ))
         }
     }
