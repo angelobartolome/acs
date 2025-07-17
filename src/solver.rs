@@ -1,7 +1,7 @@
 // solver.rs
-use crate::DogLegSolver;
 use crate::constraints::base::{Constraint, ConstraintType, create_constraint};
 use crate::geometry::GeometrySystem;
+use crate::{DogLegSolver, NewtonRaphsonSolver};
 use std::collections::HashMap;
 
 pub struct ConstraintGraph {
@@ -116,6 +116,14 @@ impl ConstraintSolver {
             geometry: GeometrySystem::new(),
             constraint_graph: ConstraintGraph::new(),
             solver: Box::new(DogLegSolver::new()),
+        }
+    }
+
+    pub fn new_with_solver(solver: Box<dyn Solver>) -> Self {
+        Self {
+            geometry: GeometrySystem::new(),
+            constraint_graph: ConstraintGraph::new(),
+            solver,
         }
     }
 

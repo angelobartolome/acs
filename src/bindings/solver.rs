@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use crate::ConstraintSolver;
+use crate::{ConstraintSolver, DogLegSolver, NewtonRaphsonSolver, bindings::solver};
 
 #[wasm_bindgen(js_name = ConstraintSolver)]
 
@@ -8,13 +8,25 @@ pub struct WrappedConstraintSolver {
     inner: ConstraintSolver,
 }
 
+#[wasm_bindgen(js_name = SolverType)]
+pub enum WrappedSolverType {
+    DogLeg,
+    NewtonRaphson,
+}
+
 #[wasm_bindgen(js_class = ConstraintSolver)]
 impl WrappedConstraintSolver {
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Self {
-        Self {
-            inner: ConstraintSolver::new(),
-        }
+    pub fn new(solver: WrappedSolverType) -> Self {
+        let inner = match solver {
+            WrappedSolverType::DogLeg => {
+                ConstraintSolver::new_with_solver(Box::new(DogLegSolver::new()))
+            }
+            WrappedSolverType::NewtonRaphson => {
+                ConstraintSolver::new_with_solver(Box::new(NewtonRaphsonSolver::new()))
+            }
+        };
+        Self { inner }
     }
 
     // TODO: Those methods are during development, they will change to be more generic

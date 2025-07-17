@@ -1,5 +1,5 @@
 use crate::geometry::GeometrySystem;
-use crate::{ConstraintGraph, SolverResult};
+use crate::{ConstraintGraph, Solver, SolverResult};
 use std::collections::HashMap;
 
 pub struct NewtonRaphsonSolver {
@@ -24,8 +24,10 @@ impl NewtonRaphsonSolver {
             damping_factor,
         }
     }
+}
 
-    pub fn solve(
+impl Solver for NewtonRaphsonSolver {
+    fn solve(
         &self,
         geometry: &mut GeometrySystem,
         constraint_graph: &ConstraintGraph,
