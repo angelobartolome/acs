@@ -21,6 +21,9 @@ ACS is a library for solving geometric constraint systems.
   - [x] Vertical constraints (force lines to be vertical) :white_check_mark:
   - [x] Horizontal constraints (force lines to be horizontal) :white_check_mark:
   - [x] Parallel constraints (force two lines to be parallel) :white_check_mark:
+  - [x] Equal Y and X constraints (force points to have equal Y and X coordinates) :white_check_mark:
+  - [x] Coincident constraints (force two points to be coincident) :white_check_mark:
+  - [x] Point on line constraints (force a point to lie on a line) :white_check_mark:
   - [ ] Perpendicular constraints (force two lines to be perpendicular)
   - [ ] Angle constraints (force lines to form a specific angle)
   - [ ] Dimension constraints (force lines/points to have specific lengths or distances)
