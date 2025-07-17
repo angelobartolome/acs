@@ -65,8 +65,13 @@ impl DogLegSolver {
         {
             let jacobian_entries = constraint.jacobian(geometry);
             for (point_id, dx, dy) in jacobian_entries {
-                jacobian.insert((constraint_idx, point_id * 2), dx); // x derivative
-                jacobian.insert((constraint_idx, point_id * 2 + 1), dy); // y derivative
+                // Only include jacobian entries for non-fixed points
+                if let Some(point) = geometry.get_point(point_id) {
+                    if !point.fixed {
+                        jacobian.insert((constraint_idx, point_id * 2), dx); // x derivative
+                        jacobian.insert((constraint_idx, point_id * 2 + 1), dy); // y derivative
+                    }
+                }
             }
         }
 
@@ -222,7 +227,10 @@ impl DogLegSolver {
     fn save_geometry_state(&self, geometry: &GeometrySystem) -> HashMap<usize, (f64, f64)> {
         let mut state = HashMap::new();
         for (id, point) in geometry.get_all_points() {
-            state.insert(*id, (point.x, point.y));
+            // Only save state for non-fixed points since fixed points won't change
+            if !point.fixed {
+                state.insert(*id, (point.x, point.y));
+            }
         }
         state
     }
@@ -234,8 +242,11 @@ impl DogLegSolver {
     ) {
         for (id, (x, y)) in state {
             if let Some(point) = geometry.get_point_mut(*id) {
-                point.x = *x;
-                point.y = *y;
+                // Only restore non-fixed points
+                if !point.fixed {
+                    point.x = *x;
+                    point.y = *y;
+                }
             }
         }
     }
@@ -246,10 +257,13 @@ impl DogLegSolver {
             let coordinate = var_idx % 2;
 
             if let Some(point) = geometry.get_point_mut(point_id) {
-                if coordinate == 0 {
-                    point.x += delta;
-                } else {
-                    point.y += delta;
+                // Only apply step to non-fixed points
+                if !point.fixed {
+                    if coordinate == 0 {
+                        point.x += delta;
+                    } else {
+                        point.y += delta;
+                    }
                 }
             }
         }

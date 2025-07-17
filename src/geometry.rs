@@ -6,13 +6,14 @@ pub struct Point {
     pub id: usize,
     pub x: f64,
     pub y: f64,
+    pub fixed: bool,
 }
 
 #[wasm_bindgen]
 impl Point {
     #[wasm_bindgen(constructor)]
-    pub fn new(id: usize, x: f64, y: f64) -> Self {
-        Self { id, x, y }
+    pub fn new(id: usize, x: f64, y: f64, fixed: bool) -> Self {
+        Self { id, x, y, fixed }
     }
 }
 

@@ -142,6 +142,13 @@ impl ConstraintSolver {
         point_id: usize,
         new_position: crate::geometry::Point,
     ) -> Result<SolverResult, String> {
+        // Check if the point is fixed before allowing movement
+        if let Some(point) = self.geometry.get_point(point_id) {
+            if point.fixed {
+                return Err(format!("Cannot move fixed point {}", point_id));
+            }
+        }
+
         self.geometry.update_point(point_id, new_position)?;
         self.solve()
     }
@@ -158,10 +165,30 @@ impl ConstraintSolver {
         self.constraint_graph.total_error(&self.geometry)
     }
 
+    pub fn is_point_fixed(&self, point_id: usize) -> bool {
+        self.geometry
+            .get_point(point_id)
+            .map(|point| point.fixed)
+            .unwrap_or(false)
+    }
+
+    pub fn set_point_fixed(&mut self, point_id: usize, fixed: bool) -> Result<(), String> {
+        if let Some(point) = self.geometry.get_point_mut(point_id) {
+            point.fixed = fixed;
+            Ok(())
+        } else {
+            Err(format!("Point {} not found", point_id))
+        }
+    }
+
     pub fn print_state(&self) {
         println!("Points:");
         for (id, point) in self.geometry.get_all_points() {
-            println!("  {}: ({:.6}, {:.6})", id, point.x, point.y);
+            let fixed_indicator = if point.fixed { " (fixed)" } else { "" };
+            println!(
+                "  {}: ({:.6}, {:.6}){}",
+                id, point.x, point.y, fixed_indicator
+            );
         }
 
         println!("Lines:");
@@ -176,7 +203,11 @@ impl ConstraintSolver {
         let mut state = String::new();
         state.push_str("Points:\n");
         for (id, point) in self.geometry.get_all_points() {
-            state.push_str(&format!("  {}: ({:.6}, {:.6})\n", id, point.x, point.y));
+            let fixed_indicator = if point.fixed { " (fixed)" } else { "" };
+            state.push_str(&format!(
+                "  {}: ({:.6}, {:.6}){}\n",
+                id, point.x, point.y, fixed_indicator
+            ));
         }
 
         state.push_str("Lines:\n");
