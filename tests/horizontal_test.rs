@@ -3,8 +3,8 @@ use acs::{ConstraintSolver, ConstraintType, Line, Point, SolverResult};
 #[test]
 fn test_horizontal_constraint() {
     let mut solver = ConstraintSolver::new();
-    let p1 = Point::new(1, 0.0, 0.0);
-    let p2 = Point::new(2, 1.0, 1.0);
+    let p1 = Point::new(1, 0.0, 0.0, false);
+    let p2 = Point::new(2, 1.0, 1.0, false);
 
     solver.add_point(p1);
     solver.add_point(p2);

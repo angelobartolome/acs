@@ -5,8 +5,8 @@ fn main() {
 
     let mut solver = ConstraintSolver::new();
 
-    let p1 = solver.add_point(Point::new(1, 0.0, 0.0));
-    let p2 = solver.add_point(Point::new(2, 1.0, 1.0));
+    let p1 = solver.add_point(Point::new(1, 0.0, 0.0, false));
+    let p2 = solver.add_point(Point::new(2, 1.0, 1.0, false));
 
     let line = solver.add_line(Line::new(1, p1, p2));
 

@@ -4,16 +4,16 @@ use acs::{ConstraintSolver, ConstraintType, Line, Point, SolverResult};
 fn test_parallel_constraint() {
     let mut solver = ConstraintSolver::new();
 
-    let p1 = Point::new(1, 0.0, 0.0);
-    let p2 = Point::new(2, 1.0, 1.0);
+    let p1 = Point::new(1, 0.0, 0.0, false);
+    let p2 = Point::new(2, 1.0, 1.0, false);
     solver.add_point(p1);
     solver.add_point(p2);
 
     let line1 = Line::new(1, p1.id, p2.id);
     solver.add_line(line1);
 
-    let p3 = Point::new(3, 0.0, 1.0);
-    let p4 = Point::new(4, 1.0, 2.0);
+    let p3 = Point::new(3, 0.0, 1.0, false);
+    let p4 = Point::new(4, 1.0, 2.0, false);
     solver.add_point(p3);
     solver.add_point(p4);
 
