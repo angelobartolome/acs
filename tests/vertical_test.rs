@@ -2,8 +2,6 @@ use acs::{ConstraintSolver, ConstraintType, Line, Point, SolverResult};
 
 #[test]
 fn test_vertical_constraint() {
-    // let mut solver = ConstraintSolver::new();
-
     let mut solver = ConstraintSolver::new();
     let p1 = Point::new(1, 0.0, 0.0, false);
     let p2 = Point::new(2, 1.0, 1.0, false);
