@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Point2D } from "./components/Point2D";
 import { Vector2 } from "three";
 import { Line2D } from "./components/Line2D";
-import init, { ConstraintSolver, Line, Point } from "acs";
+import init, { ConstraintSolver, Line, Point, SolverType } from "acs";
 
 await init().then(() => {
   console.log("ACS initialized");
@@ -20,12 +20,14 @@ export default function App() {
     const pB = new Point(1, 1, 1, false);
     const pL1 = new Line(2, pA.id, pB.id);
 
-    setPrimitives([pA, pB, pL1]);
+    const pC = new Point(3, 0.4, 1.3, false);
+    setPrimitives([pA, pB, pL1, pC]);
+
   }, [setPrimitives]);
 
   const solve = useCallback(
     (type: "vertical" | "horizontal") => {
-      let solver = new ConstraintSolver();
+      let solver = new ConstraintSolver(SolverType.NewtonRaphson);
 
       primitives.forEach((primitive) => {
         if (primitive instanceof Point) {
@@ -43,6 +45,8 @@ export default function App() {
       } else if (type === "vertical") {
         solver.add_vertical_constraint(2);
       }
+
+      solver.add_point_on_line_constraint(3, 2); // Point C on Line L1
 
       solver.solve();
 
