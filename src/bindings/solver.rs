@@ -36,6 +36,15 @@ impl WrappedConstraintSolver {
             .add_constraint(crate::ConstraintType::Horizontal(line_id))
     }
 
+    pub fn add_point_on_line_constraint(
+        &mut self,
+        point_id: usize,
+        line_id: usize,
+    ) -> Result<(), String> {
+        self.inner
+            .add_constraint(crate::ConstraintType::PointOnLine(point_id, line_id))
+    }
+
     pub fn solve(&mut self) -> Result<String, String> {
         match self.inner.solve() {
             Ok(result) => Ok(format!("{:?}", result)),
