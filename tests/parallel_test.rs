@@ -1,27 +1,26 @@
-use acs::{ConstraintSolver, ConstraintType, Line, Point, SolverResult};
+use acs::{ConstraintSolver, ConstraintType, Point, SolverResult};
 
 #[test]
 fn test_parallel_constraint() {
     let mut solver = ConstraintSolver::new();
 
-    let p1 = Point::new(1, 0.0, 0.0, false);
-    let p2 = Point::new(2, 1.0, 1.0, false);
+    let p1 = Point::new(String::from("p1"), 0.0, 0.0, false);
+    let p2 = Point::new(String::from("p2"), 1.0, 1.0, false);
     solver.add_point(p1);
     solver.add_point(p2);
 
-    let line1 = Line::new(1, p1.id, p2.id);
-    solver.add_line(line1);
-
-    let p3 = Point::new(3, 0.0, 1.0, false);
-    let p4 = Point::new(4, 1.0, 2.0, false);
+    let p3 = Point::new(String::from("p3"), 0.0, 1.0, false);
+    let p4 = Point::new(String::from("p4"), 1.0, 5.0, false);
     solver.add_point(p3);
     solver.add_point(p4);
 
-    let line2 = Line::new(2, p3.id, p4.id);
-    solver.add_line(line2);
-
     solver
-        .add_constraint(ConstraintType::Parallel(line1.id, line2.id))
+        .add_constraint(ConstraintType::Parallel(
+            String::from("p1"),
+            String::from("p2"),
+            String::from("p3"),
+            String::from("p4"),
+        ))
         .unwrap();
     let result = solver.solve().unwrap();
 
@@ -32,8 +31,12 @@ fn test_parallel_constraint() {
         _ => panic!("Solver should have converged"),
     }
 
-    let start = solver.get_point(p1.id).unwrap();
-    let end = solver.get_point(p2.id).unwrap();
+    let start_a = solver.get_point(String::from("p1")).unwrap();
+    let end_a = solver.get_point(String::from("p2")).unwrap();
+
+    let start_b = solver.get_point(String::from("p3")).unwrap();
+    let end_b = solver.get_point(String::from("p4")).unwrap();
+
     solver.print_state();
 
     let get_angle = |start: &Point, end: &Point| {
@@ -43,7 +46,7 @@ fn test_parallel_constraint() {
     };
 
     assert!(
-        (get_angle(&start, &end) - get_angle(&start, &end)).abs() < 1e-4,
+        (get_angle(start_a, end_a) - get_angle(start_b, end_b)).abs() < 1e-4,
         "Lines should be parallel"
     );
 }

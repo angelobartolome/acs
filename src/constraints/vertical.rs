@@ -1,45 +1,42 @@
-use crate::{constraints::Constraint, geometry::GeometrySystem};
+#![allow(non_snake_case)] // Makes sense for mathematical variables
+#![allow(unused_parens)]
+use std::collections::HashMap;
+
+use nalgebra::{DMatrix, DVector};
+
+use crate::{Point, constraints::Constraint};
 
 pub struct VerticalConstraint {
-    line_id: usize,
+    pub p1: String, // Index of the first point
+    pub p2: String, // Index of the second point
 }
 
 impl VerticalConstraint {
-    pub fn new(line_id: usize) -> Self {
-        Self { line_id }
+    pub fn new(p1: String, p2: String) -> Self {
+        Self { p1, p2 }
     }
 }
 
 impl Constraint for VerticalConstraint {
-    fn error(&self, geometry: &GeometrySystem) -> f64 {
-        if let Some(line) = geometry.get_line(self.line_id) {
-            if let (Some(start), Some(end)) =
-                (geometry.get_point(line.start), geometry.get_point(line.end))
-            {
-                return end.x - start.x; // Error is the x-difference
-            }
-        }
-        0.0
+    fn num_residuals(&self) -> usize {
+        1
     }
 
-    fn jacobian(&self, geometry: &GeometrySystem) -> Vec<(usize, f64, f64)> {
-        let mut jacobian = Vec::new();
-
-        if let Some(line) = geometry.get_line(self.line_id) {
-            // Partial derivative with respect to start point: -1 in x, 0 in y
-            jacobian.push((line.start, -1.0, 0.0));
-            // Partial derivative with respect to end point: 1 in x, 0 in y
-            jacobian.push((line.end, 1.0, 0.0));
-        }
-
-        jacobian
+    fn residual(&self, points: &HashMap<String, Point>) -> DVector<f64> {
+        DVector::from(vec![points[&self.p1].x - points[&self.p2].x])
     }
 
-    fn get_dependent_points(&self) -> Vec<usize> {
-        vec![self.line_id] // This would need to be resolved to actual point IDs
-    }
+    fn jacobian(
+        &self,
+        points: &HashMap<String, Point>,
+        id_to_index: &HashMap<String, usize>,
+    ) -> DMatrix<f64> {
+        let cols = points.len() * 2;
+        let mut J = DMatrix::<f64>::zeros(1, cols);
 
-    fn constraint_type(&self) -> &'static str {
-        "Vertical"
+        J[(0, id_to_index[&self.p1] * 2)] = 1.0; // derivative wrt p1.x
+        J[(0, id_to_index[&self.p2] * 2)] = -1.0; // derivative wrt p2.x
+
+        J
     }
 }

@@ -1,70 +1,85 @@
-use crate::constraints::base::Constraint;
-use crate::geometry::GeometrySystem;
+#![allow(non_snake_case)] // Makes sense for mathematical variables
+#![allow(unused_parens)]
+use std::collections::HashMap;
+
+use nalgebra::{DMatrix, DVector};
+
+use crate::{Point, constraints::Constraint};
 
 pub struct ParallelConstraint {
-    line_a_id: usize,
-    line_b_id: usize,
+    pub p1: String, // Index of the first point (L1P1)
+    pub p2: String, // Index of the second point (L1P2)
+    pub p3: String, // Index of the third point (L2P1)
+    pub p4: String, // Index of the fourth point (L2P2)
 }
 
 impl ParallelConstraint {
-    pub fn new(line_a_id: usize, line_b_id: usize) -> Self {
-        Self {
-            line_a_id,
-            line_b_id,
-        }
+    pub fn new(p1: String, p2: String, p3: String, p4: String) -> Self {
+        Self { p1, p2, p3, p4 }
     }
 }
 
 impl Constraint for ParallelConstraint {
-    fn error(&self, geometry: &GeometrySystem) -> f64 {
-        if let (Some(line_a), Some(line_b)) = (
-            geometry.get_line(self.line_a_id),
-            geometry.get_line(self.line_b_id),
-        ) {
-            if let (Some(start_a), Some(end_a), Some(start_b), Some(end_b)) = (
-                geometry.get_point(line_a.start),
-                geometry.get_point(line_a.end),
-                geometry.get_point(line_b.start),
-                geometry.get_point(line_b.end),
-            ) {
-                // Check if the lines are parallel
-                let slope_a = (end_a.y - start_a.y) / (end_a.x - start_a.x);
-                let slope_b = (end_b.y - start_b.y) / (end_b.x - start_b.x);
-                return if (slope_a - slope_b).abs() < 1e-6 {
-                    0.0 // No error if parallel
-                } else {
-                    (slope_a - slope_b).abs() // Error is the difference in slopes
-                };
-            }
-        }
-        0.0
+    fn num_residuals(&self) -> usize {
+        1
     }
 
-    fn jacobian(&self, geometry: &GeometrySystem) -> Vec<(usize, f64, f64)> {
-        let mut jacobian = Vec::new();
+    fn residual(&self, points: &HashMap<String, Point>) -> DVector<f64> {
+        let x1 = points[&self.p1].x;
+        let y1 = points[&self.p1].y;
+        let x2 = points[&self.p2].x;
+        let y2 = points[&self.p2].y;
+        let x3 = points[&self.p3].x;
+        let y3 = points[&self.p3].y;
+        let x4 = points[&self.p4].x;
+        let y4 = points[&self.p4].y;
 
-        if let Some(line_a) = geometry.get_line(self.line_a_id) {
-            // Partial derivative with respect to start point of line A: 0 in x, -1 in y
-            jacobian.push((line_a.start, 0.0, -1.0));
-            // Partial derivative with respect to end point of line A: 0 in x, 1 in y
-            jacobian.push((line_a.end, 0.0, 1.0));
-        }
+        let dx1 = x2 - x1;
+        let dy1 = y2 - y1;
+        let dx2 = x4 - x3;
+        let dy2 = y4 - y3;
 
-        if let Some(line_b) = geometry.get_line(self.line_b_id) {
-            // Partial derivative with respect to start point of line B: 0 in x, -1 in y
-            jacobian.push((line_b.start, 0.0, -1.0));
-            // Partial derivative with respect to end point of line B: 0 in x, 1 in y
-            jacobian.push((line_b.end, 0.0, 1.0));
-        }
-
-        jacobian
+        DVector::from(vec![dx1 * dy2 - dy1 * dx2])
     }
 
-    fn get_dependent_points(&self) -> Vec<usize> {
-        vec![self.line_a_id, self.line_b_id]
-    }
+    fn jacobian(
+        &self,
+        points: &HashMap<String, Point>,
+        id_to_index: &HashMap<String, usize>,
+    ) -> DMatrix<f64> {
+        let x1 = points[&self.p1].x;
+        let y1 = points[&self.p1].y;
+        let x2 = points[&self.p2].x;
+        let y2 = points[&self.p2].y;
+        let x3 = points[&self.p3].x;
+        let y3 = points[&self.p3].y;
+        let x4 = points[&self.p4].x;
+        let y4 = points[&self.p4].y;
 
-    fn constraint_type(&self) -> &'static str {
-        "Parallel"
+        let cols = points.len() * 2;
+        let mut J = DMatrix::<f64>::zeros(1, cols);
+
+        // Derivatives
+        J[(0, id_to_index[&self.p1] * 2)] = -(y4 - y3); // ∂r/∂x1
+        J[(0, id_to_index[&self.p1] * 2 + 1)] = (x4 - x3); // ∂r/∂y1
+        J[(0, id_to_index[&self.p2] * 2)] = (y4 - y3); // ∂r/∂x2
+        J[(0, id_to_index[&self.p2] * 2 + 1)] = -(x4 - x3); // ∂r/∂y2
+        J[(0, id_to_index[&self.p3] * 2)] = (y2 - y1); // ∂r/∂x3
+        J[(0, id_to_index[&self.p3] * 2 + 1)] = -(x2 - x1); // ∂r/∂y3
+        J[(0, id_to_index[&self.p4] * 2)] = -(y2 - y1); // ∂r/∂x4
+        J[(0, id_to_index[&self.p4] * 2 + 1)] = (x2 - x1); // ∂r/∂y4
+
+        /*
+        J[(0, self.p1 * 2)] = -(y4 - y3); // ∂r/∂x1
+        J[(0, self.p1 * 2 + 1)] = (x4 - x3); // ∂r/∂y1
+        J[(0, self.p2 * 2)] = (y4 - y3); // ∂r/∂x2
+        J[(0, self.p2 * 2 + 1)] = -(x4 - x3); // ∂r/∂y2
+        J[(0, self.p3 * 2)] = (y2 - y1); // ∂r/∂x3
+        J[(0, self.p3 * 2 + 1)] = -(x2 - x1); // ∂r/∂y3
+        J[(0, self.p4 * 2)] = -(y2 - y1); // ∂r/∂x4
+        J[(0, self.p4 * 2 + 1)] = (x2 - x1); // ∂r/∂y4
+         */
+
+        J
     }
 }

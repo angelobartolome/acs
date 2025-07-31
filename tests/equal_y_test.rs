@@ -3,12 +3,12 @@ use acs::{ConstraintSolver, ConstraintType, Point, SolverResult};
 #[test]
 fn test_equal_y_constraint() {
     let mut solver = ConstraintSolver::new();
-    let p1 = Point::new(1, 7.0, 12.0, false);
+    let p1 = Point::new(String::from("p1"), 7.0, 12.0, false);
 
     solver.add_point(p1);
 
     solver
-        .add_constraint(ConstraintType::EqualY(p1.id, 5.0))
+        .add_constraint(ConstraintType::EqualY(String::from("p1"), 5.0))
         .unwrap();
 
     let result = solver.solve().unwrap();
@@ -20,7 +20,7 @@ fn test_equal_y_constraint() {
         final_result => panic!("Solver should have converged, got: {:?}", final_result),
     }
 
-    let start = solver.get_point(p1.id).unwrap();
+    let start = solver.get_point(String::from("p1")).unwrap();
     solver.print_state();
 
     assert!(

@@ -1,39 +1,41 @@
-use crate::{constraints::Constraint, geometry::GeometrySystem};
+#![allow(non_snake_case)] // Makes sense for mathematical variables
+#![allow(unused_parens)]
+use std::collections::HashMap;
+
+use nalgebra::{DMatrix, DVector};
+
+use crate::{Point, constraints::Constraint};
 
 pub struct EqualYConstraint {
-    point_id: usize,
-    value: f64,
+    pub p1: String, // Index of the first point
+    pub y: f64,     // The y-coordinate to which the point should be equal
 }
 
 impl EqualYConstraint {
-    pub fn new(point_id: usize, value: f64) -> Self {
-        Self { point_id, value }
+    pub fn new(p1: String, y: f64) -> Self {
+        Self { p1, y }
     }
 }
 
 impl Constraint for EqualYConstraint {
-    fn error(&self, geometry: &GeometrySystem) -> f64 {
-        if let Some(point) = geometry.get_point(self.point_id) {
-            return point.y - self.value;
-        }
-        0.0
+    fn num_residuals(&self) -> usize {
+        1
     }
 
-    fn jacobian(&self, geometry: &GeometrySystem) -> Vec<(usize, f64, f64)> {
-        let mut jacobian = Vec::new();
-
-        if let Some(_point) = geometry.get_point(self.point_id) {
-            jacobian.push((self.point_id, 0.0, 1.0));
-        }
-
-        jacobian
+    fn residual(&self, points: &HashMap<String, Point>) -> DVector<f64> {
+        DVector::from(vec![points[&self.p1].y - self.y])
     }
 
-    fn get_dependent_points(&self) -> Vec<usize> {
-        vec![self.point_id]
-    }
+    fn jacobian(
+        &self,
+        points: &HashMap<String, Point>,
+        id_to_index: &HashMap<String, usize>,
+    ) -> DMatrix<f64> {
+        let cols = points.len() * 2;
+        let mut J = DMatrix::<f64>::zeros(1, cols);
+        J[(0, id_to_index[&self.p1] * 2 + 1)] = 1.0; // derivative wrt p1.y
+        // J[(0, self.p1 * 2 + 1)] = 1.0; // derivative wrt p1.y
 
-    fn constraint_type(&self) -> &'static str {
-        "EqualY"
+        J
     }
 }

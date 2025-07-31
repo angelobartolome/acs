@@ -1,66 +1,55 @@
-use crate::{constraints::Constraint, geometry::GeometrySystem};
+#![allow(non_snake_case)] // Makes sense for mathematical variables
+#![allow(unused_parens)]
+use std::collections::HashMap;
+
+use nalgebra::{DMatrix, DVector};
+
+use crate::{Point, constraints::Constraint};
 
 pub struct CoincidentConstraint {
-    point_a_id: usize,
-    point_b_id: usize,
+    pub p1: String, // Index of the first point
+    pub p2: String, // Index of the second point
 }
 
 impl CoincidentConstraint {
-    pub fn new(point_a_id: usize, point_b_id: usize) -> Self {
-        Self {
-            point_a_id,
-            point_b_id,
-        }
+    pub fn new(p1: String, p2: String) -> Self {
+        Self { p1, p2 }
     }
 }
 
 impl Constraint for CoincidentConstraint {
-    fn error(&self, geometry: &GeometrySystem) -> f64 {
-        if let Some(point_a) = geometry.get_point(self.point_a_id) {
-            if let Some(point_b) = geometry.get_point(self.point_b_id) {
-                // Calculate the distance between the two points
-                let dx = point_a.x - point_b.x;
-                let dy = point_a.y - point_b.y;
-                return (dx * dx + dy * dy).sqrt();
-            }
-        }
-        0.0
+    fn num_residuals(&self) -> usize {
+        2
     }
 
-    fn jacobian(&self, geometry: &GeometrySystem) -> Vec<(usize, f64, f64)> {
-        let mut jacobian = Vec::new();
+    fn residual(&self, points: &HashMap<String, Point>) -> DVector<f64> {
+        let x1 = points[&self.p1].x;
+        let y1 = points[&self.p1].y;
+        let x2 = points[&self.p2].x;
+        let y2 = points[&self.p2].y;
 
-        if let Some(point_a) = geometry.get_point(self.point_a_id) {
-            if let Some(point_b) = geometry.get_point(self.point_b_id) {
-                let dx = point_a.x - point_b.x;
-                let dy = point_a.y - point_b.y;
-                let distance = (dx * dx + dy * dy).sqrt();
-
-                if distance > 1e-12 {
-                    // For error = sqrt((xa - xb)² + (ya - yb)²)
-                    // d/dxa = (xa - xb) / distance, d/dya = (ya - yb) / distance
-                    // d/dxb = -(xa - xb) / distance, d/dyb = -(ya - yb) / distance
-                    let dx_norm = dx / distance;
-                    let dy_norm = dy / distance;
-
-                    jacobian.push((self.point_a_id, dx_norm, dy_norm));
-                    jacobian.push((self.point_b_id, -dx_norm, -dy_norm));
-                } else {
-                    // When points are very close, the gradient is undefined,
-                    // but we can use a small perturbation approach
-                    jacobian.push((self.point_a_id, 1.0, 0.0));
-                    jacobian.push((self.point_b_id, -1.0, 0.0));
-                }
-            }
-        }
-        jacobian
+        DVector::from(vec![
+            x1 - x2, // Residual for x-coordinates
+            y1 - y2, // Residual for y-coordinates
+        ])
     }
 
-    fn get_dependent_points(&self) -> Vec<usize> {
-        vec![self.point_a_id, self.point_b_id]
-    }
+    fn jacobian(
+        &self,
+        points: &HashMap<String, Point>,
+        id_to_index: &HashMap<String, usize>,
+    ) -> DMatrix<f64> {
+        let cols = points.len() * 2;
+        let mut J = DMatrix::<f64>::zeros(2, cols);
 
-    fn constraint_type(&self) -> &'static str {
-        "Coincident"
+        // Row 0: X residual
+        J[(0, id_to_index[&self.p1] * 2)] = 1.0; // d(x1-x2)/dx1
+        J[(0, id_to_index[&self.p2] * 2)] = -1.0; // d(x1-x2)/dx2
+
+        // Row 1: Y residual
+        J[(1, id_to_index[&self.p1] * 2 + 1)] = 1.0; // d(y1-y2)/dy1
+        J[(1, id_to_index[&self.p2] * 2 + 1)] = -1.0; // d(y1-y2)/dy2
+
+        J
     }
 }
