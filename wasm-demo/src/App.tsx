@@ -13,13 +13,13 @@ await init().then(() => {
   solver = new ConstraintSolver();
 });
 
-type Primitive = Point | Line;
+type Primitive = Point;
 
 export default function App() {
   const [primitives, setPrimitives] = useState<Primitive[]>([]);
   const [constraints, setConstraints] = useState<
     {
-      type: "horizontal" | "vertical" | "parallel";
+      type: "horizontal" | "vertical" | "parallel" | "point_on_line";
       points: string[];
     }[]
   >([]);
@@ -59,6 +59,9 @@ export default function App() {
       } else if (c.type === "parallel") {
         const [laS, laE, lbS, lbE] = c.points;
         solver.add_parallel_constraint(laS, laE, lbS, lbE);
+      } else if (c.type === "point_on_line") {
+        const [p, pA, pB] = c.points;
+        solver.add_point_on_line_constraint(p, pA, pB);
       }
     });
 
@@ -79,7 +82,9 @@ export default function App() {
     });
   };
 
-  const addConstraint = (type: "horizontal" | "vertical" | "parallel") => {
+  const addConstraint = (
+    type: "horizontal" | "vertical" | "parallel" | "point_on_line"
+  ) => {
     if (selectedPrimitiveIds.length < 2) {
       alert("Select two primitives to add a constraint.");
       return;
@@ -108,6 +113,16 @@ export default function App() {
           type,
           points: [pA.id, pB.id, pC.id, pD.id],
         },
+      ]);
+    } else if (type === "point_on_line") {
+      if (selectedPrimitives.length !== 3) {
+        alert("Select exactly three points for point on line constraints.");
+        return;
+      }
+      const [p, pA, pB] = selectedPrimitives as Point[];
+      setConstraints((prev) => [
+        ...prev,
+        { type, points: [p.id, pA.id, pB.id] },
       ]);
     }
   };
@@ -139,22 +154,6 @@ export default function App() {
 
               setPrimitives(solve(updatedPrimitives as any, constraints));
             }}
-          />
-        );
-      } else if (primitive instanceof Line) {
-        return (
-          <Line2D
-            points={[
-              new Vector2(
-                primitives.find((p) => p.id === primitive.start)?.x || 0,
-                primitives.find((p) => p.id === primitive.start)?.y || 0
-              ),
-              new Vector2(
-                primitives.find((p) => p.id === primitive.end)?.x || 0,
-                primitives.find((p) => p.id === primitive.end)?.y || 0
-              ),
-            ]}
-            key={`l-${primitive.id}`}
           />
         );
       }
@@ -195,6 +194,10 @@ export default function App() {
 
             <button onClick={() => addConstraint("parallel")}>
               Add Parallel Constraint
+            </button>
+
+            <button onClick={() => addConstraint("point_on_line")}>
+              Add Point on Line Constraint
             </button>
             <button
               onClick={() => setPrimitives(solve(primitives, constraints))}
