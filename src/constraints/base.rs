@@ -22,6 +22,7 @@ pub enum ConstraintType {
     EqualX(String, f64),                      // Point ID, x-coordinate
     EqualY(String, f64),                      // Point ID, y-coordinate
     Coincident(String, String),               // Point IDs
+    PointOnLine(String, String, String),      // Point ID, Line Point A ID, Line Point B ID
 }
 
 pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Constraint>, String> {
@@ -43,6 +44,9 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         )),
         ConstraintType::Coincident(p1, p2) => Ok(Box::new(
             crate::constraints::coincident::CoincidentConstraint::new(p1, p2),
+        )),
+        ConstraintType::PointOnLine(p1, p_line_a, p_line_b) => Ok(Box::new(
+            crate::constraints::point_on_line::PointOnLineConstraint::new(p1, p_line_a, p_line_b),
         )),
     }
 }

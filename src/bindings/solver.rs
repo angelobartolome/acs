@@ -56,6 +56,21 @@ impl WrappedConstraintSolver {
             .map_err(|e| e.to_string())
     }
 
+    pub fn add_point_on_line_constraint(
+        &mut self,
+        point_id: String,
+        point_line_a_id: String,
+        point_line_b_id: String,
+    ) -> Result<(), String> {
+        self.inner
+            .add_constraint(crate::ConstraintType::PointOnLine(
+                point_id,
+                point_line_a_id,
+                point_line_b_id,
+            ))
+            .map_err(|e| e.to_string())
+    }
+
     pub fn reset(&mut self) -> Result<(), String> {
         self.inner = ConstraintSolver::new();
         Ok(())
