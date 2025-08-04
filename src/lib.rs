@@ -4,7 +4,6 @@ pub mod parameter_system;
 pub mod solver;
 
 pub mod dogleg_solver;
-// pub mod newton_raphson_solver;
 
 pub use constraints::*;
 pub use dogleg_solver::*;
