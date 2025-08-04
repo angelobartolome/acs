@@ -1,4 +1,6 @@
-use crate::{Constraint, ConstraintType, DogLegSolver, GeometrySystem, Point, create_constraint};
+use crate::{
+    Constraint, ConstraintType, GeometrySystem, ParametricDogLegSolver, Point, create_constraint,
+};
 
 pub struct ConstraintGraph {
     constraints: Vec<Box<dyn Constraint>>,
@@ -51,12 +53,16 @@ impl ConstraintSolver {
             constraint_graph: ConstraintGraph {
                 constraints: Vec::new(),
             },
-            solver: Box::new(DogLegSolver::new()),
+            solver: Box::new(ParametricDogLegSolver::new()),
         }
     }
 
     pub fn add_point(&mut self, point: crate::geometry::Point) -> String {
         self.geometry.add_point(point)
+    }
+
+    pub fn add_circle(&mut self, circle: crate::geometry::Circle) -> String {
+        self.geometry.add_circle(circle)
     }
 
     pub fn add_line(&mut self, line: crate::geometry::Line) -> String {
@@ -77,6 +83,10 @@ impl ConstraintSolver {
 
     pub fn get_point(&self, id: String) -> Option<&Point> {
         self.geometry.get_point(&id)
+    }
+
+    pub fn get_circle(&self, id: String) -> Option<&crate::geometry::Circle> {
+        self.geometry.get_circle(&id)
     }
 
     pub fn print_state(&self) {

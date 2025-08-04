@@ -22,6 +22,10 @@ impl WrappedConstraintSolver {
         self.inner.add_point(point.clone())
     }
 
+    pub fn add_circle(&mut self, circle: &crate::Circle) -> String {
+        self.inner.add_circle(circle.clone())
+    }
+
     pub fn add_vertical_constraint(
         &mut self,
         point_a_id: String,
@@ -71,6 +75,16 @@ impl WrappedConstraintSolver {
             .map_err(|e| e.to_string())
     }
 
+    pub fn add_equal_radius_constraint(
+        &mut self,
+        circle1_id: String,
+        circle2_id: String,
+    ) -> Result<(), String> {
+        self.inner
+            .add_constraint(crate::ConstraintType::EqualRadius(circle1_id, circle2_id))
+            .map_err(|e| e.to_string())
+    }
+
     pub fn reset(&mut self) -> Result<(), String> {
         self.inner = ConstraintSolver::new();
         Ok(())
@@ -89,6 +103,10 @@ impl WrappedConstraintSolver {
 
     pub fn get_point(&self, id: &str) -> Option<crate::Point> {
         self.inner.get_point(id.to_string()).cloned()
+    }
+
+    pub fn get_circle(&self, id: &str) -> Option<crate::Circle> {
+        self.inner.get_circle(id.to_string()).cloned()
     }
     // Add more methods as needed
 }

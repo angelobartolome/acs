@@ -68,8 +68,7 @@ impl Line {
 #[wasm_bindgen(getter_with_clone)]
 pub struct Circle {
     pub id: String,
-    pub center_x: f64,
-    pub center_y: f64,
+    pub center: String, // Point ID
     pub radius: f64,
     pub fixed: bool,
 }
@@ -77,11 +76,10 @@ pub struct Circle {
 #[wasm_bindgen]
 impl Circle {
     #[wasm_bindgen(constructor)]
-    pub fn new(id: String, center_x: f64, center_y: f64, radius: f64, fixed: bool) -> Self {
+    pub fn new(id: String, center: String, radius: f64, fixed: bool) -> Self {
         Self {
             id,
-            center_x,
-            center_y,
+            center,
             radius,
             fixed,
         }
@@ -90,34 +88,28 @@ impl Circle {
 
 impl ParametricEntity for Circle {
     fn get_parameters(&self) -> Vec<f64> {
-        vec![self.center_x, self.center_y, self.radius]
+        vec![self.radius]
     }
 
     fn set_parameters(&mut self, params: &[f64]) -> Result<(), String> {
-        if params.len() != 3 {
+        if params.len() != 1 {
             return Err(format!(
-                "Circle requires exactly 3 parameters, got {}",
+                "Circle requires exactly 1 parameter, got {}",
                 params.len()
             ));
         }
-        self.center_x = params[0];
-        self.center_y = params[1];
-        self.radius = params[2];
+        self.radius = params[0];
         Ok(())
     }
 
     fn parameter_names(&self) -> Vec<String> {
-        vec![
-            format!("{}.center_x", self.id),
-            format!("{}.center_y", self.id),
-            format!("{}.radius", self.id),
-        ]
+        vec![format!("{}.radius", self.id)]
     }
 
     fn is_parameter_fixed(&self, param_index: usize) -> bool {
         match param_index {
-            0 | 1 | 2 => self.fixed, // All parameters are fixed if the circle is fixed
-            _ => true,               // Invalid parameter indices are considered fixed
+            0 => self.fixed, // Radius is fixed if the circle is fixed
+            _ => true,       // Invalid parameter indices are considered fixed
         }
     }
 }
@@ -126,8 +118,7 @@ impl ParametricEntity for Circle {
 #[wasm_bindgen(getter_with_clone)]
 pub struct Arc {
     pub id: String,
-    pub center_x: f64,
-    pub center_y: f64,
+    pub center: String, // Point ID
     pub radius: f64,
     pub start_angle: f64, // in radians
     pub end_angle: f64,   // in radians
@@ -139,8 +130,7 @@ impl Arc {
     #[wasm_bindgen(constructor)]
     pub fn new(
         id: String,
-        center_x: f64,
-        center_y: f64,
+        center: String,
         radius: f64,
         start_angle: f64,
         end_angle: f64,
@@ -148,8 +138,7 @@ impl Arc {
     ) -> Self {
         Self {
             id,
-            center_x,
-            center_y,
+            center,
             radius,
             start_angle,
             end_angle,
@@ -160,34 +149,24 @@ impl Arc {
 
 impl ParametricEntity for Arc {
     fn get_parameters(&self) -> Vec<f64> {
-        vec![
-            self.center_x,
-            self.center_y,
-            self.radius,
-            self.start_angle,
-            self.end_angle,
-        ]
+        vec![self.radius, self.start_angle, self.end_angle]
     }
 
     fn set_parameters(&mut self, params: &[f64]) -> Result<(), String> {
-        if params.len() != 5 {
+        if params.len() != 3 {
             return Err(format!(
-                "Arc requires exactly 5 parameters, got {}",
+                "Arc requires exactly 3 parameters, got {}",
                 params.len()
             ));
         }
-        self.center_x = params[0];
-        self.center_y = params[1];
-        self.radius = params[2];
-        self.start_angle = params[3];
-        self.end_angle = params[4];
+        self.radius = params[0];
+        self.start_angle = params[1];
+        self.end_angle = params[2];
         Ok(())
     }
 
     fn parameter_names(&self) -> Vec<String> {
         vec![
-            format!("{}.center_x", self.id),
-            format!("{}.center_y", self.id),
             format!("{}.radius", self.id),
             format!("{}.start_angle", self.id),
             format!("{}.end_angle", self.id),
@@ -196,8 +175,8 @@ impl ParametricEntity for Arc {
 
     fn is_parameter_fixed(&self, param_index: usize) -> bool {
         match param_index {
-            0 | 1 | 2 | 3 | 4 => self.fixed, // All parameters are fixed if the arc is fixed
-            _ => true,                       // Invalid parameter indices are considered fixed
+            0 | 1 | 2 => self.fixed, // All parameters are fixed if the arc is fixed
+            _ => true,               // Invalid parameter indices are considered fixed
         }
     }
 }

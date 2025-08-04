@@ -68,10 +68,9 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         ConstraintType::PointOnLine(p1, p_line_a, p_line_b) => Ok(Box::new(
             crate::constraints::point_on_line::PointOnLineConstraint::new(p1, p_line_a, p_line_b),
         )),
-        ConstraintType::EqualRadius(_c1, _c2) => {
-            // TODO: Implement EqualRadiusConstraint
-            Err("EqualRadius constraint not yet implemented".to_string())
-        }
+        ConstraintType::EqualRadius(_c1, _c2) => Ok(Box::new(
+            crate::constraints::equal_radius::EqualRadiusConstraint::new(_c1, _c2),
+        )),
         ConstraintType::FixedRadius(_c1, _radius) => {
             // TODO: Implement FixedRadiusConstraint
             Err("FixedRadius constraint not yet implemented".to_string())

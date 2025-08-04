@@ -27,12 +27,12 @@ impl Constraint for EqualRadiusConstraint {
 
     fn residual_parametric(&self, param_manager: &ParameterManager) -> DVector<f64> {
         // Get radius parameters of both circles
-        // Assuming circles have parameters [center_x, center_y, radius] with radius at index 2
+        // Circles now have parameters [radius] with radius at index 0
         let c1_radius_idx = param_manager
-            .get_global_index(&self.circle1_id, 2)
+            .get_global_index(&self.circle1_id, 0)
             .expect("Circle 1 not found in parameter manager");
         let c2_radius_idx = param_manager
-            .get_global_index(&self.circle2_id, 2)
+            .get_global_index(&self.circle2_id, 0)
             .expect("Circle 2 not found in parameter manager");
 
         let params = param_manager.get_parameters();
@@ -48,11 +48,11 @@ impl Constraint for EqualRadiusConstraint {
         let mut J = DMatrix::<f64>::zeros(1, total_params);
 
         // Get global indices for radius parameters
-        if let Some(c1_radius_idx) = param_manager.get_global_index(&self.circle1_id, 2) {
+        if let Some(c1_radius_idx) = param_manager.get_global_index(&self.circle1_id, 0) {
             J[(0, c1_radius_idx)] = 1.0; // derivative wrt circle1.radius
         }
 
-        if let Some(c2_radius_idx) = param_manager.get_global_index(&self.circle2_id, 2) {
+        if let Some(c2_radius_idx) = param_manager.get_global_index(&self.circle2_id, 0) {
             J[(0, c2_radius_idx)] = -1.0; // derivative wrt circle2.radius
         }
 
