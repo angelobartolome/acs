@@ -1,32 +1,15 @@
-use std::collections::HashMap;
-
 use nalgebra::{DMatrix, DVector};
 
-use crate::{Constraint, Point, Solver};
-pub struct DogLegSolver {
+use crate::{
+    Constraint, ConstraintGraph, EntityType, GeometrySystem, ParameterManager, Solver, SolverResult,
+};
+
+pub struct ParametricDogLegSolver {
     max_iterations: usize,
     tolerance: f64,
 }
 
-impl Solver for DogLegSolver {
-    fn solve(
-        &self,
-        geometry: &mut crate::GeometrySystem,
-        constraint_graph: &crate::ConstraintGraph,
-    ) -> Result<crate::SolverResult, String> {
-        let points = geometry.get_all_points_mut();
-        let constraints = constraint_graph.get_constraints();
-
-        return Ok(DogLegSolver::solve_constraints(
-            points,
-            constraints,
-            self.max_iterations,
-            self.tolerance,
-        ));
-    }
-}
-
-impl DogLegSolver {
+impl ParametricDogLegSolver {
     pub fn new() -> Self {
         Self {
             max_iterations: 100,
@@ -34,26 +17,56 @@ impl DogLegSolver {
         }
     }
 
-    pub fn solve_constraints(
-        points: &mut HashMap<String, Point>,
+    pub fn solve_parametric(
+        &self,
+        geometry: &mut GeometrySystem,
+        constraint_graph: &ConstraintGraph,
+    ) -> Result<SolverResult, String> {
+        // Build parameter manager from geometry
+        let mut param_manager = ParameterManager::new();
+
+        // Register all points
+        for (id, point) in geometry.get_all_points() {
+            param_manager.register_entity(id.clone(), EntityType::Point, point);
+        }
+
+        // Register all circles
+        for (id, circle) in geometry.get_all_circles() {
+            param_manager.register_entity(id.clone(), EntityType::Circle, circle);
+        }
+
+        // Register all arcs
+        for (id, arc) in geometry.get_all_arcs() {
+            param_manager.register_entity(id.clone(), EntityType::Arc, arc);
+        }
+
+        let constraints = constraint_graph.get_constraints();
+
+        let result = Self::solve_constraints_parametric(
+            &mut param_manager,
+            constraints,
+            self.max_iterations,
+            self.tolerance,
+        );
+
+        // Update geometry with final parameter values
+        Self::sync_geometry_from_parameters(&mut param_manager, geometry)?;
+
+        Ok(result)
+    }
+
+    fn solve_constraints_parametric(
+        param_manager: &mut ParameterManager,
         constraints: &[Box<dyn Constraint>],
         max_iter: usize,
         tolerance: f64,
-    ) -> crate::SolverResult {
+    ) -> SolverResult {
         let mut trust_radius = 1.0;
         let mut prev_residual_norm = f64::INFINITY;
         let mut stagnation_count = 0;
 
-        // Build index map (string ID -> variable index)
-        let mut id_to_index = HashMap::new();
-        let mut index = 0;
-        for key in points.keys() {
-            id_to_index.insert(key.clone(), index);
-            index += 1;
-        }
-
         for iter in 0..max_iter {
-            let (residuals, _) = DogLegSolver::build_system(points, constraints, &id_to_index);
+            let (residuals, _) = Self::build_system_parametric(param_manager, constraints);
             let residual_norm = residuals.norm();
 
             if residual_norm < tolerance {
@@ -63,7 +76,7 @@ impl DogLegSolver {
                     residual_norm
                 );
 
-                return crate::SolverResult::Converged {
+                return SolverResult::Converged {
                     initial_error: prev_residual_norm,
                     final_error: residual_norm,
                     iterations: iter + 1,
@@ -74,7 +87,7 @@ impl DogLegSolver {
             if (residual_norm - prev_residual_norm).abs() < 1e-12 {
                 stagnation_count += 1;
                 if stagnation_count > 5 {
-                    return crate::SolverResult::MaxIterationsReached {
+                    return SolverResult::MaxIterationsReached {
                         initial_error: prev_residual_norm,
                         iterations: iter + 1,
                         final_error: residual_norm,
@@ -85,7 +98,7 @@ impl DogLegSolver {
             }
             prev_residual_norm = residual_norm;
 
-            let rho = DogLegSolver::dog_leg_step(points, constraints, &id_to_index, trust_radius);
+            let rho = Self::dog_leg_step_parametric(param_manager, constraints, trust_radius);
 
             // Update trust radius based on step quality
             if rho > 0.75 {
@@ -96,7 +109,7 @@ impl DogLegSolver {
 
             // Ensure trust radius doesn't get too small
             if trust_radius < 1e-8 {
-                return crate::SolverResult::MaxIterationsReached {
+                return SolverResult::MaxIterationsReached {
                     initial_error: prev_residual_norm,
                     iterations: iter + 1,
                     final_error: residual_norm,
@@ -104,39 +117,38 @@ impl DogLegSolver {
             }
         }
 
-        // If we exit the loop without converging, print final status
-        let (final_residuals, _) = DogLegSolver::build_system(points, constraints, &id_to_index);
+        // If we exit the loop without converging, return final status
+        let (final_residuals, _) = Self::build_system_parametric(param_manager, constraints);
         let final_residual_norm = final_residuals.norm();
         if final_residual_norm >= tolerance {
-            return crate::SolverResult::MaxIterationsReached {
+            return SolverResult::MaxIterationsReached {
                 initial_error: prev_residual_norm,
                 iterations: max_iter,
                 final_error: final_residual_norm,
             };
         }
 
-        crate::SolverResult::Converged {
+        SolverResult::Converged {
             initial_error: prev_residual_norm,
             final_error: final_residual_norm,
             iterations: max_iter,
         }
     }
 
-    pub fn build_system(
-        points: &HashMap<String, Point>,
+    fn build_system_parametric(
+        param_manager: &ParameterManager,
         constraints: &[Box<dyn Constraint>],
-        id_to_index: &HashMap<String, usize>,
     ) -> (DVector<f64>, DMatrix<f64>) {
         let total_residuals: usize = constraints.iter().map(|c| c.num_residuals()).sum();
-        let total_vars = points.len() * 2;
+        let total_vars = param_manager.num_parameters();
 
         let mut residuals = DVector::<f64>::zeros(total_residuals);
         let mut jacobian = DMatrix::<f64>::zeros(total_residuals, total_vars);
 
         let mut row_offset = 0;
         for c in constraints {
-            let r = c.residual(points);
-            let j = c.jacobian(points, &id_to_index);
+            let r = c.residual(param_manager);
+            let j = c.jacobian(param_manager);
 
             residuals.rows_mut(row_offset, r.len()).copy_from(&r);
             jacobian.rows_mut(row_offset, j.nrows()).copy_from(&j);
@@ -147,114 +159,146 @@ impl DogLegSolver {
         (residuals, jacobian)
     }
 
-    fn dog_leg_step(
-        points: &mut HashMap<String, Point>,
+    fn dog_leg_step_parametric(
+        param_manager: &mut ParameterManager,
         constraints: &[Box<dyn Constraint>],
-        id_to_index: &HashMap<String, usize>,
         trust_radius: f64,
     ) -> f64 {
-        let (residuals, jacobian) = DogLegSolver::build_system(points, constraints, id_to_index);
-        let initial_cost = 0.5 * residuals.norm_squared();
+        let (residuals, jacobian) = Self::build_system_parametric(param_manager, constraints);
 
-        // g = J^T r
-        let g = jacobian.transpose() * &residuals;
+        if residuals.norm() < 1e-14 {
+            return 1.0; // Already at solution
+        }
 
-        // B = J^T J
-        let hessian = jacobian.transpose() * jacobian.clone();
+        // Gauss-Newton step
+        let jt = jacobian.transpose();
+        let jtj = &jt * &jacobian;
+        let jtr = &jt * &residuals;
 
-        // p_b = solve(B, -g) using pseudo-inverse for singular matrices
-        let p_b = match hessian.clone().lu().solve(&(-&g)) {
-            Some(solution) => solution,
+        // Clone jtj and jtr for later use
+        let jtj_clone = jtj.clone();
+        let jtr_clone = jtr.clone();
+
+        // Use pseudo-inverse for robustness
+        let gn_step = match jtj.try_inverse() {
+            Some(inv) => -inv * &jtr,
             None => {
-                // Matrix is singular, use pseudo-inverse approach
-
-                let svd = hessian.clone().svd(true, true);
-                let tolerance = 1e-12;
-                let mut s_inv = DVector::zeros(svd.singular_values.len());
-                for (i, &s) in svd.singular_values.iter().enumerate() {
-                    if s > tolerance {
-                        s_inv[i] = 1.0 / s;
-                    }
-                }
-                let u = svd.u.unwrap();
-                let vt = svd.v_t.unwrap();
-                let s_inv_mat = DMatrix::from_diagonal(&s_inv);
-                vt.transpose() * s_inv_mat * u.transpose() * (-&g)
+                // Use SVD-based pseudo-inverse for rank-deficient cases
+                let svd = jtj_clone.svd(true, true);
+                -svd.pseudo_inverse(1e-12).unwrap() * &jtr
             }
         };
 
-        // pU = -alpha * g
-        let g_tg = g.dot(&g);
-        let bg = &hessian * &g;
-        let alpha = if g.dot(&bg) > 1e-12 {
-            g_tg / g.dot(&bg)
+        // Gradient step
+        let gradient = jtr_clone;
+        let grad_step = if gradient.norm() > 1e-14 {
+            let alpha = gradient.dot(&gradient) / (&jacobian * &gradient).norm_squared();
+            -alpha * &gradient
         } else {
-            0.0
-        };
-        let p_u = -&g * alpha;
-
-        let step = if p_b.norm() <= trust_radius {
-            p_b
-        } else if p_u.norm() >= trust_radius {
-            p_u.normalize() * trust_radius
-        } else {
-            let diff = &p_b - &p_u;
-            let tau = DogLegSolver::solve_tau(&p_u, &diff, trust_radius);
-            &p_u + diff * tau
+            DVector::zeros(gradient.len())
         };
 
-        // Store original positions
-        let original_points = points.clone();
+        // Compute dog leg step
+        let gn_norm = gn_step.norm();
+        let grad_norm = grad_step.norm();
 
-        // Apply step only to non-fixed points
-        for (id, idx) in id_to_index {
-            let point = points.get_mut(id).expect("Point not found");
-            if !point.fixed {
-                point.x += step[*idx * 2];
-                point.y += step[*idx * 2 + 1];
+        let step = if gn_norm <= trust_radius {
+            gn_step
+        } else if grad_norm >= trust_radius {
+            (trust_radius / grad_norm) * grad_step
+        } else {
+            // Dog leg interpolation
+            let beta_num = trust_radius * trust_radius - grad_norm * grad_norm;
+            let diff = &gn_step - &grad_step;
+            let beta_denom = diff.dot(&diff);
+            let beta = if beta_denom > 1e-14 {
+                (-grad_step.dot(&diff)
+                    + (grad_step.dot(&diff).powi(2) + beta_denom * beta_num).sqrt())
+                    / beta_denom
+            } else {
+                0.0
+            };
+            grad_step + beta * diff
+        };
+
+        // Apply step to parameters (only non-fixed ones)
+        let old_params = param_manager.get_parameters().to_vec();
+        let old_residual_norm = residuals.norm();
+
+        // Apply step (collect fixed status to avoid borrowing issues)
+        let fixed_params: Vec<bool> = param_manager
+            .get_parameter_info()
+            .iter()
+            .map(|info| info.is_fixed)
+            .collect();
+
+        for (i, &step_val) in step.iter().enumerate() {
+            if i < fixed_params.len() && !fixed_params[i] {
+                let new_val = old_params[i] + step_val;
+                let _ = param_manager.set_parameter(i, new_val);
             }
         }
 
-        // Calculate new cost
-        let (new_residuals, _) = DogLegSolver::build_system(points, constraints, id_to_index);
-        let new_cost = 0.5 * new_residuals.norm_squared();
+        // Compute new residuals
+        let (new_residuals, _) = Self::build_system_parametric(param_manager, constraints);
+        let new_residual_norm = new_residuals.norm();
 
-        // Calculate actual vs predicted reduction
-        let actual_reduction = initial_cost - new_cost;
-        let predicted_reduction = -g.dot(&step) - 0.5 * step.dot(&(&hessian * &step));
+        // Compute step quality
+        let jt_jacobian = &jt * &jacobian;
+        let predicted_reduction = old_residual_norm.powi(2)
+            - (old_residual_norm.powi(2)
+                + 2.0 * gradient.dot(&step)
+                + step.dot(&(&jt_jacobian * &step)));
+        let actual_reduction = old_residual_norm.powi(2) - new_residual_norm.powi(2);
 
-        let rho = if predicted_reduction.abs() > 1e-12 {
-            actual_reduction / predicted_reduction
+        let rho = if predicted_reduction.abs() < 1e-14 {
+            1.0 // Perfect step when prediction is negligible
         } else {
-            0.0
+            actual_reduction / predicted_reduction
         };
 
-        // If step made things worse, revert
-        if rho < 0.0 {
-            for (id, _idx) in id_to_index {
-                let point = points.get_mut(id).expect("Point not found");
-                *point = original_points[id].clone();
+        // If step quality is poor, revert the step
+        if rho < 0.1 {
+            // Revert parameters
+            for (i, &old_val) in old_params.iter().enumerate() {
+                if i < fixed_params.len() && !fixed_params[i] {
+                    let _ = param_manager.set_parameter(i, old_val);
+                }
             }
-
-            // for (i, point) in points.iter_mut() {
-            //     *point = original_points[i].clone();
-            // }
         }
 
         rho
     }
 
-    fn solve_tau(p_u: &DVector<f64>, diff: &DVector<f64>, trust_radius: f64) -> f64 {
-        let a = diff.dot(diff);
-        let b = 2.0 * p_u.dot(diff);
-        let c = p_u.dot(p_u) - trust_radius * trust_radius;
-        let disc = b * b - 4.0 * a * c;
-
-        if disc < 0.0 {
-            return 0.0;
+    fn sync_geometry_from_parameters(
+        param_manager: &mut ParameterManager,
+        geometry: &mut GeometrySystem,
+    ) -> Result<(), String> {
+        // Update points
+        for (id, point) in geometry.get_all_points_mut() {
+            param_manager.update_entity_parameters(id, point)?;
         }
-        let t1 = (-b + disc.sqrt()) / (2.0 * a);
-        let t2 = (-b - disc.sqrt()) / (2.0 * a);
-        if t1 >= 0.0 && t1 <= 1.0 { t1 } else { t2 }
+
+        // Update circles
+        for (id, circle) in geometry.get_all_circles_mut() {
+            param_manager.update_entity_parameters(id, circle)?;
+        }
+
+        // Update arcs
+        for (id, arc) in geometry.get_all_arcs_mut() {
+            param_manager.update_entity_parameters(id, arc)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Solver for ParametricDogLegSolver {
+    fn solve(
+        &self,
+        geometry: &mut GeometrySystem,
+        constraint_graph: &ConstraintGraph,
+    ) -> Result<SolverResult, String> {
+        self.solve_parametric(geometry, constraint_graph)
     }
 }

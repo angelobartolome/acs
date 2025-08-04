@@ -22,7 +22,7 @@ impl Constraint for CoincidentConstraint {
         2
     }
 
-    fn residual_parametric(&self, param_manager: &ParameterManager) -> DVector<f64> {
+    fn residual(&self, param_manager: &ParameterManager) -> DVector<f64> {
         // Get the parameter indices for both points
         let p1_x_idx = param_manager
             .get_global_index(&self.p1, 0)
@@ -49,7 +49,7 @@ impl Constraint for CoincidentConstraint {
         ])
     }
 
-    fn jacobian_parametric(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
+    fn jacobian(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
         let total_params = param_manager.num_parameters();
         let mut J = DMatrix::<f64>::zeros(2, total_params);
 
@@ -68,37 +68,6 @@ impl Constraint for CoincidentConstraint {
             J[(1, p1_y_idx)] = 1.0; // d(y1-y2)/dy1
             J[(1, p2_y_idx)] = -1.0; // d(y1-y2)/dy2
         }
-
-        J
-    }
-
-    fn residual(&self, points: &HashMap<String, Point>) -> DVector<f64> {
-        let x1 = points[&self.p1].x;
-        let y1 = points[&self.p1].y;
-        let x2 = points[&self.p2].x;
-        let y2 = points[&self.p2].y;
-
-        DVector::from(vec![
-            x1 - x2, // Residual for x-coordinates
-            y1 - y2, // Residual for y-coordinates
-        ])
-    }
-
-    fn jacobian(
-        &self,
-        points: &HashMap<String, Point>,
-        id_to_index: &HashMap<String, usize>,
-    ) -> DMatrix<f64> {
-        let cols = points.len() * 2;
-        let mut J = DMatrix::<f64>::zeros(2, cols);
-
-        // Row 0: X residual
-        J[(0, id_to_index[&self.p1] * 2)] = 1.0; // d(x1-x2)/dx1
-        J[(0, id_to_index[&self.p2] * 2)] = -1.0; // d(x1-x2)/dx2
-
-        // Row 1: Y residual
-        J[(1, id_to_index[&self.p1] * 2 + 1)] = 1.0; // d(y1-y2)/dy1
-        J[(1, id_to_index[&self.p2] * 2 + 1)] = -1.0; // d(y1-y2)/dy2
 
         J
     }

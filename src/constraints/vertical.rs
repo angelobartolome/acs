@@ -22,7 +22,7 @@ impl Constraint for VerticalConstraint {
         1
     }
 
-    fn residual_parametric(&self, param_manager: &ParameterManager) -> DVector<f64> {
+    fn residual(&self, param_manager: &ParameterManager) -> DVector<f64> {
         // Get x coordinates of both points
         let p1_x_idx = param_manager
             .get_global_index(&self.p1, 0)
@@ -38,7 +38,7 @@ impl Constraint for VerticalConstraint {
         DVector::from(vec![p1_x - p2_x])
     }
 
-    fn jacobian_parametric(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
+    fn jacobian(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
         let total_params = param_manager.num_parameters();
         let mut J = DMatrix::<f64>::zeros(1, total_params);
 
@@ -50,24 +50,6 @@ impl Constraint for VerticalConstraint {
         if let Some(p2_x_idx) = param_manager.get_global_index(&self.p2, 0) {
             J[(0, p2_x_idx)] = -1.0; // derivative wrt p2.x
         }
-
-        J
-    }
-
-    fn residual(&self, points: &HashMap<String, Point>) -> DVector<f64> {
-        DVector::from(vec![points[&self.p1].x - points[&self.p2].x])
-    }
-
-    fn jacobian(
-        &self,
-        points: &HashMap<String, Point>,
-        id_to_index: &HashMap<String, usize>,
-    ) -> DMatrix<f64> {
-        let cols = points.len() * 2;
-        let mut J = DMatrix::<f64>::zeros(1, cols);
-
-        J[(0, id_to_index[&self.p1] * 2)] = 1.0; // derivative wrt p1.x
-        J[(0, id_to_index[&self.p2] * 2)] = -1.0; // derivative wrt p2.x
 
         J
     }

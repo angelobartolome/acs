@@ -25,7 +25,7 @@ impl Constraint for EqualRadiusConstraint {
         1
     }
 
-    fn residual_parametric(&self, param_manager: &ParameterManager) -> DVector<f64> {
+    fn residual(&self, param_manager: &ParameterManager) -> DVector<f64> {
         // Get radius parameters of both circles
         // Circles now have parameters [radius] with radius at index 0
         let c1_radius_idx = param_manager
@@ -43,7 +43,7 @@ impl Constraint for EqualRadiusConstraint {
         DVector::from(vec![c1_radius - c2_radius])
     }
 
-    fn jacobian_parametric(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
+    fn jacobian(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
         let total_params = param_manager.num_parameters();
         let mut J = DMatrix::<f64>::zeros(1, total_params);
 
@@ -57,23 +57,5 @@ impl Constraint for EqualRadiusConstraint {
         }
 
         J
-    }
-
-    fn residual(&self, _points: &HashMap<String, Point>) -> DVector<f64> {
-        // This constraint doesn't work with just points - it needs circles
-        // For backward compatibility, return a zero residual
-        // In practice, this should not be called for circle constraints
-        DVector::from(vec![0.0])
-    }
-
-    fn jacobian(
-        &self,
-        points: &HashMap<String, Point>,
-        _id_to_index: &HashMap<String, usize>,
-    ) -> DMatrix<f64> {
-        // This constraint doesn't work with just points - it needs circles
-        // For backward compatibility, return a zero jacobian
-        let cols = points.len() * 2;
-        DMatrix::<f64>::zeros(1, cols)
     }
 }

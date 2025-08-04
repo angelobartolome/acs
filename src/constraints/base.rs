@@ -1,33 +1,11 @@
-use std::collections::HashMap;
-
 use nalgebra::{DMatrix, DVector};
 
-use crate::{ParameterManager, Point};
+use crate::ParameterManager;
 
 pub trait Constraint {
     fn num_residuals(&self) -> usize;
-
-    /// Compute residual using the parameter manager
-    fn residual_parametric(&self, _param_manager: &ParameterManager) -> DVector<f64> {
-        // Default implementation: fallback to old method by extracting points
-        // This is temporary for backward compatibility
-        unimplemented!("residual_parametric not implemented for this constraint");
-    }
-
-    /// Compute jacobian using the parameter manager
-    fn jacobian_parametric(&self, _param_manager: &ParameterManager) -> DMatrix<f64> {
-        // Default implementation: fallback to old method
-        // This is temporary for backward compatibility
-        unimplemented!("jacobian_parametric not implemented for this constraint");
-    }
-
-    // Keep the old methods for backward compatibility during transition
-    fn residual(&self, points: &HashMap<String, Point>) -> DVector<f64>;
-    fn jacobian(
-        &self,
-        points: &HashMap<String, Point>,
-        id_to_index: &HashMap<String, usize>,
-    ) -> DMatrix<f64>;
+    fn residual(&self, _param_manager: &ParameterManager) -> DVector<f64>;
+    fn jacobian(&self, _param_manager: &ParameterManager) -> DMatrix<f64>;
 }
 
 #[derive(Debug, Clone, PartialEq)]

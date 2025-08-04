@@ -22,18 +22,22 @@ impl Constraint for HorizontalConstraint {
         1
     }
 
-    fn residual_parametric(&self, param_manager: &ParameterManager) -> DVector<f64> {
+    fn residual(&self, param_manager: &ParameterManager) -> DVector<f64> {
         // Get the y parameters for both points
-        let p1_y_idx = param_manager.get_global_index(&self.p1, 1).expect("Point 1 not found");
-        let p2_y_idx = param_manager.get_global_index(&self.p2, 1).expect("Point 2 not found");
+        let p1_y_idx = param_manager
+            .get_global_index(&self.p1, 1)
+            .expect("Point 1 not found");
+        let p2_y_idx = param_manager
+            .get_global_index(&self.p2, 1)
+            .expect("Point 2 not found");
         let params = param_manager.get_parameters();
         let y1 = params[p1_y_idx];
         let y2 = params[p2_y_idx];
-        
+
         DVector::from(vec![y1 - y2])
     }
 
-    fn jacobian_parametric(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
+    fn jacobian(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
         let total_params = param_manager.num_parameters();
         let mut J = DMatrix::<f64>::zeros(1, total_params);
 
@@ -42,30 +46,9 @@ impl Constraint for HorizontalConstraint {
             param_manager.get_global_index(&self.p1, 1),
             param_manager.get_global_index(&self.p2, 1),
         ) {
-            J[(0, p1_y_idx)] = 1.0;  // derivative wrt p1.y
+            J[(0, p1_y_idx)] = 1.0; // derivative wrt p1.y
             J[(0, p2_y_idx)] = -1.0; // derivative wrt p2.y
         }
-
-        J
-    }
-
-    fn residual(&self, points: &HashMap<String, Point>) -> DVector<f64> {
-        DVector::from(vec![points[&self.p1].y - points[&self.p2].y])
-    }
-
-    fn jacobian(
-        &self,
-        points: &HashMap<String, Point>,
-        id_to_index: &HashMap<String, usize>,
-    ) -> DMatrix<f64> {
-        let cols = points.len() * 2;
-        let mut J = DMatrix::<f64>::zeros(1, cols);
-
-        J[(0, id_to_index[&self.p1] * 2 + 1)] = 1.0; // derivative wrt p1.y
-        J[(0, id_to_index[&self.p2] * 2 + 1)] = -1.0; // derivative wrt p2.y
-
-        // J[(0, self.p1 * 2 + 1)] = 1.0; // derivative wrt p1.y
-        // J[(0, self.p2 * 2 + 1)] = -1.0; // derivative wrt p2.y
 
         J
     }

@@ -24,7 +24,7 @@ fn test_equal_radius_constraint_residual() {
     let constraint = EqualRadiusConstraint::new("c1".to_string(), "c2".to_string());
 
     // Test residual calculation
-    let residual = constraint.residual_parametric(&param_manager);
+    let residual = constraint.residual(&param_manager);
 
     // Expected residual: radius1 - radius2 = 5.0 - 3.0 = 2.0
     assert_eq!(residual.len(), 1);
@@ -56,7 +56,7 @@ fn test_equal_radius_constraint_jacobian() {
     let constraint = EqualRadiusConstraint::new("c1".to_string(), "c2".to_string());
 
     // Test jacobian calculation
-    let jacobian = constraint.jacobian_parametric(&param_manager);
+    let jacobian = constraint.jacobian(&param_manager);
 
     // Should have 1 row (one constraint) and 6 columns (2 points × 2 parameters + 2 circles × 1 parameter each)
     assert_eq!(jacobian.nrows(), 1);
@@ -105,7 +105,7 @@ fn test_equal_radius_constraint_zero_residual() {
     let constraint = EqualRadiusConstraint::new("c1".to_string(), "c2".to_string());
 
     // Test residual calculation
-    let residual = constraint.residual_parametric(&param_manager);
+    let residual = constraint.residual(&param_manager);
 
     // Expected residual: radius1 - radius2 = 4.0 - 4.0 = 0.0
     assert_eq!(residual.len(), 1);
@@ -120,26 +120,6 @@ fn test_equal_radius_constraint_zero_residual() {
 fn test_equal_radius_constraint_num_residuals() {
     let constraint = EqualRadiusConstraint::new("c1".to_string(), "c2".to_string());
     assert_eq!(constraint.num_residuals(), 1);
-}
-
-#[test]
-fn test_equal_radius_constraint_backward_compatibility() {
-    // Test the legacy methods that should return zeros for backward compatibility
-    use std::collections::HashMap;
-
-    let constraint = EqualRadiusConstraint::new("c1".to_string(), "c2".to_string());
-    let points = HashMap::new();
-    let id_to_index = HashMap::new();
-
-    // Test legacy residual method
-    let residual = constraint.residual(&points);
-    assert_eq!(residual.len(), 1);
-    assert_eq!(residual[0], 0.0);
-
-    // Test legacy jacobian method
-    let jacobian = constraint.jacobian(&points, &id_to_index);
-    assert_eq!(jacobian.nrows(), 1);
-    assert_eq!(jacobian.ncols(), 0); // No points, so 0 columns
 }
 
 #[test]
