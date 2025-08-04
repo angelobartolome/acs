@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { Point2D } from "./components/Point2D";
 import { Vector2 } from "three";
 import { Line2D } from "./components/Line2D";
-import init, { ConstraintSolver, Line, Point } from "acs";
+import init, { ConstraintSolver, Circle, Point } from "acs";
+import { Circle2D } from "./components/Circle2D";
 
 let solver: ConstraintSolver;
 
@@ -13,13 +14,18 @@ await init().then(() => {
   solver = new ConstraintSolver();
 });
 
-type Primitive = Point;
+type Primitive = Point | Circle;
 
 export default function App() {
   const [primitives, setPrimitives] = useState<Primitive[]>([]);
   const [constraints, setConstraints] = useState<
     {
-      type: "horizontal" | "vertical" | "parallel" | "point_on_line";
+      type:
+        | "horizontal"
+        | "vertical"
+        | "parallel"
+        | "point_on_line"
+        | "equal_radius";
       points: string[];
     }[]
   >([]);
@@ -33,16 +39,28 @@ export default function App() {
     const pB = new Point("1", 1, 1, false);
     const pC = new Point("3", 0.4, 1.3, false);
     const pD = new Point("4", 0.5, 0.5, false);
-    setPrimitives([pA, pB, pC, pD]);
+
+    // Circles
+
+    const centerA = new Point("centerA", 0, 1, false);
+    const centerB = new Point("centerB", 1.5, 1.5, false);
+
+    const circle = new Circle("c", "centerA", 0.5, false);
+    const circleB = new Circle("d", "centerB", 0.2, false);
+
+    setPrimitives([pA, pB, pC, pD, centerA, centerB, circle, circleB]);
   }, [setPrimitives]);
 
   console.log(constraints);
 
-  const solve = (pList: Point[], cList: any) => {
+  const solve = (pList: (Point | Circle)[], cList: any) => {
     solver.reset();
     pList.forEach((p) => {
       if (p instanceof Point) {
         solver.add_point(p);
+      }
+      if (p instanceof Circle) {
+        solver.add_circle(p);
       }
     });
 
@@ -62,6 +80,9 @@ export default function App() {
       } else if (c.type === "point_on_line") {
         const [p, pA, pB] = c.points;
         solver.add_point_on_line_constraint(p, pA, pB);
+      } else if (c.type === "equal_radius") {
+        const [cA, cB] = c.points;
+        solver.add_equal_radius_constraint(cA, cB);
       }
     });
 
@@ -77,13 +98,30 @@ export default function App() {
           );
           return new Point(p.id, updatedPoint.x, updatedPoint.y, false);
         }
+      } else if (p instanceof Circle) {
+        const updatedCircle = solver.get_circle(p.id);
+        if (updatedCircle) {
+          console.log(updatedCircle);
+
+          return new Circle(
+            p.id,
+            updatedCircle.center,
+            updatedCircle.radius,
+            false
+          );
+        }
       }
       return p;
     });
   };
 
   const addConstraint = (
-    type: "horizontal" | "vertical" | "parallel" | "point_on_line"
+    type:
+      | "horizontal"
+      | "vertical"
+      | "parallel"
+      | "point_on_line"
+      | "equal_radius"
   ) => {
     if (selectedPrimitiveIds.length < 2) {
       alert("Select two primitives to add a constraint.");
@@ -94,7 +132,11 @@ export default function App() {
       selectedPrimitiveIds.includes(p.id)
     );
 
-    if (type === "horizontal" || type === "vertical") {
+    if (
+      type === "horizontal" ||
+      type === "vertical" ||
+      type === "equal_radius"
+    ) {
       if (selectedPrimitives.length !== 2) {
         alert("Select exactly two points for horizontal/vertical constraints.");
         return;
@@ -156,6 +198,32 @@ export default function App() {
             }}
           />
         );
+      } else if (primitive instanceof Circle) {
+        console.log(primitives);
+        let centerPoint = primitives.find(
+          (p) => p.id === primitive.center
+        ) as Point;
+
+        console.log(
+          `Rendering Circle: ${primitive.id} with center ${centerPoint.x}, ${centerPoint.y} and radius ${primitive.radius}`
+        );
+        return (
+          <Circle2D
+            selected={selectedPrimitiveIds.includes(primitive.id)}
+            center={new Vector2(centerPoint.x, centerPoint.y)}
+            radius={primitive.radius}
+            key={`c-${primitive.id}`}
+            onClick={() => {
+              setSelectedPrimitiveIds((prev) => {
+                if (prev.includes(primitive.id)) {
+                  return prev.filter((id) => id !== primitive.id);
+                } else {
+                  return [...prev, primitive.id];
+                }
+              });
+            }}
+          />
+        );
       }
       return null;
     });
@@ -164,7 +232,7 @@ export default function App() {
   return (
     <Canvas
       orthographic
-      camera={{ position: [0, 0, 200], rotation: [0, 0, 0], zoom: 200 }}
+      camera={{ position: [0, 0, 200], rotation: [0, 0, 0], zoom: 100 }}
       gl={{ antialias: true }}
       style={{ height: "100vh", width: "100vw" }}
     >
@@ -198,6 +266,9 @@ export default function App() {
 
             <button onClick={() => addConstraint("point_on_line")}>
               Add Point on Line Constraint
+            </button>
+            <button onClick={() => addConstraint("equal_radius")}>
+              Add Equal Radius Constraint
             </button>
             <button
               onClick={() => setPrimitives(solve(primitives, constraints))}
