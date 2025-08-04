@@ -62,15 +62,15 @@ fn main() {
     let mut solver = ConstraintSolver::new();
 
     // Add points
-    let p1_id = solver.add_point(Point::new(0, 0.0, 0.0, false));
-    let p2_id = solver.add_point(Point::new(1, 1.0, 1.0, false));
+    let p1 = Point::new(String::from("p1"), 0.0, 0.0, false);
+    let p2 = Point::new(String::from("p2"), 1.0, 1.0, false);
 
-    // Create a line between the points
-    let line = solver.add_line(Line::new(2, p1_id, p2_id));
+    solver.add_point(p1);
+    solver.add_point(p2);
 
     // Add a vertical constraint to the line
     solver
-        .add_constraint(ConstraintType::Vertical(line))
+        .add_constraint(ConstraintType::Vertical("p1".into(), "p2".into()))
         .unwrap();
 
     // Solve the constraint system
@@ -86,8 +86,8 @@ fn main() {
     }
 
     // Get the final positions
-    let start = solver.get_point(p1_id).unwrap();
-    let end = solver.get_point(p2_id).unwrap();
+    let start = solver.get_point("p1".into()).unwrap();
+    let end = solver.get_point("p2".into()).unwrap();
     println!("Line endpoints: ({}, {}) to ({}, {})", start.x, start.y, end.x, end.y);
 }
 
