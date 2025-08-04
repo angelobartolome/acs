@@ -1,10 +1,9 @@
 #![allow(non_snake_case)] // Makes sense for mathematical variables
 #![allow(unused_parens)]
-use std::collections::HashMap;
 
 use nalgebra::{DMatrix, DVector};
 
-use crate::{ParameterManager, Point, constraints::Constraint};
+use crate::{ParameterManager, constraints::Constraint};
 
 pub struct VerticalConstraint {
     pub p1: String, // Index of the first point
