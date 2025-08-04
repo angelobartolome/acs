@@ -29,8 +29,8 @@ ACS is a library for solving geometric constraint systems.
   - [ ] Angle constraints (force lines to form a specific angle)
   - [ ] Dimension constraints (force lines/points to have specific lengths or distances)
 - **Solvers**:
-  - [ ] - Dog-Leg solver (combines Gauss-Newton and gradient descent) **WIP** :warning:
-- **WebAssembly Support**: Compile to WASM for use in web applications **WIP** :warning:
+  - [x] - Dog-Leg solver :white_check_mark:
+- **WebAssembly Support**: Compile to WASM for use in web applications :white_check_mark:
 
 ## Installation
 
