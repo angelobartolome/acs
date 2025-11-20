@@ -15,6 +15,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   build:
@@ -28,6 +29,8 @@ jobs:
       run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
     - name: Cache
       uses: Swatinem/rust-cache@v2
+    - name: Lint
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Build
       run: cargo build --verbose
     - name: Run tests
