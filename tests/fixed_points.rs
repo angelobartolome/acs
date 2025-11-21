@@ -24,7 +24,7 @@ fn test_fixed_points() {
         Ok(result) => {
             assert!(matches!(result, SolverResult::Converged { .. }));
         }
-        Err(e) => panic!("Solver error: {}", e),
+        Err(e) => panic!("Solver error: {e}"),
     }
 
     // Check the final position of the movable point

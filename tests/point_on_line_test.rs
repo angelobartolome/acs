@@ -28,15 +28,15 @@ fn test_point_on_line_constraint() {
         SolverResult::Converged { final_error, .. } => {
             assert!(final_error < 1e-3);
         }
-        final_result => panic!("Solver should have converged, got: {:?}", final_result),
+        final_result => panic!("Solver should have converged, got: {final_result:?}"),
     }
 
     let constrained_point = solver.get_point("3".into()).expect("Point 3 should exist");
 
     // The point should have x-coordinate = 0
+    let x = constrained_point.x;
     assert!(
-        (constrained_point.x).abs() < 0.001,
-        "Expected point to be on the vertical line at x = 0, got x = {}",
-        constrained_point.x
+        x.abs() < 0.001,
+        "Expected point to be on the vertical line at x = 0, got x = {x}"
     );
 }

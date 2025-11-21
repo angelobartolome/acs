@@ -22,7 +22,7 @@ fn test_coincident_constraint() {
         SolverResult::Converged { final_error, .. } => {
             assert!(final_error < 1e-6);
         }
-        final_result => panic!("Solver should have converged, got: {:?}", final_result),
+        final_result => panic!("Solver should have converged, got: {final_result:?}"),
     }
 
     let point_a = solver.get_point(String::from("p1")).expect("Point p1 should exist");

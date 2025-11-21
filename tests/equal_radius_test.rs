@@ -173,8 +173,7 @@ fn test_equal_radius_constraint_solver_integration() {
         SolverResult::Converged { final_error, .. } => {
             assert!(
                 final_error < 1e-6,
-                "Expected small final error, got {}",
-                final_error
+                "Expected small final error, got {final_error}"
             );
         }
         _ => panic!("Solver should have converged"),
