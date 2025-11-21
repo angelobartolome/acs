@@ -69,6 +69,10 @@ impl ConstraintSolver {
         self.geometry.add_line(line)
     }
 
+    pub fn add_arc(&mut self, arc: crate::geometry::Arc) -> String {
+        self.geometry.add_arc(arc)
+    }
+
     pub fn add_constraint(&mut self, constraint_type: ConstraintType) -> Result<(), String> {
         self.constraint_graph
             .constraints
@@ -87,6 +91,30 @@ impl ConstraintSolver {
 
     pub fn get_circle(&self, id: String) -> Option<&crate::geometry::Circle> {
         self.geometry.get_circle(&id)
+    }
+
+    pub fn get_line(&self, id: String) -> Option<&crate::geometry::Line> {
+        self.geometry.get_line(&id)
+    }
+
+    pub fn get_arc(&self, id: String) -> Option<&crate::geometry::Arc> {
+        self.geometry.get_arc(&id)
+    }
+
+    pub fn get_all_points(&self) -> &std::collections::HashMap<String, Point> {
+        self.geometry.get_all_points()
+    }
+
+    pub fn get_all_circles(&self) -> &std::collections::HashMap<String, crate::geometry::Circle> {
+        self.geometry.get_all_circles()
+    }
+
+    pub fn get_all_lines(&self) -> &std::collections::HashMap<String, crate::geometry::Line> {
+        self.geometry.get_all_lines()
+    }
+
+    pub fn get_all_arcs(&self) -> &std::collections::HashMap<String, crate::geometry::Arc> {
+        self.geometry.get_all_arcs()
     }
 
     pub fn print_state(&self) {

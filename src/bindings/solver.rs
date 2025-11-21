@@ -1,6 +1,10 @@
 use wasm_bindgen::prelude::wasm_bindgen;
+use serde_json;
 
 use crate::ConstraintSolver;
+use crate::bindings::types::{
+    PrimitiveJson, ConstraintJson, SolverRequest, SolverResponse, SolverResultJson,
+};
 
 #[wasm_bindgen(js_name = ConstraintSolver)]
 
@@ -107,6 +111,201 @@ impl WrappedConstraintSolver {
 
     pub fn get_circle(&self, id: &str) -> Option<crate::Circle> {
         self.inner.get_circle(id.to_string()).cloned()
+    }
+
+    // JSON-based methods for generic frontend interface
+    pub fn add_primitives_json(&mut self, json: String) -> Result<String, String> {
+        let primitives: Vec<PrimitiveJson> = serde_json::from_str(&json)
+            .map_err(|e| format!("Failed to parse primitives JSON: {}", e))?;
+
+        for primitive in primitives {
+            match primitive {
+                PrimitiveJson::Point { id, x, y, fixed } => {
+                    self.inner.add_point(crate::Point { id, x, y, fixed });
+                }
+                PrimitiveJson::Circle {
+                    id,
+                    center,
+                    radius,
+                    fixed,
+                } => {
+                    self.inner.add_circle(crate::Circle {
+                        id,
+                        center,
+                        radius,
+                        fixed,
+                    });
+                }
+                PrimitiveJson::Line { id, start, end } => {
+                    self.inner.add_line(crate::Line { id, start, end });
+                }
+                PrimitiveJson::Arc {
+                    id,
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                    fixed,
+                } => {
+                    self.inner.add_arc(crate::Arc {
+                        id,
+                        center,
+                        radius,
+                        start_angle,
+                        end_angle,
+                        fixed,
+                    });
+                }
+            }
+        }
+
+        Ok("Primitives added successfully".to_string())
+    }
+
+    pub fn add_constraints_json(&mut self, json: String) -> Result<String, String> {
+        let constraints: Vec<ConstraintJson> = serde_json::from_str(&json)
+            .map_err(|e| format!("Failed to parse constraints JSON: {}", e))?;
+
+        for constraint_json in constraints {
+            let constraint_type: crate::ConstraintType = constraint_json
+                .try_into()
+                .map_err(|e| format!("Failed to convert constraint: {}", e))?;
+            self.inner
+                .add_constraint(constraint_type)
+                .map_err(|e| format!("Failed to add constraint: {}", e))?;
+        }
+
+        Ok("Constraints added successfully".to_string())
+    }
+
+    pub fn solve_and_get_state_json(&mut self) -> Result<String, String> {
+        // Solve first
+        let solver_result = self.inner.solve().map_err(|e| e.to_string())?;
+
+        // Collect all primitives
+        let mut primitives = Vec::new();
+
+        // Add all points
+        for (_id, point) in self.inner.get_all_points() {
+            primitives.push(PrimitiveJson::from(point.clone()));
+        }
+
+        // Add all circles
+        for (_id, circle) in self.inner.get_all_circles() {
+            primitives.push(PrimitiveJson::from(circle.clone()));
+        }
+
+        // Add all lines
+        for (_id, line) in self.inner.get_all_lines() {
+            primitives.push(PrimitiveJson::from(line.clone()));
+        }
+
+        // Add all arcs
+        for (_id, arc) in self.inner.get_all_arcs() {
+            primitives.push(PrimitiveJson::from(arc.clone()));
+        }
+
+        let response = SolverResponse {
+            primitives,
+            result: SolverResultJson::from(solver_result),
+        };
+
+        serde_json::to_string(&response)
+            .map_err(|e| format!("Failed to serialize response: {}", e))
+    }
+
+    pub fn solve_from_json(&mut self, json: String) -> Result<String, String> {
+        let request: SolverRequest = serde_json::from_str(&json)
+            .map_err(|e| format!("Failed to parse request JSON: {}", e))?;
+
+        // Reset solver
+        self.inner = ConstraintSolver::new();
+
+        // Add all primitives
+        for primitive in request.primitives {
+            match primitive {
+                PrimitiveJson::Point { id, x, y, fixed } => {
+                    self.inner.add_point(crate::Point { id, x, y, fixed });
+                }
+                PrimitiveJson::Circle {
+                    id,
+                    center,
+                    radius,
+                    fixed,
+                } => {
+                    self.inner.add_circle(crate::Circle {
+                        id,
+                        center,
+                        radius,
+                        fixed,
+                    });
+                }
+                PrimitiveJson::Line { id, start, end } => {
+                    self.inner.add_line(crate::Line { id, start, end });
+                }
+                PrimitiveJson::Arc {
+                    id,
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                    fixed,
+                } => {
+                    self.inner.add_arc(crate::Arc {
+                        id,
+                        center,
+                        radius,
+                        start_angle,
+                        end_angle,
+                        fixed,
+                    });
+                }
+            }
+        }
+
+        // Add all constraints
+        for constraint_json in request.constraints {
+            let constraint_type: crate::ConstraintType = constraint_json
+                .try_into()
+                .map_err(|e| format!("Failed to convert constraint: {}", e))?;
+            self.inner
+                .add_constraint(constraint_type)
+                .map_err(|e| format!("Failed to add constraint: {}", e))?;
+        }
+
+        // Solve
+        let solver_result = self.inner.solve().map_err(|e| e.to_string())?;
+
+        // Collect all primitives
+        let mut primitives = Vec::new();
+
+        // Add all points
+        for (_id, point) in self.inner.get_all_points() {
+            primitives.push(PrimitiveJson::from(point.clone()));
+        }
+
+        // Add all circles
+        for (_id, circle) in self.inner.get_all_circles() {
+            primitives.push(PrimitiveJson::from(circle.clone()));
+        }
+
+        // Add all lines
+        for (_id, line) in self.inner.get_all_lines() {
+            primitives.push(PrimitiveJson::from(line.clone()));
+        }
+
+        // Add all arcs
+        for (_id, arc) in self.inner.get_all_arcs() {
+            primitives.push(PrimitiveJson::from(arc.clone()));
+        }
+
+        let response = SolverResponse {
+            primitives,
+            result: SolverResultJson::from(solver_result),
+        };
+
+        serde_json::to_string(&response)
+            .map_err(|e| format!("Failed to serialize response: {}", e))
     }
     // Add more methods as needed
 }

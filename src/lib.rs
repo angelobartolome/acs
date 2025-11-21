@@ -15,4 +15,5 @@ pub use solver::*;
 pub mod bindings {
     pub mod geometry;
     pub mod solver;
+    pub mod types;
 }
