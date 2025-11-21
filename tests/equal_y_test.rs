@@ -9,9 +9,9 @@ fn test_equal_y_constraint() {
 
     solver
         .add_constraint(ConstraintType::EqualY(String::from("p1"), 5.0))
-        .unwrap();
+        .expect("Constraint should be added successfully");
 
-    let result = solver.solve().unwrap();
+    let result = solver.solve().expect("Solver should solve successfully");
 
     match result {
         SolverResult::Converged { final_error, .. } => {
@@ -20,7 +20,7 @@ fn test_equal_y_constraint() {
         final_result => panic!("Solver should have converged, got: {:?}", final_result),
     }
 
-    let start = solver.get_point(String::from("p1")).unwrap();
+    let start = solver.get_point(String::from("p1")).expect("Point p1 should exist");
     solver.print_state();
 
     assert!(

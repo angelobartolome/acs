@@ -185,7 +185,9 @@ impl ParametricDogLegSolver {
             None => {
                 // Use SVD-based pseudo-inverse for rank-deficient cases
                 let svd = jtj_clone.svd(true, true);
-                -svd.pseudo_inverse(1e-12).unwrap() * &jtr
+                -svd.pseudo_inverse(1e-12)
+                    .expect("SVD pseudo-inverse computation failed: matrix is too rank-deficient")
+                    * &jtr
             }
         };
 

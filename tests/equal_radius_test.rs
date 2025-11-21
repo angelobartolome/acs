@@ -64,11 +64,11 @@ fn test_equal_radius_constraint_jacobian() {
 
     // Check that the derivatives are correct
     // Circle 1 radius parameter should have derivative 1.0 (at index 0 for circle parameters)
-    let c1_radius_idx = param_manager.get_global_index("c1", 0).unwrap();
+    let c1_radius_idx = param_manager.get_global_index("c1", 0).expect("Circle c1 should be registered");
     assert!((jacobian[(0, c1_radius_idx)] - 1.0).abs() < 1e-10);
 
     // Circle 2 radius parameter should have derivative -1.0 (at index 0 for circle parameters)
-    let c2_radius_idx = param_manager.get_global_index("c2", 0).unwrap();
+    let c2_radius_idx = param_manager.get_global_index("c2", 0).expect("Circle c2 should be registered");
     assert!((jacobian[(0, c2_radius_idx)] - (-1.0)).abs() < 1e-10);
 
     // All other entries should be zero
@@ -146,8 +146,8 @@ fn test_equal_radius_constraint_solver_integration() {
     ));
 
     // Verify initial radii are different
-    let initial_circle1 = solver.get_circle(circle1_id.clone()).unwrap();
-    let initial_circle2 = solver.get_circle(circle2_id.clone()).unwrap();
+    let initial_circle1 = solver.get_circle(circle1_id.clone()).expect("Circle 1 should exist");
+    let initial_circle2 = solver.get_circle(circle2_id.clone()).expect("Circle 2 should exist");
     assert!(
         (initial_circle1.radius - 10.0).abs() < 1e-10,
         "Initial circle1 radius should be 10.0"
@@ -163,10 +163,10 @@ fn test_equal_radius_constraint_solver_integration() {
             circle1_id.clone(),
             circle2_id.clone(),
         ))
-        .unwrap();
+        .expect("Constraint should be added successfully");
 
     // Solve the constraint system
-    let result = solver.solve().unwrap();
+    let result = solver.solve().expect("Solver should solve successfully");
 
     // Verify the solver converged
     match result {
@@ -181,8 +181,8 @@ fn test_equal_radius_constraint_solver_integration() {
     }
 
     // Verify that both circles now have the same radius
-    let final_circle1 = solver.get_circle(circle1_id).unwrap();
-    let final_circle2 = solver.get_circle(circle2_id).unwrap();
+    let final_circle1 = solver.get_circle(circle1_id).expect("Circle 1 should exist after solving");
+    let final_circle2 = solver.get_circle(circle2_id).expect("Circle 2 should exist after solving");
 
     assert!(
         (final_circle1.radius - final_circle2.radius).abs() < 1e-6,

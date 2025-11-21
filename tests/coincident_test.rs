@@ -14,9 +14,9 @@ fn test_coincident_constraint() {
             String::from("p1"),
             String::from("p2"),
         ))
-        .unwrap();
+        .expect("Constraint should be added successfully");
 
-    let result = solver.solve().unwrap();
+    let result = solver.solve().expect("Solver should solve successfully");
 
     match result {
         SolverResult::Converged { final_error, .. } => {
@@ -25,8 +25,8 @@ fn test_coincident_constraint() {
         final_result => panic!("Solver should have converged, got: {:?}", final_result),
     }
 
-    let point_a = solver.get_point(String::from("p1")).unwrap();
-    let point_b = solver.get_point(String::from("p2")).unwrap();
+    let point_a = solver.get_point(String::from("p1")).expect("Point p1 should exist");
+    let point_b = solver.get_point(String::from("p2")).expect("Point p2 should exist");
     solver.print_state();
 
     assert!(

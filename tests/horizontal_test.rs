@@ -14,8 +14,8 @@ fn test_horizontal_constraint() {
             String::from("p1"),
             String::from("p2"),
         ))
-        .unwrap();
-    let result = solver.solve().unwrap();
+        .expect("Constraint should be added successfully");
+    let result = solver.solve().expect("Solver should solve successfully");
 
     match result {
         SolverResult::Converged { final_error, .. } => {
@@ -24,8 +24,8 @@ fn test_horizontal_constraint() {
         _ => panic!("Solver should have converged"),
     }
 
-    let start = solver.get_point(String::from("p1")).unwrap();
-    let end = solver.get_point(String::from("p2")).unwrap();
+    let start = solver.get_point(String::from("p1")).expect("Point p1 should exist");
+    let end = solver.get_point(String::from("p2")).expect("Point p2 should exist");
     solver.print_state();
 
     assert!(

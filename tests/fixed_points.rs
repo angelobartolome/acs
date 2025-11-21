@@ -17,7 +17,7 @@ fn test_fixed_points() {
             fixed_id.clone(),
             movable_id.clone(),
         ))
-        .unwrap();
+        .expect("Constraint should be added successfully");
 
     // Try to solve - the movable point should adjust, fixed point should stay
     match solver.solve() {
@@ -28,8 +28,8 @@ fn test_fixed_points() {
     }
 
     // Check the final position of the movable point
-    let final_movable = solver.get_point(movable_id.clone()).unwrap();
-    let final_fixed = solver.get_point(fixed_id.clone()).unwrap();
+    let final_movable = solver.get_point(movable_id.clone()).expect("Movable point should exist");
+    let final_fixed = solver.get_point(fixed_id.clone()).expect("Fixed point should exist");
     solver.print_state();
 
     assert!(

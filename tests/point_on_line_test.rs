@@ -20,9 +20,9 @@ fn test_point_on_line_constraint() {
             "1".into(),
             "2".into(),
         ))
-        .unwrap();
+        .expect("Constraint should be added successfully");
 
-    let result = solver.solve().unwrap();
+    let result = solver.solve().expect("Solver should solve successfully");
 
     match result {
         SolverResult::Converged { final_error, .. } => {
@@ -31,7 +31,7 @@ fn test_point_on_line_constraint() {
         final_result => panic!("Solver should have converged, got: {:?}", final_result),
     }
 
-    let constrained_point = solver.get_point("3".into()).unwrap();
+    let constrained_point = solver.get_point("3".into()).expect("Point 3 should exist");
 
     // The point should have x-coordinate = 0
     assert!(

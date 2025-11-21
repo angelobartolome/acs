@@ -72,10 +72,10 @@ fn main() {
     // Add a vertical constraint to the line
     solver
         .add_constraint(ConstraintType::Vertical("p1".into(), "p2".into()))
-        .unwrap();
+        .expect("Failed to add constraint");
 
     // Solve the constraint system
-    let result = solver.solve().unwrap();
+    let result = solver.solve().expect("Failed to solve constraint system");
 
     match result {
         SolverResult::Converged { iterations, final_error, .. } => {
@@ -87,8 +87,8 @@ fn main() {
     }
 
     // Get the final positions
-    let start = solver.get_point("p1".into()).unwrap();
-    let end = solver.get_point("p2".into()).unwrap();
+    let start = solver.get_point("p1".into()).expect("Point p1 should exist");
+    let end = solver.get_point("p2".into()).expect("Point p2 should exist");
     println!("Line endpoints: ({}, {}) to ({}, {})", start.x, start.y, end.x, end.y);
 }
 

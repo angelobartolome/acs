@@ -21,8 +21,8 @@ fn test_parallel_constraint() {
             String::from("p3"),
             String::from("p4"),
         ))
-        .unwrap();
-    let result = solver.solve().unwrap();
+        .expect("Constraint should be added successfully");
+    let result = solver.solve().expect("Solver should solve successfully");
 
     match result {
         SolverResult::Converged { final_error, .. } => {
@@ -31,11 +31,11 @@ fn test_parallel_constraint() {
         _ => panic!("Solver should have converged"),
     }
 
-    let start_a = solver.get_point(String::from("p1")).unwrap();
-    let end_a = solver.get_point(String::from("p2")).unwrap();
+    let start_a = solver.get_point(String::from("p1")).expect("Point p1 should exist");
+    let end_a = solver.get_point(String::from("p2")).expect("Point p2 should exist");
 
-    let start_b = solver.get_point(String::from("p3")).unwrap();
-    let end_b = solver.get_point(String::from("p4")).unwrap();
+    let start_b = solver.get_point(String::from("p3")).expect("Point p3 should exist");
+    let end_b = solver.get_point(String::from("p4")).expect("Point p4 should exist");
 
     solver.print_state();
 

@@ -89,22 +89,14 @@ impl Constraint for PointOnLineConstraint {
         let p3_y_idx = param_manager.get_global_index(&self.p_line_b, 1);
 
         // If any point is not found, return zero jacobian (shouldn't happen in practice)
-        if p1_x_idx.is_none()
-            || p1_y_idx.is_none()
-            || p2_x_idx.is_none()
-            || p2_y_idx.is_none()
-            || p3_x_idx.is_none()
-            || p3_y_idx.is_none()
-        {
-            return J;
-        }
-
-        let p1_x_idx = p1_x_idx.unwrap();
-        let p1_y_idx = p1_y_idx.unwrap();
-        let p2_x_idx = p2_x_idx.unwrap();
-        let p2_y_idx = p2_y_idx.unwrap();
-        let p3_x_idx = p3_x_idx.unwrap();
-        let p3_y_idx = p3_y_idx.unwrap();
+        let (p1_x_idx, p1_y_idx, p2_x_idx, p2_y_idx, p3_x_idx, p3_y_idx) = match (
+            p1_x_idx, p1_y_idx, p2_x_idx, p2_y_idx, p3_x_idx, p3_y_idx
+        ) {
+            (Some(x1), Some(y1), Some(x2), Some(y2), Some(x3), Some(y3)) => {
+                (x1, y1, x2, y2, x3, y3)
+            }
+            _ => return J,
+        };
 
         let params = param_manager.get_parameters();
         let x1 = params[p1_x_idx];
