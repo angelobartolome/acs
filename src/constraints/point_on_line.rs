@@ -125,7 +125,7 @@ impl Constraint for PointOnLineConstraint {
         let py = y2 + t * dy;
 
         // If t is clamped, derivatives with respect to segment endpoints are zero
-        if t_unclamped >= 0.0 && t_unclamped <= 1.0 {
+        if (0.0..=1.0).contains(&t_unclamped) {
             // t is not clamped, use full derivatives
             J[(0, p1_x_idx)] = 2.0 * (x1 - px);
             J[(0, p1_y_idx)] = 2.0 * (y1 - py);

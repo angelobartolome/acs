@@ -12,6 +12,12 @@ pub struct WrappedConstraintSolver {
     inner: ConstraintSolver,
 }
 
+impl Default for WrappedConstraintSolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen(js_class = ConstraintSolver)]
 impl WrappedConstraintSolver {
     #[wasm_bindgen(constructor)]
@@ -96,7 +102,7 @@ impl WrappedConstraintSolver {
 
     pub fn solve(&mut self) -> Result<String, String> {
         match self.inner.solve() {
-            Ok(result) => Ok(format!("{:?}", result)),
+            Ok(result) => Ok(format!("{result:?}")),
             Err(e) => Err(e),
         }
     }
@@ -116,7 +122,7 @@ impl WrappedConstraintSolver {
     // JSON-based methods for generic frontend interface
     pub fn add_primitives_json(&mut self, json: String) -> Result<String, String> {
         let primitives: Vec<PrimitiveJson> = serde_json::from_str(&json)
-            .map_err(|e| format!("Failed to parse primitives JSON: {}", e))?;
+            .map_err(|e| format!("Failed to parse primitives JSON: {e}"))?;
 
         for primitive in primitives {
             match primitive {
@@ -164,15 +170,15 @@ impl WrappedConstraintSolver {
 
     pub fn add_constraints_json(&mut self, json: String) -> Result<String, String> {
         let constraints: Vec<ConstraintJson> = serde_json::from_str(&json)
-            .map_err(|e| format!("Failed to parse constraints JSON: {}", e))?;
+            .map_err(|e| format!("Failed to parse constraints JSON: {e}"))?;
 
         for constraint_json in constraints {
             let constraint_type: crate::ConstraintType = constraint_json
                 .try_into()
-                .map_err(|e| format!("Failed to convert constraint: {}", e))?;
+                .map_err(|e| format!("Failed to convert constraint: {e}"))?;
             self.inner
                 .add_constraint(constraint_type)
-                .map_err(|e| format!("Failed to add constraint: {}", e))?;
+                .map_err(|e| format!("Failed to add constraint: {e}"))?;
         }
 
         Ok("Constraints added successfully".to_string())
@@ -186,22 +192,22 @@ impl WrappedConstraintSolver {
         let mut primitives = Vec::new();
 
         // Add all points
-        for (_id, point) in self.inner.get_all_points() {
+        for point in self.inner.get_all_points().values() {
             primitives.push(PrimitiveJson::from(point.clone()));
         }
 
         // Add all circles
-        for (_id, circle) in self.inner.get_all_circles() {
+        for circle in self.inner.get_all_circles().values() {
             primitives.push(PrimitiveJson::from(circle.clone()));
         }
 
         // Add all lines
-        for (_id, line) in self.inner.get_all_lines() {
+        for line in self.inner.get_all_lines().values() {
             primitives.push(PrimitiveJson::from(line.clone()));
         }
 
         // Add all arcs
-        for (_id, arc) in self.inner.get_all_arcs() {
+        for arc in self.inner.get_all_arcs().values() {
             primitives.push(PrimitiveJson::from(arc.clone()));
         }
 
@@ -211,12 +217,12 @@ impl WrappedConstraintSolver {
         };
 
         serde_json::to_string(&response)
-            .map_err(|e| format!("Failed to serialize response: {}", e))
+            .map_err(|e| format!("Failed to serialize response: {e}"))
     }
 
     pub fn solve_from_json(&mut self, json: String) -> Result<String, String> {
         let request: SolverRequest = serde_json::from_str(&json)
-            .map_err(|e| format!("Failed to parse request JSON: {}", e))?;
+            .map_err(|e| format!("Failed to parse request JSON: {e}"))?;
 
         // Reset solver
         self.inner = ConstraintSolver::new();
@@ -267,10 +273,10 @@ impl WrappedConstraintSolver {
         for constraint_json in request.constraints {
             let constraint_type: crate::ConstraintType = constraint_json
                 .try_into()
-                .map_err(|e| format!("Failed to convert constraint: {}", e))?;
+                .map_err(|e| format!("Failed to convert constraint: {e}"))?;
             self.inner
                 .add_constraint(constraint_type)
-                .map_err(|e| format!("Failed to add constraint: {}", e))?;
+                .map_err(|e| format!("Failed to add constraint: {e}"))?;
         }
 
         // Solve
@@ -280,22 +286,22 @@ impl WrappedConstraintSolver {
         let mut primitives = Vec::new();
 
         // Add all points
-        for (_id, point) in self.inner.get_all_points() {
+        for point in self.inner.get_all_points().values() {
             primitives.push(PrimitiveJson::from(point.clone()));
         }
 
         // Add all circles
-        for (_id, circle) in self.inner.get_all_circles() {
+        for circle in self.inner.get_all_circles().values() {
             primitives.push(PrimitiveJson::from(circle.clone()));
         }
 
         // Add all lines
-        for (_id, line) in self.inner.get_all_lines() {
+        for line in self.inner.get_all_lines().values() {
             primitives.push(PrimitiveJson::from(line.clone()));
         }
 
         // Add all arcs
-        for (_id, arc) in self.inner.get_all_arcs() {
+        for arc in self.inner.get_all_arcs().values() {
             primitives.push(PrimitiveJson::from(arc.clone()));
         }
 
@@ -305,7 +311,7 @@ impl WrappedConstraintSolver {
         };
 
         serde_json::to_string(&response)
-            .map_err(|e| format!("Failed to serialize response: {}", e))
+            .map_err(|e| format!("Failed to serialize response: {e}"))
     }
     // Add more methods as needed
 }

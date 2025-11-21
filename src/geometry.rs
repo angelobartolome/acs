@@ -175,8 +175,8 @@ impl ParametricEntity for Arc {
 
     fn is_parameter_fixed(&self, param_index: usize) -> bool {
         match param_index {
-            0 | 1 | 2 => self.fixed, // All parameters are fixed if the arc is fixed
-            _ => true,               // Invalid parameter indices are considered fixed
+            0..=2 => self.fixed, // All parameters are fixed if the arc is fixed
+            _ => true,           // Invalid parameter indices are considered fixed
         }
     }
 }
@@ -187,6 +187,12 @@ pub struct GeometrySystem {
     lines: HashMap<String, Line>,
     circles: HashMap<String, Circle>,
     arcs: HashMap<String, Arc>,
+}
+
+impl Default for GeometrySystem {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GeometrySystem {

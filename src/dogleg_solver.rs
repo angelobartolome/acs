@@ -9,6 +9,12 @@ pub struct ParametricDogLegSolver {
     tolerance: f64,
 }
 
+impl Default for ParametricDogLegSolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ParametricDogLegSolver {
     pub fn new() -> Self {
         Self {

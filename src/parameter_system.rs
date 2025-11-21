@@ -54,6 +54,12 @@ pub struct ParameterManager {
     parameters: Vec<f64>,
 }
 
+impl Default for ParameterManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ParameterManager {
     pub fn new() -> Self {
         Self {
@@ -171,8 +177,7 @@ impl ParameterManager {
             entity.set_parameters(entity_params)
         } else {
             Err(format!(
-                "Entity {} not found in parameter manager",
-                entity_id
+                "Entity {entity_id} not found in parameter manager"
             ))
         }
     }
@@ -191,8 +196,7 @@ impl ParameterManager {
             Ok(())
         } else {
             Err(format!(
-                "Entity {} not found in parameter manager",
-                entity_id
+                "Entity {entity_id} not found in parameter manager"
             ))
         }
     }
