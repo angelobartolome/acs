@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+body {
+  margin: 0px;
+  overflow: hidden;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #e0eaef;
+}
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
