@@ -12,6 +12,7 @@ pub fn acs_solve_sketch(input_json: &str) -> String {
             "primitives": Vec::<serde_json::Value>::new(),
             "skipped_constraint_ids": Vec::<String>::new(),
             "conflicting_constraint_ids": Vec::<String>::new(),
+            "fully_constrained_ids": Vec::<String>::new(),
             "error": e,
         })
         .to_string(),

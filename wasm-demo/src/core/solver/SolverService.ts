@@ -33,6 +33,8 @@ export interface SolveOutcome {
   entities: SketchEntity[];
   skippedConstraintIds: string[];
   conflictingConstraintIds: string[];
+  /** IDs of entities that are fully constrained (degrees of freedom = 0) */
+  fullyConstrainedIds: string[];
   error: string | null;
   stats: SolveStats | null;
   durationMs: number;
@@ -287,6 +289,7 @@ export function parseSolveResponse(
       entities: [...inputEntities],
       skippedConstraintIds: [],
       conflictingConstraintIds: [],
+      fullyConstrainedIds: [],
       error: `Invalid solver response: ${String(err)}`,
       stats: null,
       durationMs,
@@ -312,6 +315,8 @@ export function parseSolveResponse(
       : [...inputEntities],
     skippedConstraintIds: stringArray(o.skipped_constraint_ids),
     conflictingConstraintIds: stringArray(o.conflicting_constraint_ids),
+    // Only meaningful on a converged solve; the solver returns [] otherwise.
+    fullyConstrainedIds: ok ? stringArray(o.fully_constrained_ids) : [],
     error: typeof o.error === "string" ? o.error : null,
     stats: parseStats(o.stats),
     durationMs,
@@ -348,6 +353,7 @@ export class AcsSolverService implements ISolverService {
         entities: [...sketch.entities],
         skippedConstraintIds: [],
         conflictingConstraintIds: [],
+        fullyConstrainedIds: [],
         error: `Solver threw: ${String(err)}`,
         stats: null,
         durationMs,

@@ -107,6 +107,7 @@ Notes:
   "primitives": [ ...same array with updated x/y/radius/angles... ],
   "skipped_constraint_ids": [],
   "conflicting_constraint_ids": [],
+  "fully_constrained_ids": ["p1", "p2", "line1"],
   "error": null,
   "stats": { "iterations": 3, "initial_error": 1600.0, "final_error": 1.2e-12 }
 }
@@ -120,6 +121,7 @@ Notes:
 | `primitives` | The original array with geometric parameters updated in-place |
 | `skipped_constraint_ids` | Constraints the solver could not interpret, as `"<id>:<type>"` strings (unsupported type, missing fields) or `"<id>:add_error:<message>"` (rejected by the solver) |
 | `conflicting_constraint_ids` | Reserved; currently always `[]` |
+| `fully_constrained_ids` | IDs of entities that are fully constrained (degrees of freedom = 0) at the solved configuration, computed via per-component Jacobian rank/null-space analysis. A line is included when both its endpoints are. Only populated on a converged solve; `[]` otherwise |
 | `error` | `null` on success; error message string on failure |
 | `stats` | Solver statistics: `iterations`, `initial_error`, `final_error` (summed/max across components); `null` if the solve errored before running |
 

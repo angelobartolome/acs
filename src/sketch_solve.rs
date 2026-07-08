@@ -385,6 +385,37 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
     }
 }
 
+/// Computes the set of fully-constrained (DOF = 0) entity IDs, including lines.
+///
+/// The solver only knows about parameter-bearing entities (points, circles, arcs);
+/// a `Line` owns no parameters, so it is reported fully constrained when both of its
+/// endpoints (`p1_id`, `p2_id`) are fully constrained.
+fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<String> {
+    let mut constrained: std::collections::BTreeSet<String> =
+        cs.fully_constrained_entity_ids().into_iter().collect();
+
+    for p in primitives {
+        let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
+            continue;
+        };
+        if t != "line" {
+            continue;
+        }
+        let (Some(id), Some(p1), Some(p2)) = (
+            as_string(p, "id"),
+            as_string(p, "p1_id"),
+            as_string(p, "p2_id"),
+        ) else {
+            continue;
+        };
+        if constrained.contains(&p1) && constrained.contains(&p2) {
+            constrained.insert(id);
+        }
+    }
+
+    constrained.into_iter().collect()
+}
+
 /// Input: `{ "primitives": [ ... ], "max_iterations"?: number }` or a bare JSON array (primitives only).
 pub fn solve_sketch_primitives_json(input: &str) -> Result<String, String> {
     let root: Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
@@ -483,6 +514,14 @@ pub fn solve_sketch_primitives_json(input: &str) -> Result<String, String> {
 
     let ok_converged = matches!(solve_result, Ok(SolverResult::Converged { .. }));
 
+    // Fully-constrained (DOF = 0) analysis is only meaningful at a converged
+    // configuration; report an empty list otherwise.
+    let fully_constrained: Vec<String> = if ok_converged {
+        fully_constrained_ids(&cs, primitives_arr)
+    } else {
+        Vec::new()
+    };
+
     let response = json!({
         "ok": ok_converged,
         "status": status,
@@ -490,6 +529,7 @@ pub fn solve_sketch_primitives_json(input: &str) -> Result<String, String> {
         "primitives": out,
         "skipped_constraint_ids": skipped_constraint_ids,
         "conflicting_constraint_ids": Vec::<String>::new(),
+        "fully_constrained_ids": fully_constrained,
         "error": error_msg,
         "stats": stats,
     });

@@ -1,5 +1,5 @@
 import type { EntityId } from "../../core/model/types";
-import { strokeFor, type GlyphState } from "../theme";
+import { strokeForEntity, type GlyphState } from "../theme";
 
 interface Props {
   id: EntityId;
@@ -7,11 +7,12 @@ interface Props {
   y1: number;
   x2: number;
   y2: number;
+  constrained: boolean;
   state: GlyphState;
   onHover: (id: EntityId | null) => void;
 }
 
-export function LineGlyph({ id, x1, y1, x2, y2, state, onHover }: Props) {
+export function LineGlyph({ id, x1, y1, x2, y2, constrained, state, onHover }: Props) {
   return (
     <g
       onPointerEnter={() => onHover(id)}
@@ -25,7 +26,7 @@ export function LineGlyph({ id, x1, y1, x2, y2, state, onHover }: Props) {
         y1={y1}
         x2={x2}
         y2={y2}
-        stroke={strokeFor(state)}
+        stroke={strokeForEntity(state, constrained)}
         strokeWidth={state === "normal" ? 1.5 : 2.5}
       />
     </g>

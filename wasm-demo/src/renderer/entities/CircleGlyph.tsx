@@ -1,5 +1,5 @@
 import type { EntityId } from "../../core/model/types";
-import { strokeFor, type GlyphState } from "../theme";
+import { strokeForEntity, type GlyphState } from "../theme";
 
 interface Props {
   id: EntityId;
@@ -7,11 +7,12 @@ interface Props {
   cy: number;
   /** radius in screen pixels */
   r: number;
+  constrained: boolean;
   state: GlyphState;
   onHover: (id: EntityId | null) => void;
 }
 
-export function CircleGlyph({ id, cx, cy, r, state, onHover }: Props) {
+export function CircleGlyph({ id, cx, cy, r, constrained, state, onHover }: Props) {
   return (
     <g
       onPointerEnter={() => onHover(id)}
@@ -25,7 +26,7 @@ export function CircleGlyph({ id, cx, cy, r, state, onHover }: Props) {
         cy={cy}
         r={r}
         fill="none"
-        stroke={strokeFor(state)}
+        stroke={strokeForEntity(state, constrained)}
         strokeWidth={state === "normal" ? 1.5 : 2.5}
       />
     </g>

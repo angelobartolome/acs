@@ -1,5 +1,5 @@
 import type { EntityId } from "../../core/model/types";
-import { strokeFor, type GlyphState } from "../theme";
+import { strokeForEntity, type GlyphState } from "../theme";
 import { COLORS } from "../theme";
 
 interface Props {
@@ -7,12 +7,17 @@ interface Props {
   sx: number;
   sy: number;
   fixed: boolean;
+  constrained: boolean;
   state: GlyphState;
   onHover: (id: EntityId | null) => void;
 }
 
-export function PointGlyph({ id, sx, sy, fixed, state, onHover }: Props) {
-  const color = fixed && state === "normal" ? COLORS.fixed : strokeFor(state);
+export function PointGlyph({ id, sx, sy, fixed, constrained, state, onHover }: Props) {
+  // Fully-constrained green overrides the fixed red tint (product decision).
+  const color =
+    state === "normal" && !constrained && fixed
+      ? COLORS.fixed
+      : strokeForEntity(state, constrained);
   const r = state === "selected" || state === "hover" ? 5 : 4;
   return (
     <g

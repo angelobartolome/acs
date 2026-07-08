@@ -167,6 +167,7 @@ export function SketchCanvas() {
   const activeToolId = useSketchStore((s) => s.activeTool);
   const canvasSize = useSketchStore((s) => s.canvasSize);
   const setHovered = useSketchStore((s) => s.setHovered);
+  const lastOutcome = useSketchStore((s) => s.lastOutcome);
 
   // measure canvas
   useEffect(() => {
@@ -195,6 +196,13 @@ export function SketchCanvas() {
     const c = constraints.find((k) => k.id === highlightConstraintId);
     return new Set(c?.entities ?? []);
   }, [highlightConstraintId, constraints]);
+
+  // Entities that are fully constrained (degrees of freedom = 0), reported by
+  // the solver on the last converged solve. Rendered with a green tint.
+  const constrainedIds = useMemo(
+    () => new Set(lastOutcome?.fullyConstrainedIds ?? []),
+    [lastOutcome],
+  );
 
   const toToolEvent = (e: PointerEvent<SVGSVGElement>): ToolPointerEvent => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -266,6 +274,7 @@ export function SketchCanvas() {
 
   for (const e of entities) {
     const state = glyphState(e.id, selection, hoveredId, highlighted);
+    const constrained = constrainedIds.has(e.id);
     if (isLine(e)) {
       const p1 = pointsById.get(e.p1);
       const p2 = pointsById.get(e.p2);
@@ -280,6 +289,7 @@ export function SketchCanvas() {
           y1={s1.y}
           x2={s2.x}
           y2={s2.y}
+          constrained={constrained}
           state={state}
           onHover={setHovered}
         />,
@@ -295,6 +305,7 @@ export function SketchCanvas() {
           cx={sc.x}
           cy={sc.y}
           r={e.radius * viewport.scale}
+          constrained={constrained}
           state={state}
           onHover={setHovered}
         />,
@@ -314,6 +325,7 @@ export function SketchCanvas() {
             e.startAngle,
             e.endAngle,
           )}
+          constrained={constrained}
           state={state}
           onHover={setHovered}
         />,
@@ -327,6 +339,7 @@ export function SketchCanvas() {
           sx={s.x}
           sy={s.y}
           fixed={e.fixed}
+          constrained={constrained}
           state={state}
           onHover={setHovered}
         />,

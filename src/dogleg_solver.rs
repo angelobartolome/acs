@@ -317,7 +317,7 @@ impl ParametricDogLegSolver {
         }
     }
 
-    fn build_system(
+    pub(crate) fn build_system(
         param_manager: &ParameterManager,
         constraints: &[&dyn Constraint],
         fixed_mask: &[bool],

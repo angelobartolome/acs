@@ -1,10 +1,11 @@
 import type { EntityId } from "../../core/model/types";
-import { strokeFor, type GlyphState } from "../theme";
+import { strokeForEntity, type GlyphState } from "../theme";
 
 interface Props {
   id: EntityId;
   /** polyline points in screen coords, e.g. "x1,y1 x2,y2 ..." */
   points: string;
+  constrained: boolean;
   state: GlyphState;
   onHover: (id: EntityId | null) => void;
 }
@@ -35,7 +36,7 @@ export function sampleArcScreenPoints(
   return pts.join(" ");
 }
 
-export function ArcGlyph({ id, points, state, onHover }: Props) {
+export function ArcGlyph({ id, points, constrained, state, onHover }: Props) {
   return (
     <g
       onPointerEnter={() => onHover(id)}
@@ -46,7 +47,7 @@ export function ArcGlyph({ id, points, state, onHover }: Props) {
       <polyline
         points={points}
         fill="none"
-        stroke={strokeFor(state)}
+        stroke={strokeForEntity(state, constrained)}
         strokeWidth={state === "normal" ? 1.5 : 2.5}
       />
     </g>

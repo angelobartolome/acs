@@ -77,12 +77,14 @@ describe("response parsing", () => {
       ],
       skipped_constraint_ids: ["k7:unknown_type"],
       conflicting_constraint_ids: [],
+      fully_constrained_ids: ["p1", "p2"],
       error: null,
       stats: { iterations: 3, initial_error: 1.5, final_error: 1e-12 },
     });
     const outcome = parseSolveResponse(response, SKETCH.entities, "{}", 1.25);
     expect(outcome.ok).toBe(true);
     expect(outcome.status).toBe("converged");
+    expect(outcome.fullyConstrainedIds).toEqual(["p1", "p2"]);
     expect(outcome.stats).toEqual({
       iterations: 3,
       initialError: 1.5,
@@ -108,12 +110,15 @@ describe("response parsing", () => {
       primitives: [{ id: "p2", type: "point", x: 999, y: 999 }],
       skipped_constraint_ids: [],
       conflicting_constraint_ids: [],
+      fully_constrained_ids: ["p1", "p2"],
       error: "Solver did not converge",
       stats: { iterations: 100, initial_error: 5, final_error: 2 },
     });
     const outcome = parseSolveResponse(response, SKETCH.entities, "{}", 0.5);
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toBe("Solver did not converge");
+    // DOF is only meaningful on a converged solve; must be cleared on failure.
+    expect(outcome.fullyConstrainedIds).toEqual([]);
     const p2 = outcome.entities.find((e) => e.id === "p2");
     expect(p2).toMatchObject({ x: 3, y: 4 });
   });
