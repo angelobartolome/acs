@@ -8,6 +8,12 @@ pub struct WrappedConstraintSolver {
     inner: ConstraintSolver,
 }
 
+impl Default for WrappedConstraintSolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen(js_class = ConstraintSolver)]
 impl WrappedConstraintSolver {
     #[wasm_bindgen(constructor)]

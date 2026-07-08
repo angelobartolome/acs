@@ -93,16 +93,18 @@ impl Constraint for TangentLineCircleConstraint {
         // R = area² − r²·L²
         // ∂R/∂param = 2·area·(∂area/∂param) − r²·(∂L²/∂param)
         //
-        // ∂area/∂ax = −dy, ∂area/∂ay = dx, ∂area/∂bx = dy, ∂area/∂by = −dx
-        // ∂area/∂cx = dy,  ∂area/∂cy = −dx
+        // area = (by−ay)(cx−ax) − (bx−ax)(cy−ay), so:
+        // ∂area/∂ax = cy−by, ∂area/∂ay = bx−cx
+        // ∂area/∂bx = ay−cy, ∂area/∂by = cx−ax
+        // ∂area/∂cx = by−ay, ∂area/∂cy = ax−bx
         // ∂L²/∂ax = −2dx, ∂L²/∂ay = −2dy, ∂L²/∂bx = 2dx, ∂L²/∂by = 2dy
 
-        J[(0, i_ax)] = 2.0 * area * (-dy) - r * r * (-2.0 * dx);
-        J[(0, i_ay)] = 2.0 * area * dx - r * r * (-2.0 * dy);
-        J[(0, i_bx)] = 2.0 * area * dy - r * r * (2.0 * dx);
-        J[(0, i_by)] = 2.0 * area * (-dx) - r * r * (2.0 * dy);
-        J[(0, i_cx)] = 2.0 * area * dy;
-        J[(0, i_cy)] = 2.0 * area * (-dx);
+        J[(0, i_ax)] = 2.0 * area * (cy - by) - r * r * (-2.0 * dx);
+        J[(0, i_ay)] = 2.0 * area * (bx - cx) - r * r * (-2.0 * dy);
+        J[(0, i_bx)] = 2.0 * area * (ay - cy) - r * r * (2.0 * dx);
+        J[(0, i_by)] = 2.0 * area * (cx - ax) - r * r * (2.0 * dy);
+        J[(0, i_cx)] = 2.0 * area * (by - ay);
+        J[(0, i_cy)] = 2.0 * area * (ax - bx);
         J[(0, i_r)] = -2.0 * r * l2;
 
         J

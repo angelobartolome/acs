@@ -54,6 +54,12 @@ pub struct ParameterManager {
     parameters: Vec<f64>,
 }
 
+impl Default for ParameterManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ParameterManager {
     pub fn new() -> Self {
         Self {
@@ -146,13 +152,13 @@ impl ParameterManager {
         }
 
         // Check if parameter is fixed
-        if let Some(info) = self.parameter_info.get(global_index) {
-            if info.is_fixed {
-                return Err(format!(
-                    "Parameter {} is fixed and cannot be modified",
-                    info.name
-                ));
-            }
+        if let Some(info) = self.parameter_info.get(global_index)
+            && info.is_fixed
+        {
+            return Err(format!(
+                "Parameter {} is fixed and cannot be modified",
+                info.name
+            ));
         }
 
         self.parameters[global_index] = value;

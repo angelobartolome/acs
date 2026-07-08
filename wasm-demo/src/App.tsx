@@ -1,298 +1,183 @@
-import { Canvas } from "@react-three/fiber";
-import { Grid, Html } from "@react-three/drei";
-import { useEffect, useState } from "react";
-import { Point2D } from "./components/Point2D";
-import { Vector2 } from "three";
-import { Line2D } from "./components/Line2D";
-import init, { ConstraintSolver, Circle, Point } from "acs";
-import { Circle2D } from "./components/Circle2D";
+import { useEffect, useRef, type ReactNode } from "react";
 
-let solver: ConstraintSolver;
+import { sketchStore } from "./core/sketch/store";
+import {
+  primitivesToSketch,
+  sketchToPrimitives,
+} from "./core/solver/SolverService";
+import { Gallery } from "./examples/Gallery";
+import { useSketchStore } from "./hooks/useSketchStore";
+import { ConstraintBar } from "./panels/ConstraintBar";
+import { ConstraintList } from "./panels/ConstraintList";
+import { DiagnosticsPanel } from "./panels/DiagnosticsPanel";
+import { InspectorPanel } from "./panels/InspectorPanel";
+import { JsonPanel } from "./panels/JsonPanel";
+import { Toolbar } from "./panels/Toolbar";
+import { SketchCanvas } from "./renderer/SketchCanvas";
+import { getTool } from "./tools";
 
-await init().then(() => {
-  console.log("ACS initialized");
-  solver = new ConstraintSolver();
-});
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <details open className="border-b border-slate-700">
+      <summary className="cursor-pointer bg-slate-900 px-3 py-1.5 text-xs font-semibold tracking-wide text-slate-400 uppercase select-none">
+        {title}
+      </summary>
+      {children}
+    </details>
+  );
+}
 
-type Primitive = Point | Circle;
+function StatusBadge() {
+  const lastOutcome = useSketchStore((s) => s.lastOutcome);
+  if (lastOutcome === null) return null;
+  return (
+    <span
+      className={`rounded px-2 py-0.5 text-xs font-semibold ${
+        lastOutcome.ok
+          ? "bg-emerald-900 text-emerald-300"
+          : "bg-rose-900 text-rose-300"
+      }`}
+      title={lastOutcome.error ?? undefined}
+    >
+      {lastOutcome.ok ? "converged" : "not converged"}
+    </span>
+  );
+}
 
 export default function App() {
-  const [primitives, setPrimitives] = useState<Primitive[]>([]);
-  const [constraints, setConstraints] = useState<
-    {
-      type:
-        | "horizontal"
-        | "vertical"
-        | "parallel"
-        | "point_on_line"
-        | "equal_radius";
-      points: string[];
-    }[]
-  >([]);
+  const fileInput = useRef<HTMLInputElement | null>(null);
 
-  const [selectedPrimitiveIds, setSelectedPrimitiveIds] = useState<string[]>(
-    []
-  );
-
+  // global keyboard shortcuts
   useEffect(() => {
-    const pA = new Point("0", 0, 0, true);
-    const pB = new Point("1", 1, 1, false);
-    const pC = new Point("3", 0.4, 1.3, false);
-    const pD = new Point("4", 0.5, 0.5, false);
-
-    // Circles
-
-    const centerA = new Point("centerA", 0, 1, false);
-    const centerB = new Point("centerB", 1.5, 1.5, false);
-
-    const circle = new Circle("c", "centerA", 0.5, false);
-    const circleB = new Circle("d", "centerB", 0.2, false);
-
-    setPrimitives([pA, pB, pC, pD, centerA, centerB, circle, circleB]);
-  }, [setPrimitives]);
-
-  console.log(constraints);
-
-  const solve = (pList: (Point | Circle)[], cList: any) => {
-    solver.reset();
-    pList.forEach((p) => {
-      if (p instanceof Point) {
-        solver.add_point(p);
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA")
+      ) {
+        return;
       }
-      if (p instanceof Circle) {
-        solver.add_circle(p);
+      const s = sketchStore.getState();
+      if (e.key === "Escape") {
+        getTool(s.activeTool).onCancel();
+        s.setDraft(null);
+        s.clearSelection();
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        s.deleteSelection();
       }
-    });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-    cList.forEach((c: any) => {
-      console.log(
-        `Adding constraint: ${c.type} with points ${c.points.join(", ")}`
-      );
-      if (c.type === "horizontal") {
-        const [pA, pB] = c.points;
-        solver.add_horizontal_constraint(pA, pB);
-      } else if (c.type === "vertical") {
-        const [pA, pB] = c.points;
-        solver.add_vertical_constraint(pA, pB);
-      } else if (c.type === "parallel") {
-        const [laS, laE, lbS, lbE] = c.points;
-        solver.add_parallel_constraint(laS, laE, lbS, lbE);
-      } else if (c.type === "point_on_line") {
-        const [p, pA, pB] = c.points;
-        solver.add_point_on_line_constraint(p, pA, pB);
-      } else if (c.type === "equal_radius") {
-        const [cA, cB] = c.points;
-        solver.add_equal_radius_constraint(cA, cB);
-      }
-    });
-
-    solver.solve();
-
-    // Pull back the points to update their positions
-    return pList.map((p) => {
-      if (p instanceof Point) {
-        const updatedPoint = solver.get_point(p.id);
-        if (updatedPoint) {
-          console.log(
-            `Updated point: ${p.id} to (${updatedPoint.x}, ${updatedPoint.y})`
-          );
-          return new Point(p.id, updatedPoint.x, updatedPoint.y, false);
-        }
-      } else if (p instanceof Circle) {
-        const updatedCircle = solver.get_circle(p.id);
-        if (updatedCircle) {
-          console.log(updatedCircle);
-
-          return new Circle(
-            p.id,
-            updatedCircle.center,
-            updatedCircle.radius,
-            false
-          );
-        }
-      }
-      return p;
-    });
-  };
-
-  const addConstraint = (
-    type:
-      | "horizontal"
-      | "vertical"
-      | "parallel"
-      | "point_on_line"
-      | "equal_radius"
-  ) => {
-    if (selectedPrimitiveIds.length < 2) {
-      alert("Select two primitives to add a constraint.");
-      return;
-    }
-
-    const selectedPrimitives = primitives.filter((p) =>
-      selectedPrimitiveIds.includes(p.id)
+  const exportSketch = () => {
+    const { entities, constraints } = sketchStore.getState();
+    const json = JSON.stringify(
+      { primitives: sketchToPrimitives({ entities, constraints }) },
+      null,
+      2,
     );
-
-    if (
-      type === "horizontal" ||
-      type === "vertical" ||
-      type === "equal_radius"
-    ) {
-      if (selectedPrimitives.length !== 2) {
-        alert("Select exactly two points for horizontal/vertical constraints.");
-        return;
-      }
-      const [pA, pB] = selectedPrimitives as Point[];
-      setConstraints((prev) => [...prev, { type, points: [pA.id, pB.id] }]);
-    } else if (type === "parallel") {
-      if (selectedPrimitives.length !== 4) {
-        alert("Select exactly four points for parallel constraints.");
-        return;
-      }
-      const [pA, pB, pC, pD] = selectedPrimitives as Point[];
-      setConstraints((prev) => [
-        ...prev,
-        {
-          type,
-          points: [pA.id, pB.id, pC.id, pD.id],
-        },
-      ]);
-    } else if (type === "point_on_line") {
-      if (selectedPrimitives.length !== 3) {
-        alert("Select exactly three points for point on line constraints.");
-        return;
-      }
-      const [p, pA, pB] = selectedPrimitives as Point[];
-      setConstraints((prev) => [
-        ...prev,
-        { type, points: [p.id, pA.id, pB.id] },
-      ]);
-    }
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "sketch.json";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const renderPrimitives = (primitives: Primitive[]) => {
-    return primitives.map((primitive) => {
-      if (primitive instanceof Point) {
-        return (
-          <Point2D
-            position={new Vector2(primitive.x, primitive.y)}
-            key={`p-${primitive.id}`}
-            onClick={() => {
-              setSelectedPrimitiveIds((prev) => {
-                if (prev.includes(primitive.id)) {
-                  return prev.filter((id) => id !== primitive.id);
-                } else {
-                  return [...prev, primitive.id];
-                }
-              });
-            }}
-            selected={selectedPrimitiveIds.includes(primitive.id)}
-            onDrag={(newPosition) => {
-              const updatedPrimitives = primitives.map((p) => {
-                if (p.id === primitive.id) {
-                  return new Point(p.id, newPosition.x, newPosition.y, false);
-                }
-                return p;
-              });
-
-              setPrimitives(solve(updatedPrimitives as any, constraints));
-            }}
-          />
-        );
-      } else if (primitive instanceof Circle) {
-        console.log(primitives);
-        let centerPoint = primitives.find(
-          (p) => p.id === primitive.center
-        ) as Point;
-
-        console.log(
-          `Rendering Circle: ${primitive.id} with center ${centerPoint.x}, ${centerPoint.y} and radius ${primitive.radius}`
-        );
-        return (
-          <Circle2D
-            selected={selectedPrimitiveIds.includes(primitive.id)}
-            center={new Vector2(centerPoint.x, centerPoint.y)}
-            radius={primitive.radius}
-            key={`c-${primitive.id}`}
-            onClick={() => {
-              setSelectedPrimitiveIds((prev) => {
-                if (prev.includes(primitive.id)) {
-                  return prev.filter((id) => id !== primitive.id);
-                } else {
-                  return [...prev, primitive.id];
-                }
-              });
-            }}
-          />
-        );
+  const importSketch = (file: File) => {
+    void file.text().then((text) => {
+      try {
+        const root: unknown = JSON.parse(text);
+        const prims = Array.isArray(root)
+          ? root
+          : typeof root === "object" &&
+              root !== null &&
+              Array.isArray((root as Record<string, unknown>).primitives)
+            ? ((root as Record<string, unknown>).primitives as unknown[])
+            : null;
+        if (prims === null) {
+          window.alert("Expected {\"primitives\": [...]} or a bare array");
+          return;
+        }
+        const { sketch, warnings } = primitivesToSketch(prims);
+        sketchStore.getState().loadSketch(sketch);
+        if (warnings.length > 0) {
+          window.alert(`Imported with warnings:\n${warnings.join("\n")}`);
+        }
+      } catch (err) {
+        window.alert(`Invalid JSON: ${String(err)}`);
       }
-      return null;
     });
   };
 
   return (
-    <Canvas
-      orthographic
-      camera={{ position: [0, 0, 200], rotation: [0, 0, 0], zoom: 100 }}
-      gl={{ antialias: true }}
-      style={{ height: "100vh", width: "100vw" }}
-    >
-      <ambientLight intensity={Math.PI / 2} />
-
-      <Grid
-        cellColor={"#e0e0e0"}
-        cellThickness={1}
-        cellSize={0.1}
-        sectionColor={"#7095fa"}
-        sectionSize={1}
-        sectionThickness={1}
-        infiniteGrid
-        rotation={[Math.PI / 2, 0, 0]}
-      />
-      {renderPrimitives(primitives)}
-
-      <Html fullscreen>
-        <div className="absolute top-0 left-0 ">
-          <div className="p-4 flex flex-col gap-2 z-100 bg-black m-4 rounded-lg drop-shadow-lg">
-            <button onClick={() => addConstraint("horizontal")}>
-              Add Horizontal Constraint
-            </button>
-            <button onClick={() => addConstraint("vertical")}>
-              Add Vertical Constraint
-            </button>
-
-            <button onClick={() => addConstraint("parallel")}>
-              Add Parallel Constraint
-            </button>
-
-            <button onClick={() => addConstraint("point_on_line")}>
-              Add Point on Line Constraint
-            </button>
-            <button onClick={() => addConstraint("equal_radius")}>
-              Add Equal Radius Constraint
-            </button>
-            <button
-              onClick={() => setPrimitives(solve(primitives, constraints))}
-            >
-              Solve Constraints
-            </button>
-          </div>
+    <div className="flex h-full flex-col">
+      {/* top bar */}
+      <header className="flex items-center gap-3 border-b border-slate-700 bg-slate-900 px-3 py-2">
+        <h1 className="text-sm font-bold text-slate-100">ACS Sketch Demo</h1>
+        <StatusBadge />
+        <div className="mx-2 h-5 border-l border-slate-700" />
+        <Gallery />
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700"
+            onClick={() => fileInput.current?.click()}
+          >
+            Import
+          </button>
+          <button
+            type="button"
+            className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700"
+            onClick={exportSketch}
+          >
+            Export
+          </button>
+          <button
+            type="button"
+            className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-rose-800"
+            onClick={() => sketchStore.getState().clearSketch()}
+          >
+            Clear
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f !== undefined) importSketch(f);
+              e.target.value = "";
+            }}
+          />
         </div>
+      </header>
 
-        <div className="absolute bottom-0 left-0 p-4 text-white bg-gray-700">
-          <p>
-            Select two points to add a horizontal or vertical constraint, or
-            select two lines to add a parallel constraint.
-          </p>
-          <p>Selected Primitives: {selectedPrimitiveIds.join(", ")}</p>
-          <p>Primitives: {primitives.map((p) => p.id).join(", ")}</p>
-          <p>
-            Constraints:{" "}
-            {constraints
-              .map((c) => `${c.type}(${c.points.join(", ")})`)
-              .join(", ")}
-          </p>
-        </div>
-      </Html>
-    </Canvas>
+      <ConstraintBar />
+
+      <div className="flex min-h-0 flex-1">
+        <Toolbar />
+        <main className="min-w-0 flex-1">
+          <SketchCanvas />
+        </main>
+        <aside className="w-80 shrink-0 overflow-y-auto border-l border-slate-700 bg-slate-900/60">
+          <Section title="Inspector">
+            <InspectorPanel />
+          </Section>
+          <Section title="Constraints">
+            <ConstraintList />
+          </Section>
+          <Section title="Diagnostics">
+            <DiagnosticsPanel />
+          </Section>
+          <Section title="JSON">
+            <JsonPanel />
+          </Section>
+        </aside>
+      </div>
+    </div>
   );
 }

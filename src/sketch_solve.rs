@@ -84,7 +84,7 @@ fn constraint_to_acs(
         lines.get(lid).cloned()
     };
 
-    let result = match ctype {
+    match ctype {
         "horizontal_pp" => {
             let p1 = as_string(c, "p1_id")?;
             let p2 = as_string(c, "p2_id")?;
@@ -253,9 +253,7 @@ fn constraint_to_acs(
             skipped.push(format!("{}:{}", cid, ctype));
             None
         }
-    };
-
-    result
+    }
 }
 
 /// Resolve circle center point id for constraints that only reference `c_id`.
@@ -364,26 +362,25 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
             continue;
         };
         if t == "point" {
-            if let Some(pt) = cs.get_point(id.to_string()) {
-                if let Some(obj) = p.as_object_mut() {
-                    obj.insert("x".to_string(), json!(pt.x));
-                    obj.insert("y".to_string(), json!(pt.y));
-                }
+            if let Some(pt) = cs.get_point(id.to_string())
+                && let Some(obj) = p.as_object_mut()
+            {
+                obj.insert("x".to_string(), json!(pt.x));
+                obj.insert("y".to_string(), json!(pt.y));
             }
         } else if t == "circle" {
-            if let Some(c) = cs.get_circle(id.to_string()) {
-                if let Some(obj) = p.as_object_mut() {
-                    obj.insert("radius".to_string(), json!(c.radius));
-                }
+            if let Some(c) = cs.get_circle(id.to_string())
+                && let Some(obj) = p.as_object_mut()
+            {
+                obj.insert("radius".to_string(), json!(c.radius));
             }
-        } else if t == "arc" {
-            if let Some(a) = cs.get_arc(id.to_string()) {
-                if let Some(obj) = p.as_object_mut() {
-                    obj.insert("radius".to_string(), json!(a.radius));
-                    obj.insert("start_angle".to_string(), json!(a.start_angle));
-                    obj.insert("end_angle".to_string(), json!(a.end_angle));
-                }
-            }
+        } else if t == "arc"
+            && let Some(a) = cs.get_arc(id.to_string())
+            && let Some(obj) = p.as_object_mut()
+        {
+            obj.insert("radius".to_string(), json!(a.radius));
+            obj.insert("start_angle".to_string(), json!(a.start_angle));
+            obj.insert("end_angle".to_string(), json!(a.end_angle));
         }
     }
 }
@@ -447,13 +444,38 @@ pub fn solve_sketch_primitives_json(input: &str) -> Result<String, String> {
 
     let mut out: Vec<Value> = primitives_arr.clone();
 
-    let (status, solve_status_num, error_msg): (&str, i32, Option<String>) = match &solve_result {
-        Ok(SolverResult::Converged { .. }) => ("converged", 1, None),
-        Ok(SolverResult::MaxIterationsReached { .. }) => {
-            ("failed", 2, Some("Solver did not converge".to_string()))
-        }
-        Err(e) => ("failed", 2, Some(e.clone())),
-    };
+    let (status, solve_status_num, error_msg, stats): (&str, i32, Option<String>, Option<Value>) =
+        match &solve_result {
+            Ok(SolverResult::Converged {
+                iterations,
+                final_error,
+                initial_error,
+            }) => (
+                "converged",
+                1,
+                None,
+                Some(json!({
+                    "iterations": iterations,
+                    "initial_error": initial_error,
+                    "final_error": final_error,
+                })),
+            ),
+            Ok(SolverResult::MaxIterationsReached {
+                iterations,
+                final_error,
+                initial_error,
+            }) => (
+                "failed",
+                2,
+                Some("Solver did not converge".to_string()),
+                Some(json!({
+                    "iterations": iterations,
+                    "initial_error": initial_error,
+                    "final_error": final_error,
+                })),
+            ),
+            Err(e) => ("failed", 2, Some(e.clone()), None),
+        };
 
     if solve_result.is_ok() {
         apply_solution_to_primitives(&mut out, &cs);
@@ -469,6 +491,7 @@ pub fn solve_sketch_primitives_json(input: &str) -> Result<String, String> {
         "skipped_constraint_ids": skipped_constraint_ids,
         "conflicting_constraint_ids": Vec::<String>::new(),
         "error": error_msg,
+        "stats": stats,
     });
 
     serde_json::to_string(&response).map_err(|e| e.to_string())

@@ -9,6 +9,12 @@ pub struct ConstraintGraph {
     constraints: Vec<Box<dyn Constraint>>,
 }
 
+impl Default for ConstraintGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConstraintGraph {
     pub fn new() -> Self {
         Self {
@@ -48,6 +54,12 @@ pub struct ConstraintSolver {
     constraint_graph: ConstraintGraph,
     constraint_types: Vec<ConstraintType>,
     solver: ParametricDogLegSolver,
+}
+
+impl Default for ConstraintSolver {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConstraintSolver {

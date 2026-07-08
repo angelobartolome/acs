@@ -11,21 +11,19 @@ export default defineConfig({
     outDir: "build",
     sourcemap: true,
   },
-  assetsInclude: [
-    "**/*.exr",
-    "**/*.jpg",
-    "**/*.jpeg",
-    "**/*.svg",
-    "**/*.hdr",
-    "**/*.glb",
-    "**/*.gltf",
-    "**/*.woff2",
-    "**/*.woff",
-    "**/*.ttf",
-  ],
+  optimizeDeps: {
+    // Keep the wasm-pack package out of esbuild pre-bundling so the
+    // `new URL("acs_bg.wasm", import.meta.url)` lookup keeps working.
+    exclude: ["acs"],
+  },
   server: {
     fs: {
       allow: [".."],
     },
+    allowedHosts: [
+      "localhost",
+      "127.0.0.1",
+      "af20-2804-7f0-6942-b6cf-514-2588-c4ee-1e8c.ngrok-free.app",
+    ],
   },
 });

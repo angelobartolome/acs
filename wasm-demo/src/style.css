@@ -1,15 +1,16 @@
 @import "tailwindcss";
 
-body {
-  margin: 0px;
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
   overflow: hidden;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #e0eaef;
 }
-canvas {
-  display: block;
-  width: 100vw;
-  height: 100vh;
+
+body {
+  color-scheme: dark;
+  background-color: #0f172a;
+  color: #e2e8f0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
 }

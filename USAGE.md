@@ -100,7 +100,8 @@ Every constraint primitive needs a unique `id` and a `type` string. The full lis
   "primitives": [ ...same array with updated x/y/radius/angles... ],
   "skipped_constraint_ids": [],
   "conflicting_constraint_ids": [],
-  "error": null
+  "error": null,
+  "stats": { "iterations": 3, "initial_error": 1600.0, "final_error": 1.2e-12 }
 }
 ```
 
@@ -112,6 +113,7 @@ Every constraint primitive needs a unique `id` and a `type` string. The full lis
 | `primitives` | The original array with geometric parameters updated in-place |
 | `skipped_constraint_ids` | Constraints the solver could not interpret (unsupported type, missing fields) |
 | `error` | `null` on success; error message string on failure |
+| `stats` | Solver statistics: `iterations`, `initial_error`, `final_error` (summed/max across components); `null` if the solve errored before running |
 
 ### Full example: a constrained square
 
