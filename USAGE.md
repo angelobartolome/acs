@@ -71,7 +71,7 @@ Every constraint primitive needs a unique `id` and a `type` string. The full lis
 | `perpendicular_ll` | `l1_id`, `l2_id` | Two lines are perpendicular |
 | `perpendicular_pppp` | `l1p1_id`, `l1p2_id`, `l2p1_id`, `l2p2_id` | Same, expressed as four points |
 | `p2p_coincident` | `p1_id`, `p2_id` | Two points overlap |
-| `point_on_line_pl` | `p_id`, `l_id` | Point lies on a line |
+| `point_on_line_pl` | `p_id`, `l_id` | Point lies on a line segment (closest point clamped to the segment) |
 | `point_on_line_ppp` | `p_id`, `lp1_id`, `lp2_id` | Same, line expressed as two points |
 | `point_on_circle` | `p_id`, `c_id` | Point lies on circle circumference |
 | `p2p_distance` | `p1_id`, `p2_id`, `distance` | Fixed Euclidean distance |
@@ -80,6 +80,7 @@ Every constraint primitive needs a unique `id` and a `type` string. The full lis
 | `l2l_angle_pppp` | `l1p1_id`, `l1p2_id`, `l2p1_id`, `l2p2_id`, `angle` | Same, four-point form |
 | `equal_length` | `l1_id`, `l2_id` | Two segments have equal length |
 | `equal_radius_cc` | `c1_id`, `c2_id` | Two circles share radius |
+| `equal_radius_aa` | `a1_id`, `a2_id` | Two arcs share radius |
 | `circle_radius` | `c_id`, `radius` | Circle has a fixed radius |
 | `arc_radius` | `a_id`, `radius` | Arc has a fixed radius |
 | `tangent_lc` | `l_id`, `c_id` | Line is tangent to circle |
@@ -88,7 +89,13 @@ Every constraint primitive needs a unique `id` and a `type` string. The full lis
 | `midpoint_on_line_ll` | `l1_id`, `l2_id` | Midpoint of L1 lies on L2 |
 | `midpoint_on_line_pppp` | `l1p1_id`, `l1p2_id`, `l2p1_id`, `l2p2_id` | Same, four-point form |
 | `p2p_symmetric_ppl` | `p1_id`, `p2_id`, `l_id` | Two points symmetric about a line |
-| `p2p_symmetric_ppp` | `p1_id`, `p2_id`, `p_id` | Two points symmetric about a point |
+| `p2p_symmetric_ppp` | `p1_id`, `p2_id`, `p_id` | Two points symmetric about a point (`p_id` is the midpoint) |
+
+Notes:
+
+- `point_on_circle` and `tangent_lc` also accept an explicit `center_id`; when omitted, it is resolved automatically from the circle's `c_id`.
+- Constraints with an unrecognized `type` (or missing fields) are not an error — they are skipped and reported in `skipped_constraint_ids`.
+- Geometry types `ellipse`, `arc_of_ellipse`, `hyperbola`, `arc_of_hyperbola`, `parabola`, and `arc_of_parabola` are accepted in the input but not solved; they pass through unchanged.
 
 ### Output format
 
@@ -111,7 +118,8 @@ Every constraint primitive needs a unique `id` and a `type` string. The full lis
 | `status` | `"converged"` or `"failed"` |
 | `solveStatus` | `1` = converged, `2` = failed |
 | `primitives` | The original array with geometric parameters updated in-place |
-| `skipped_constraint_ids` | Constraints the solver could not interpret (unsupported type, missing fields) |
+| `skipped_constraint_ids` | Constraints the solver could not interpret, as `"<id>:<type>"` strings (unsupported type, missing fields) or `"<id>:add_error:<message>"` (rejected by the solver) |
+| `conflicting_constraint_ids` | Reserved; currently always `[]` |
 | `error` | `null` on success; error message string on failure |
 | `stats` | Solver statistics: `iterations`, `initial_error`, `final_error` (summed/max across components); `null` if the solve errored before running |
 
@@ -292,7 +300,7 @@ ConstraintType::Angle(l1p1, l1p2, l2p1, l2p2, radians)
 ConstraintType::EqualLength(l1p1, l1p2, l2p1, l2p2)
 
 // Point on geometry
-ConstraintType::PointOnLine(point_id, line_p1_id, line_p2_id)
+ConstraintType::PointOnLine(point_id, line_p1_id, line_p2_id)  // point on segment (clamped)
 ConstraintType::PointOnCircle(point_id, circle_center_id, circle_id)
 
 // Circle / arc

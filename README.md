@@ -34,11 +34,12 @@ A built-in pre-solver partitions each sketch into independent connected componen
 | `Angle` | Directed angle between two lines equals a target (radians) |
 | `Coincident` | Two points overlap |
 | `EqualX` / `EqualY` | Pin a point to a coordinate value |
-| `PointOnLine` | Point lies on an infinite line |
+| `PointOnLine` | Point lies on a line segment |
 | `DistancePointPoint` | Euclidean distance between two points |
 | `DistancePointLine` | Perpendicular distance from a point to a line |
 | `EqualLength` | Two line segments have the same length |
 | `Midpoint` | A point is the midpoint of a segment |
+| `MidpointOfLineOnLine` | The midpoint of a segment lies on an infinite line |
 | `Symmetric` | Two points are mirror images across an axis line |
 | `FixedRadius` | Circle or arc has a fixed radius |
 | `EqualRadius` | Two circles share the same radius |

@@ -31,7 +31,7 @@ entries not listed are **0**.
 | `Coincident(p1, p2)` | 2 points | `x1−x2 = 0`, `y1−y2 = 0` |
 | `EqualX(p, val)` | 1 point | `x − val = 0` |
 | `EqualY(p, val)` | 1 point | `y − val = 0` |
-| `PointOnLine(p, a, b)` | 3 points | squared distance from `p` to line `ab` = 0 |
+| `PointOnLine(p, a, b)` | 3 points | squared distance from `p` to **segment** `ab` = 0 (closest-point parameter `t` clamped to `[0, 1]`) |
 | `EqualRadius(c1, c2)` | 2 circles | `r1 − r2 = 0` |
 
 ---
@@ -365,69 +365,27 @@ This is encoded as two equations:
 2. The vector `p→q` is perpendicular to the axis.
 
 Let `dx = bx − ax`, `dy = by − ay` (axis direction),
-`mx = (px+qx)/2 − ax`, `my = (py+qy)/2 − ay` (midpoint shifted to axis origin).
+`epx = (px+qx)/2 − ax`, `epy = (py+qy)/2 − ay` (midpoint shifted to axis origin).
 
 **Residual (2 equations):**
 
 ```
-R₀ = my·dx − mx·dy  = 0   (collinearity of midpoint with axis)
+R₀ = epy·dx − epx·dy  = 0   (collinearity of midpoint with axis)
 R₁ = (qx−px)·dx + (qy−py)·dy = 0   (perpendicularity of pq to axis)
 ```
 
-**Jacobian for R₀** (let `epx = (px+qx)/2 − ax`, `epy = (py+qy)/2 − ay`):
-
-| Parameter | ∂R₀/∂param |
-|-----------|------------|
-| `px` | `−½·dy` |
-| `py` | `½·dx` |
-| `qx` | `−½·dy` |
-| `qy` | `½·dx` |
-| `ax` | `epy − dy` (= `−epx_shift·0 + ...`) — full form: `dy − epy` ... see derivation |
-| `ay` | `dx − epx`... |
-| `bx` | `epy` |
-| `by` | `−epx` |
-
-Full derivation of `R₀ = epy·dx − epx·dy`:
-
-```
-∂R₀/∂ax = (∂epy/∂ax)·dx + epy·(∂dx/∂ax) − (∂epx/∂ax)·dy − epx·(∂dy/∂ax)
-         = 0·dx + epy·(−1) − (−1)·dy − epx·0
-         = −epy + dy
-
-∂R₀/∂ay = (−1)·dx + 0 − 0 − epx·(−1) ... wait
-         = (∂epy/∂ay)·dx − (∂epx/∂ay)·dy
-         = (−1)·dx − 0·dy = −dx + epx... let me redo
-```
-
-Correct derivation (product rule, `epx = (px+qx)/2 − ax`, `epy = (py+qy)/2 − ay`,
-`dx = bx − ax`, `dy = by − ay`):
-
-```
-∂epx/∂ax = −1,  ∂epy/∂ax = 0,  ∂dx/∂ax = −1,  ∂dy/∂ax = 0
-∂R₀/∂ax  = epy·(−1) − (−1)·dy = −epy + dy
-
-∂epx/∂ay = 0,   ∂epy/∂ay = −1, ∂dx/∂ay = 0,   ∂dy/∂ay = −1
-∂R₀/∂ay  = (−1)·dx − epx·(−1) = −dx + epx
-
-∂epx/∂bx = 0,   ∂epy/∂bx = 0,  ∂dx/∂bx = 1,   ∂dy/∂bx = 0
-∂R₀/∂bx  = epy·1 − 0 = epy
-
-∂epx/∂by = 0,   ∂epy/∂by = 0,  ∂dx/∂by = 0,   ∂dy/∂by = 1
-∂R₀/∂by  = 0 − epx·1 = −epx
-
-∂R₀/∂px  = (½)·dx − 0 = ½·dx... wait
-```
-
-Hmm — `R₀ = epy·dx − epx·dy`. Let me re-examine:
+**Jacobian for R₀** (product rule; `∂epx/∂ax = −1`, `∂dx/∂ax = −1`, etc.):
 
 ```
 ∂R₀/∂px = (∂epy/∂px)·dx − (∂epx/∂px)·dy = 0·dx − ½·dy = −½·dy
-∂R₀/∂py = (∂epy/∂py)·dx = ½·dx
+∂R₀/∂py = ½·dx
 ∂R₀/∂qx = −½·dy
-∂R₀/∂qy =  ½·dx
+∂R₀/∂qy = ½·dx
+∂R₀/∂ax = epy·(−1) − (−1)·dy = dy − epy
+∂R₀/∂ay = (−1)·dx − epx·(−1) = epx − dx
+∂R₀/∂bx = epy
+∂R₀/∂by = −epx
 ```
-
-So the full Jacobian table for R₀:
 
 | Parameter | ∂R₀/∂param |
 |-----------|------------|
@@ -454,6 +412,42 @@ Let `vx = qx − px`, `vy = qy − py`.
 | `ay` | `−vy` |
 | `bx` | `vx` |
 | `by` | `vy` |
+
+---
+
+### 13  MidpointOfLineOnLine
+
+**Entities:** four points — `(l1a, l1b)` defining segment L1 and `(l2a, l2b)`
+defining the infinite line L2.
+
+**Geometric meaning:** the midpoint of segment L1 lies on the infinite line
+through L2.
+
+Let `mx = (x₁ₐ + x₁ᵦ)/2`, `my = (y₁ₐ + y₁ᵦ)/2` (midpoint of L1),
+`dx2 = x₂ᵦ − x₂ₐ`, `dy2 = y₂ᵦ − y₂ₐ` (direction of L2).
+
+**Residual (1 equation) — signed-area form:**
+
+```
+R = (mx − x₂ₐ)·dy2 − (my − y₂ₐ)·dx2 = 0
+```
+
+**Jacobian:**
+
+| Parameter | ∂R/∂param |
+|-----------|-----------|
+| `x₁ₐ` | `½·dy2` |
+| `y₁ₐ` | `−½·dx2` |
+| `x₁ᵦ` | `½·dy2` |
+| `y₁ᵦ` | `−½·dx2` |
+| `x₂ₐ` | `−dy2 + (my − y₂ₐ)` |
+| `y₂ₐ` | `−(mx − x₂ₐ) + dx2` |
+| `x₂ᵦ` | `−(my − y₂ₐ)` |
+| `y₂ᵦ` | `mx − x₂ₐ` |
+
+Derivation notes (product rule on `R = (mx − x₂ₐ)·dy2 − (my − y₂ₐ)·dx2`):
+- `∂R/∂x₂ₐ = (−1)·dy2 − (my − y₂ₐ)·(−1) = −dy2 + (my − y₂ₐ)`
+- `∂R/∂y₂ₐ = (mx − x₂ₐ)·(−1) − (−1)·dx2 = −(mx − x₂ₐ) + dx2`
 
 ---
 
@@ -484,6 +478,7 @@ pub enum ConstraintType {
     EqualLength(String, String, String, String),       // l1p1, l1p2, l2p1, l2p2
     Symmetric(String, String, String, String),         // p_id, q_id, axis_pa_id, axis_pb_id
     Perpendicular(String, String, String, String),     // l1p1, l1p2, l2p1, l2p2
+    MidpointOfLineOnLine(String, String, String, String), // l1p1, l1p2, l2p1, l2p2
 }
 ```
 
@@ -491,8 +486,10 @@ pub enum ConstraintType {
 
 ## Solver Notes
 
-All residuals are designed so the solver's tolerance check `‖R‖ < 1e-6` is
-meaningful in physical units (coordinates / radii in whatever unit the caller uses).
+All residuals are designed so the solver's tolerance check `‖R‖∞ < 1e-10` is
+meaningful in physical units (coordinates / radii in whatever unit the caller
+uses). The same threshold is used by the pre-solver to decide whether a
+component is already satisfied and can be skipped.
 
 The squared-distance form used by `DistancePointPoint`, `EqualLength`, and
 `PointOnCircle` keeps residuals and Jacobians smooth everywhere (no

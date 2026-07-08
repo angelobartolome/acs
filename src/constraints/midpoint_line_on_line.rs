@@ -86,8 +86,10 @@ impl Constraint for MidpointOfLineOnLineConstraint {
         j[(0, i_x1b)] = dy2 / 2.0;
         j[(0, i_y1b)] = -dx2 / 2.0;
 
+        // ∂R/∂x2a: (mx−x2a)·0 + (−1)·dy2 − (my−y2a)·(−1) = −dy2 + (my − y2a)
         j[(0, i_x2a)] = -dy2 + (my - y2a);
-        j[(0, i_y2a)] = -(mx - x2a);
+        // ∂R/∂y2a: (mx−x2a)·(−1) − [(−1)·dx2 + (my−y2a)·0] = −(mx − x2a) + dx2
+        j[(0, i_y2a)] = -(mx - x2a) + dx2;
         j[(0, i_x2b)] = -(my - y2a);
         j[(0, i_y2b)] = mx - x2a;
 
