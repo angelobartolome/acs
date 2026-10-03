@@ -5,7 +5,6 @@ import {
   addCircleTool,
   addLineTool,
   addPointTool,
-  panTool,
 } from "./geometryTools";
 import type { ITool } from "./types";
 
@@ -15,7 +14,6 @@ export const TOOLS: readonly ITool[] = [
   addLineTool,
   addCircleTool,
   addArcTool,
-  panTool,
 ];
 
 const BY_ID = new Map<ToolId, ITool>(TOOLS.map((t) => [t.id, t]));

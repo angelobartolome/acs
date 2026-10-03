@@ -145,33 +145,3 @@ export const addArcTool: ITool = {
   onPointerUp() {},
   onCancel: clearDraft,
 };
-
-let panLast: Vec2 | null = null;
-
-export const panTool: ITool = {
-  id: "pan",
-  label: "Pan",
-  icon: "\u270B",
-  hint: "Drag to pan the view",
-  cursor: "grab",
-  onPointerDown(e) {
-    panLast = e.screen;
-  },
-  onPointerMove(e) {
-    if (panLast === null) return;
-    const s = sketchStore.getState();
-    const vp = s.viewport;
-    s.setViewport({
-      ...vp,
-      offsetX: vp.offsetX + (e.screen.x - panLast.x),
-      offsetY: vp.offsetY + (e.screen.y - panLast.y),
-    });
-    panLast = e.screen;
-  },
-  onPointerUp() {
-    panLast = null;
-  },
-  onCancel() {
-    panLast = null;
-  },
-};
