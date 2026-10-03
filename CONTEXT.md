@@ -31,7 +31,7 @@ An entity with zero degrees of freedom. A Line is fully constrained when both of
 _Avoid_: Locked, determined, rigid
 
 **Guide**:
-An input a constraint copies across, such as a mirror's axis or an array's center or direction. When the Guide moves, the copies follow. Dragging a copy never moves the Guide; other constraints on the copies can (adding Horizontal to a patterned side turns the pattern about its center, moving the center as needed).
+An input a constraint copies across, such as a mirror's axis or an array's center or direction. When the Guide moves, the copies follow. A free Guide moves like any other free geometry, by a drag of a copy or by other constraints on the copies (adding Horizontal to a patterned side turns the pattern about its center, moving the center as needed); pin it to keep it put.
 _Avoid_: Anchor, reference (Reference Geometry means fixed input geometry), driver
 
 **Conflicting**:

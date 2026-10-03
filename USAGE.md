@@ -191,7 +191,7 @@ Mark a constraint `temporary: true` to make it a soft goal: in each component th
 { "type": "y", "id": "gy", "point": "p", "value": 3, "temporary": true }
 ```
 
-With `l` running along y = 0, `p` slides along the line to (6, 0), the closest it can get to the cursor. A goal that can't be met never makes a solve `failed` and is never `conflicting` or `redundant`; `status`, `dof` and `fullyConstrained` consider only the real constraints. A Guide (a mirror's axis, an array's center or direction) is held during a drag, so dragging a copy never moves it.
+With `l` running along y = 0, `p` slides along the line to (6, 0), the closest it can get to the cursor. A goal that can't be met never makes a solve `failed` and is never `conflicting` or `redundant`; `status`, `dof` and `fullyConstrained` consider only the real constraints. A free Guide (a mirror's axis, an array's center or direction) may move in a drag like any free geometry, so every copy drags alike; pin it to keep it put.
 
 ### Output format
 

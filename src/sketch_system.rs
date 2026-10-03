@@ -160,12 +160,9 @@ impl<'a> SketchSystem<'a> {
     /// already hold.
     ///
     /// Guides (a mirror's axis, an array's center or direction) are ordinary
-    /// unknowns, except under soft goals: a drag must never move them through
-    /// the constraints that read them as Guides, so a solve with goals holds
-    /// every Guide at its value when the solve started (a snapshot), with no
-    /// Guide partials from those constraints. If other constraints moved a
-    /// Guide, the Component is solved again from the new snapshot so the
-    /// copies follow, until the Guides settle (`MAX_GUIDE_PASSES`).
+    /// unknowns in every solve, drags included: holding them while a drag
+    /// moved a copy made the drag chase a Guide that other constraints (a
+    /// polygon's tangency) moved, and the solve blew up.
     pub(crate) fn solve(&mut self, dogleg: &ParametricDogLegSolver) -> SolverResult {
         let mut iterations = 0;
         let mut initial_error = 0.0f64;
@@ -173,62 +170,40 @@ impl<'a> SketchSystem<'a> {
         let mut all_converged = true;
 
         for comp in &self.components {
-            let (r, _) = evaluate(&self.pm, None, &self.constraints, comp, &comp.constraints);
+            let (r, _) = evaluate(&self.pm, &self.constraints, comp, &comp.constraints);
             if r.amax() <= TOLF {
                 continue;
             }
-            let holds_guides = !comp.goals.is_empty()
-                && comp
-                    .constraints
-                    .iter()
-                    .any(|&i| !self.constraints.get(i).guides().is_empty());
 
-            let mut passes = 0;
-            let (converged, error) = loop {
-                passes += 1;
-                let result = if comp.goals.is_empty() {
-                    let mut x = values(&self.pm, comp);
-                    let pm = &mut self.pm;
-                    let constraints = &self.constraints;
-                    let result = dogleg.solve_dl(&mut x, &mut |x| {
-                        set_columns(pm, comp, x);
-                        evaluate(pm, None, constraints, comp, &comp.constraints)
-                    });
-                    set_columns(&mut self.pm, comp, &x);
-                    result
-                } else {
-                    let guides = self.pm.values().to_vec();
-                    solve_with_goals(dogleg, &mut self.pm, Some(&guides), &self.constraints, comp)
-                };
-
-                let (SolverResult::Converged {
-                    iterations: it,
-                    initial_error: ie,
-                    ..
-                }
-                | SolverResult::MaxIterationsReached {
-                    iterations: it,
-                    initial_error: ie,
-                    ..
-                }) = result;
-                iterations += it;
-                if passes == 1 {
-                    initial_error = initial_error.max(ie);
-                }
-
-                // Judge the real constraints with the Guides' current values.
-                let (r, _) = evaluate(&self.pm, None, &self.constraints, comp, &comp.diagnosed);
-                let converged = r.amax() <= TOLF;
-                if converged
-                    || !holds_guides
-                    || !matches!(result, SolverResult::Converged { .. })
-                    || passes >= MAX_GUIDE_PASSES
-                {
-                    break (converged, r.norm());
-                }
+            let result = if comp.goals.is_empty() {
+                let mut x = values(&self.pm, comp);
+                let pm = &mut self.pm;
+                let constraints = &self.constraints;
+                let result = dogleg.solve_dl(&mut x, &mut |x| {
+                    set_columns(pm, comp, x);
+                    evaluate(pm, constraints, comp, &comp.constraints)
+                });
+                set_columns(&mut self.pm, comp, &x);
+                result
+            } else {
+                solve_with_goals(dogleg, &mut self.pm, &self.constraints, comp)
             };
-            all_converged &= converged;
-            final_error = final_error.max(error);
+            let (SolverResult::Converged {
+                iterations: it,
+                initial_error: ie,
+                ..
+            }
+            | SolverResult::MaxIterationsReached {
+                iterations: it,
+                initial_error: ie,
+                ..
+            }) = result;
+            iterations += it;
+            initial_error = initial_error.max(ie);
+
+            let (r, _) = evaluate(&self.pm, &self.constraints, comp, &comp.diagnosed);
+            all_converged &= r.amax() <= TOLF;
+            final_error = final_error.max(r.norm());
         }
 
         if all_converged {
@@ -367,7 +342,7 @@ impl<'a> SketchSystem<'a> {
             if which.is_empty() {
                 continue;
             }
-            let (r, jac) = evaluate(&self.pm, None, &self.constraints, comp, which);
+            let (r, jac) = evaluate(&self.pm, &self.constraints, comp, which);
             // Row range of each diagnosed constraint.
             let mut rows = Vec::with_capacity(which.len());
             let mut start = 0;
@@ -437,14 +412,11 @@ impl<'a> SketchSystem<'a> {
         if comp.columns.is_empty() {
             return None;
         }
-        let (_, jac) = evaluate(&self.pm, None, &self.constraints, comp, &comp.diagnosed);
+        let (_, jac) = evaluate(&self.pm, &self.constraints, comp, &comp.diagnosed);
         let eig = SymmetricEigen::new(jac.transpose() * &jac);
         Some((jac, eig))
     }
 }
-
-/// Most solves of one Component while other constraints move its Guides.
-const MAX_GUIDE_PASSES: usize = 50;
 
 /// Threshold for a zero eigenvalue of JᵀJ (null space), consistent with the
 /// 1e-10 residual tolerance.
@@ -478,11 +450,9 @@ fn rank(jac: &DMatrix<f64>) -> usize {
 }
 
 /// Residuals and Jacobian of some of a Component's constraints (`which`, rows
-/// in that order), over the Component's local columns. Guides are read from
-/// `guide_values` when given (see `eval_into`).
+/// in that order), over the Component's local columns.
 fn evaluate(
     pm: &VarRegistry,
-    guide_values: Option<&[f64]>,
     constraints: &Constraints,
     comp: &Component,
     which: &[usize],
@@ -494,7 +464,7 @@ fn evaluate(
     let mut row = 0;
     for &i in which {
         let c = constraints.get(i);
-        eval_into(c, pm, guide_values, &column_of, row, &mut r, &mut jac);
+        eval_into(c, pm, &column_of, row, &mut r, &mut jac);
         row += c.num_residuals();
     }
     (r, jac)
@@ -557,7 +527,6 @@ fn values(pm: &VarRegistry, comp: &Component) -> DVector<f64> {
 fn solve_with_goals(
     dogleg: &ParametricDogLegSolver,
     pm: &mut VarRegistry,
-    guides: Option<&[f64]>,
     constraints: &Constraints,
     comp: &Component,
 ) -> SolverResult {
@@ -569,7 +538,7 @@ fn solve_with_goals(
     let run = |pm: &mut VarRegistry, x: &mut DVector<f64>, which: &[usize], iterations: &mut usize| {
         let result = dogleg.solve_dl(x, &mut |x| {
             set_columns(pm, comp, x);
-            evaluate(pm, guides, constraints, comp, which)
+            evaluate(pm, constraints, comp, which)
         });
         set_columns(pm, comp, x);
         let (SolverResult::Converged { iterations: it, .. }
@@ -588,22 +557,22 @@ fn solve_with_goals(
         };
     }
 
-    let initial_error = evaluate(pm, guides, constraints, comp, real).0.norm();
+    let initial_error = evaluate(pm, constraints, comp, real).0.norm();
     if !run(pm, &mut x, real, &mut iterations) {
         return SolverResult::MaxIterationsReached {
             iterations,
-            final_error: evaluate(pm, guides, constraints, comp, real).0.norm(),
+            final_error: evaluate(pm, constraints, comp, real).0.norm(),
             initial_error,
         };
     }
 
-    let mut r_goal = evaluate(pm, guides, constraints, comp, goals).0;
+    let mut r_goal = evaluate(pm, constraints, comp, goals).0;
     let mut radius: Option<f64> = None;
     'outer: for _ in 0..dogleg.max_iterations() {
         if r_goal.amax() <= TOLF {
             break;
         }
-        let Some(model) = ReducedModel::at(pm, guides, constraints, comp, &x) else {
+        let Some(model) = ReducedModel::at(pm, constraints, comp, &x) else {
             break;
         };
         let negligible = 1e-12 * (1.0 + x.norm());
@@ -626,7 +595,7 @@ fn solve_with_goals(
             }
             let mut x_try = &x + &model.z * &u;
             if run(pm, &mut x_try, real, &mut iterations) {
-                let r = evaluate(pm, guides, constraints, comp, goals).0;
+                let r = evaluate(pm, constraints, comp, goals).0;
                 let actual = f - 0.5 * r.norm_squared();
                 if actual > 0.0 {
                     let rho = actual / predicted;
@@ -648,7 +617,7 @@ fn solve_with_goals(
     set_columns(pm, comp, &x);
     SolverResult::Converged {
         iterations,
-        final_error: evaluate(pm, guides, constraints, comp, real).0.norm(),
+        final_error: evaluate(pm, constraints, comp, real).0.norm(),
         initial_error,
     }
 }
@@ -671,15 +640,14 @@ impl ReducedModel {
     /// real constraints allow no motion.
     fn at(
         pm: &mut VarRegistry,
-        guides: Option<&[f64]>,
         constraints: &Constraints,
         comp: &Component,
         x: &DVector<f64>,
     ) -> Option<Self> {
         let (real, goals) = (&comp.diagnosed, &comp.goals);
         set_columns(pm, comp, x);
-        let (_, j_real) = evaluate(pm, guides, constraints, comp, real);
-        let (r_goal, j_goal) = evaluate(pm, guides, constraints, comp, goals);
+        let (_, j_real) = evaluate(pm, constraints, comp, real);
+        let (r_goal, j_goal) = evaluate(pm, constraints, comp, goals);
         let z = null_space_basis(&j_real);
         if z.ncols() == 0 {
             return None;
@@ -698,8 +666,8 @@ impl ReducedModel {
         // every residual, which is what sees a fold.
         let grad_l = |pm: &mut VarRegistry, x: &DVector<f64>| {
             set_columns(pm, comp, x);
-            let (r_b, j_b) = evaluate(pm, guides, constraints, comp, goals);
-            let (_, j_a) = evaluate(pm, guides, constraints, comp, real);
+            let (r_b, j_b) = evaluate(pm, constraints, comp, goals);
+            let (_, j_a) = evaluate(pm, constraints, comp, real);
             j_b.transpose() * r_b + j_a.transpose() * &lambda
         };
         let h = FD_STEP * (1.0 + x.amax());
