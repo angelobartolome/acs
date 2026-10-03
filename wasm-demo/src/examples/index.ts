@@ -21,22 +21,36 @@ function circ(
 ): SketchEntity {
   return { kind: "circle", id, center, radius, fixed };
 }
+/** An arc from `start` to `end` (counter-clockwise); the solver keeps its endpoints on it. */
 function arc(
   id: string,
   center: EntityId,
+  start: EntityId,
+  end: EntityId,
   radius: number,
   startAngle: number,
   endAngle: number,
 ): SketchEntity {
-  return { kind: "arc", id, center, radius, startAngle, endAngle, fixed: false };
+  return {
+    kind: "arc",
+    id,
+    center,
+    start,
+    end,
+    radius,
+    startAngle,
+    endAngle,
+    fixed: false,
+  };
 }
+/** A constraint by registry key (a native type's variant). */
 function k(
   id: string,
-  type: string,
+  def: string,
   entities: EntityId[],
   params: Record<string, number> = {},
 ): ConstraintInstance {
-  return { id, type, entities, params };
+  return { id, def, entities, params };
 }
 
 export interface Example {
@@ -66,12 +80,12 @@ export const EXAMPLES: readonly Example[] = [
         ln("l4", "p4", "p1"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "vertical_l", ["l2"]),
-        k("k3", "horizontal_l", ["l3"]),
-        k("k4", "vertical_l", ["l4"]),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "vertical_line", ["l2"]),
+        k("k3", "horizontal_line", ["l3"]),
+        k("k4", "vertical_line", ["l4"]),
         k("k5", "equal_length", ["l1", "l2"]),
-        k("k6", "p2p_distance", ["p1", "p2"], { distance: 40 }),
+        k("k6", "distance_points", ["p1", "p2"], { value: 40 }),
       ],
     },
   },
@@ -88,9 +102,9 @@ export const EXAMPLES: readonly Example[] = [
         ln("l1", "p2", "p3"),
       ],
       constraints: [
-        k("k1", "circle_radius", ["c1"], { radius: 20 }),
-        k("k2", "horizontal_l", ["l1"]),
-        k("k3", "tangent_lc", ["l1", "c1"]),
+        k("k1", "radius_circle", ["c1"], { value: 20 }),
+        k("k2", "horizontal_line", ["l1"]),
+        k("k3", "tangent_line_circle", ["l1", "c1"]),
       ],
     },
   },
@@ -107,16 +121,16 @@ export const EXAMPLES: readonly Example[] = [
         circ("c2", "p2", 14),
       ],
       constraints: [
-        k("k1", "p2p_coincident", ["p1", "p2"]),
-        k("k2", "equal_radius_cc", ["c1", "c2"]),
-        k("k3", "circle_radius", ["c1"], { radius: 25 }),
+        k("k1", "coincident", ["p1", "p2"]),
+        k("k2", "equal_radius_circles", ["c1", "c2"]),
+        k("k3", "radius_circle", ["c1"], { value: 25 }),
       ],
     },
   },
   {
     id: "symmetry",
-    label: "Symmetry about line",
-    description: "Two points kept symmetric about a fixed vertical axis",
+    label: "Mirror about line",
+    description: "Two points kept mirrored across a fixed vertical axis",
     sketch: {
       entities: [
         pt("p1", 0, -40, true),
@@ -127,8 +141,8 @@ export const EXAMPLES: readonly Example[] = [
         ln("l2", "p3", "p4"),
       ],
       constraints: [
-        k("k1", "p2p_symmetric_ppl", ["p3", "p4", "l1"]),
-        k("k2", "p2p_distance", ["p3", "p4"], { distance: 50 }),
+        k("k1", "mirror", ["p3", "p4", "l1"]),
+        k("k2", "distance_points", ["p3", "p4"], { value: 50 }),
       ],
     },
   },
@@ -149,28 +163,36 @@ export const EXAMPLES: readonly Example[] = [
         ln("l3", "p4", "p5"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "p2p_distance", ["p1", "p2"], { distance: 40 }),
-        k("k3", "l2l_angle_ll", ["l1", "l2"], { angle: 45 * DEG }),
-        k("k4", "p2p_distance", ["p1", "p3"], { distance: 40 }),
-        k("k5", "midpoint_on_line_ll", ["l3", "l2"]),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "distance_points", ["p1", "p2"], { value: 40 }),
+        k("k3", "angle", ["l1", "l2"], { value: 45 * DEG }),
+        k("k4", "distance_points", ["p1", "p3"], { value: 40 }),
+        k("k5", "midpoint_on_line", ["l3", "l2"]),
       ],
     },
   },
   {
     id: "arc",
     label: "Arc with radius",
-    description: "A quarter arc held at radius 30 via arc_radius",
+    description:
+      "A quarter arc held at radius 30 via arc_radius; a line shares its end point",
     sketch: {
       entities: [
         pt("p1", 0, 0, true),
-        arc("a1", "p1", 22, 0, 90 * DEG),
+        pt("s1", 22, 0),
+        pt("e1", 0, 22),
+        arc("a1", "p1", "s1", "e1", 22, 0, 90 * DEG),
         pt("p2", 55, 0, true),
-        arc("a2", "p2", 12, 90 * DEG, 270 * DEG),
+        pt("s2", 55, 12),
+        pt("e2", 55, -12),
+        arc("a2", "p2", "s2", "e2", 12, 90 * DEG, 270 * DEG),
+        pt("q", -30, 22),
+        ln("l1", "e1", "q"),
       ],
       constraints: [
-        k("k1", "arc_radius", ["a1"], { radius: 30 }),
-        k("k2", "equal_radius_aa", ["a1", "a2"]),
+        k("k1", "radius_arc", ["a1"], { value: 30 }),
+        k("k2", "equal_radius_arcs", ["a1", "a2"]),
+        k("k3", "tangent_line_arc", ["l1", "a1"]),
       ],
     },
   },
@@ -191,12 +213,12 @@ export const EXAMPLES: readonly Example[] = [
         ln("l4", "p4", "p1"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "horizontal_l", ["l3"]),
-        k("k3", "vertical_l", ["l2"]),
-        k("k4", "vertical_l", ["l4"]),
-        k("k5", "p2p_distance", ["p1", "p2"], { distance: 60 }),
-        k("k6", "p2p_distance", ["p2", "p3"], { distance: 30 }),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "horizontal_line", ["l3"]),
+        k("k3", "vertical_line", ["l2"]),
+        k("k4", "vertical_line", ["l4"]),
+        k("k5", "distance_points", ["p1", "p2"], { value: 60 }),
+        k("k6", "distance_points", ["p2", "p3"], { value: 30 }),
       ],
     },
   },
@@ -220,10 +242,10 @@ export const EXAMPLES: readonly Example[] = [
         k("k2", "parallel", ["l2", "l4"]),
         k("k3", "equal_length", ["l1", "l3"]),
         k("k4", "equal_length", ["l2", "l4"]),
-        k("k5", "horizontal_l", ["l1"]),
-        k("k6", "p2p_distance", ["p1", "p2"], { distance: 50 }),
-        k("k7", "p2p_distance", ["p2", "p3"], { distance: 36 }),
-        k("k8", "l2l_angle_ll", ["l1", "l4"], { angle: 60 * DEG }),
+        k("k5", "horizontal_line", ["l1"]),
+        k("k6", "distance_points", ["p1", "p2"], { value: 50 }),
+        k("k7", "distance_points", ["p2", "p3"], { value: 36 }),
+        k("k8", "angle", ["l1", "l4"], { value: 60 * DEG }),
       ],
     },
   },
@@ -241,10 +263,10 @@ export const EXAMPLES: readonly Example[] = [
         ln("l3", "p2", "p3"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "perpendicular_ll", ["l1", "l2"]),
-        k("k3", "p2p_distance", ["p1", "p2"], { distance: 45 }),
-        k("k4", "p2p_distance", ["p1", "p3"], { distance: 30 }),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "perpendicular", ["l1", "l2"]),
+        k("k3", "distance_points", ["p1", "p2"], { value: 45 }),
+        k("k4", "distance_points", ["p1", "p3"], { value: 30 }),
       ],
     },
   },
@@ -262,11 +284,11 @@ export const EXAMPLES: readonly Example[] = [
         ln("l3", "p2", "p3"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "l2l_angle_ll", ["l1", "l2"], { angle: 60 * DEG }),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "angle", ["l1", "l2"], { value: 60 * DEG }),
         k("k3", "equal_length", ["l1", "l2"]),
         k("k4", "equal_length", ["l1", "l3"]),
-        k("k5", "p2p_distance", ["p1", "p2"], { distance: 40 }),
+        k("k5", "distance_points", ["p1", "p2"], { value: 40 }),
       ],
     },
   },
@@ -286,12 +308,12 @@ export const EXAMPLES: readonly Example[] = [
         ln("l4", "p4", "p1"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
+        k("k1", "horizontal_line", ["l1"]),
         k("k2", "parallel", ["l1", "l3"]),
         k("k3", "parallel", ["l2", "l4"]),
         k("k4", "equal_length", ["l1", "l2"]),
-        k("k5", "p2p_distance", ["p1", "p2"], { distance: 40 }),
-        k("k6", "l2l_angle_ll", ["l1", "l4"], { angle: 70 * DEG }),
+        k("k5", "distance_points", ["p1", "p2"], { value: 40 }),
+        k("k6", "angle", ["l1", "l4"], { value: 70 * DEG }),
       ],
     },
   },
@@ -309,10 +331,10 @@ export const EXAMPLES: readonly Example[] = [
         ln("l3", "p2", "p3"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
+        k("k1", "horizontal_line", ["l1"]),
         k("k2", "equal_length", ["l2", "l3"]),
-        k("k3", "p2p_distance", ["p1", "p2"], { distance: 50 }),
-        k("k4", "p2p_distance", ["p1", "p3"], { distance: 40 }),
+        k("k3", "distance_points", ["p1", "p2"], { value: 50 }),
+        k("k4", "distance_points", ["p1", "p3"], { value: 40 }),
       ],
     },
   },
@@ -327,9 +349,9 @@ export const EXAMPLES: readonly Example[] = [
         pt("p2", 40, 20, false),
       ],
       constraints: [
-        k("k1", "circle_radius", ["c1"], { radius: 30 }),
-        k("k2", "point_on_circle", ["p2", "c1"]),
-        k("k3", "coordinate_x", ["p2"], { x: 18 }),
+        k("k1", "radius_circle", ["c1"], { value: 30 }),
+        k("k2", "on_circle", ["p2", "c1"]),
+        k("k3", "x", ["p2"], { value: 18 }),
       ],
     },
   },
@@ -345,31 +367,31 @@ export const EXAMPLES: readonly Example[] = [
         pt("p3", 20, 40, false),
       ],
       constraints: [
-        k("k1", "point_on_line_pl", ["p3", "l1"]),
-        k("k2", "coordinate_x", ["p3"], { x: 30 }),
+        k("k1", "on_line", ["p3", "l1"]),
+        k("k2", "x", ["p3"], { value: 30 }),
       ],
     },
   },
   {
     id: "two-tangent",
     label: "Line tangent to two circles",
-    description: "A common tangent line touching two fixed circles",
+    description:
+      "A line tangent to two fixed circles: move either circle and the line follows",
     sketch: {
       entities: [
         pt("p1", -40, 0, true),
         circ("c1", "p1", 20),
-        pt("p2", 45, 0, true),
+        pt("p2", 45, 8, true),
         circ("c2", "p2", 12),
         pt("p3", -60, 30, false),
         pt("p4", 60, 22, false),
         ln("l1", "p3", "p4"),
       ],
       constraints: [
-        k("k1", "circle_radius", ["c1"], { radius: 20 }),
-        k("k2", "circle_radius", ["c2"], { radius: 12 }),
-        k("k3", "tangent_lc", ["l1", "c1"]),
-        k("k4", "tangent_lc", ["l1", "c2"]),
-        k("k5", "horizontal_l", ["l1"]),
+        k("k1", "radius_circle", ["c1"], { value: 20 }),
+        k("k2", "radius_circle", ["c2"], { value: 12 }),
+        k("k3", "tangent_line_circle", ["l1", "c1"]),
+        k("k4", "tangent_line_circle", ["l1", "c2"]),
       ],
     },
   },
@@ -387,10 +409,10 @@ export const EXAMPLES: readonly Example[] = [
         ln("l2", "p3", "p4"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "perpendicular_ll", ["l1", "l2"]),
-        k("k3", "p2p_distance", ["p1", "p2"], { distance: 50 }),
-        k("k4", "p2p_distance", ["p3", "p4"], { distance: 60 }),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "perpendicular", ["l1", "l2"]),
+        k("k3", "distance_points", ["p1", "p2"], { value: 50 }),
+        k("k4", "distance_points", ["p3", "p4"], { value: 60 }),
       ],
     },
   },
@@ -407,10 +429,10 @@ export const EXAMPLES: readonly Example[] = [
         ln("l2", "p1", "p3"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "l2l_angle_ll", ["l1", "l2"], { angle: 60 * DEG }),
-        k("k3", "p2p_distance", ["p1", "p2"], { distance: 50 }),
-        k("k4", "p2p_distance", ["p1", "p3"], { distance: 50 }),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "angle", ["l1", "l2"], { value: 60 * DEG }),
+        k("k3", "distance_points", ["p1", "p2"], { value: 50 }),
+        k("k4", "distance_points", ["p1", "p3"], { value: 50 }),
       ],
     },
   },
@@ -432,16 +454,50 @@ export const EXAMPLES: readonly Example[] = [
         ln("l5", "p5", "p1"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "l2l_angle_ll", ["l1", "l2"], { angle: 72 * DEG }),
-        k("k3", "l2l_angle_ll", ["l2", "l3"], { angle: 72 * DEG }),
-        k("k4", "l2l_angle_ll", ["l3", "l4"], { angle: 72 * DEG }),
-        k("k5", "l2l_angle_ll", ["l4", "l5"], { angle: 72 * DEG }),
-        k("k6", "p2p_distance", ["p1", "p2"], { distance: 40 }),
-        k("k7", "p2p_distance", ["p2", "p3"], { distance: 40 }),
-        k("k8", "p2p_distance", ["p5", "p1"], { distance: 40 }),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "angle", ["l1", "l2"], { value: 72 * DEG }),
+        k("k3", "angle", ["l2", "l3"], { value: 72 * DEG }),
+        k("k4", "angle", ["l3", "l4"], { value: 72 * DEG }),
+        k("k5", "angle", ["l4", "l5"], { value: 72 * DEG }),
+        k("k6", "distance_points", ["p1", "p2"], { value: 40 }),
+        k("k7", "distance_points", ["p2", "p3"], { value: 40 }),
+        k("k8", "distance_points", ["p5", "p1"], { value: 40 }),
       ],
     },
+  },
+  {
+    id: "polygon-rotations",
+    label: "Polygon (pattern)",
+    description:
+      "A pentagon built the way a polygon tool builds it: one side tangent to a dimensioned circle, the other vertices rotated copies of its endpoints about a free center",
+    sketch: (() => {
+      // Five sides around center (3, -2), inscribed circle of radius 20, first vertex at
+      // 0.3 rad; every vertex is shared by the two sides that meet there (the tool merges the
+      // copies' endpoints). Each copy step k rotates both endpoints of the first side by
+      // k·72°, so with 5 sides most rotations are implied by the others.
+      const n = 5;
+      const r = 20;
+      const [cx, cy] = [3, -2];
+      const R = r / Math.cos(Math.PI / n);
+      const step = (2 * Math.PI) / n;
+      const v = (k: number) => `v${k % n}`;
+      const vertices = Array.from({ length: n }, (_, k) =>
+        pt(v(k), cx + R * Math.cos(0.3 + k * step), cy + R * Math.sin(0.3 + k * step)),
+      );
+      const sides = Array.from({ length: n }, (_, k) => ln(`l${k}`, v(k), v(k + 1)));
+      const rotations = Array.from({ length: n - 1 }, (_, i) => i + 1).flatMap((copy) => [
+        k(`ra${copy}`, "rotation", ["v0", v(copy), "c"], { angle: copy * step }),
+        k(`rb${copy}`, "rotation", ["v1", v(copy + 1), "c"], { angle: copy * step }),
+      ]);
+      return {
+        entities: [pt("c", cx, cy), circ("incircle", "c", r), ...vertices, ...sides],
+        constraints: [
+          k("kr", "radius_circle", ["incircle"], { value: r }),
+          k("kt", "tangent_line_circle", ["l0", "incircle"]),
+          ...rotations,
+        ],
+      };
+    })(),
   },
   {
     id: "concentric-three",
@@ -457,11 +513,11 @@ export const EXAMPLES: readonly Example[] = [
         circ("c3", "p3", 20),
       ],
       constraints: [
-        k("k1", "p2p_coincident", ["p1", "p2"]),
-        k("k2", "p2p_coincident", ["p1", "p3"]),
-        k("k3", "circle_radius", ["c1"], { radius: 30 }),
-        k("k4", "circle_radius", ["c2"], { radius: 18 }),
-        k("k5", "equal_radius_cc", ["c2", "c3"]),
+        k("k1", "coincident", ["p1", "p2"]),
+        k("k2", "coincident", ["p1", "p3"]),
+        k("k3", "radius_circle", ["c1"], { value: 30 }),
+        k("k4", "radius_circle", ["c2"], { value: 18 }),
+        k("k5", "equal_radius_circles", ["c2", "c3"]),
       ],
     },
   },
@@ -479,36 +535,85 @@ export const EXAMPLES: readonly Example[] = [
         ln("l2", "p3", "p4"),
       ],
       constraints: [
-        k("k1", "p2p_symmetric_ppl", ["p3", "p4", "l1"]),
-        k("k2", "horizontal_l", ["l2"]),
-        k("k3", "coordinate_x", ["p3"], { x: -35 }),
+        k("k1", "mirror", ["p3", "p4", "l1"]),
+        k("k2", "horizontal_line", ["l2"]),
+        k("k3", "x", ["p3"], { value: -35 }),
       ],
     },
   },
   {
     id: "slot",
     label: "Slot shape",
-    description: "Two parallel lines capped by equal-radius arcs",
+    description:
+      "Two lines tangent to equal-radius arcs, sharing the arcs' endpoints",
     sketch: {
       entities: [
         pt("c1", -25, 0, true),
         pt("c2", 25, 0, true),
-        arc("a1", "c1", 15, 90 * DEG, 270 * DEG),
-        arc("a2", "c2", 15, -90 * DEG, 90 * DEG),
-        pt("t1", -25, 15, false),
-        pt("t2", 25, 15, false),
-        pt("b1", -25, -15, false),
-        pt("b2", 25, -15, false),
+        pt("t1", -24, 13, false),
+        pt("t2", 26, 16, false),
+        pt("b1", -26, -14, false),
+        pt("b2", 24, -16, false),
+        arc("a1", "c1", "t1", "b1", 14, 90 * DEG, 270 * DEG),
+        arc("a2", "c2", "b2", "t2", 16, -90 * DEG, 90 * DEG),
         ln("lt", "t1", "t2"),
         ln("lb", "b1", "b2"),
       ],
       constraints: [
-        k("k1", "arc_radius", ["a1"], { radius: 15 }),
-        k("k2", "equal_radius_aa", ["a1", "a2"]),
-        k("k3", "horizontal_l", ["lt"]),
-        k("k4", "horizontal_l", ["lb"]),
+        k("k1", "radius_arc", ["a1"], { value: 15 }),
+        k("k2", "equal_radius_arcs", ["a1", "a2"]),
+        k("k3", "tangent_line_arc", ["lt", "a1"]),
+        k("k4", "tangent_line_arc", ["lt", "a2"]),
+        k("k5", "tangent_line_arc", ["lb", "a1"]),
+        k("k6", "tangent_line_arc", ["lb", "a2"]),
       ],
     },
+  },
+  {
+    id: "curved-slot",
+    label: "Curved slot",
+    description:
+      "A slot that follows an arc: outer and inner arcs around the same center, joined by round caps tangent to both. Drag an end to change its sweep.",
+    sketch: (() => {
+      // Center-line arc of radius 40 from 10° to 120°, slot half-width 8.
+      const R = 40;
+      const w = 8;
+      const a = 10 * DEG;
+      const b = 120 * DEG;
+      const at = (r: number, t: number, dx = 0, dy = 0): [number, number] => [
+        r * Math.cos(t) + dx,
+        r * Math.sin(t) + dy,
+      ];
+      return {
+        entities: [
+          pt("c", 0, 0, true),
+          pt("s", ...at(R, a, 1, -1)),
+          pt("e", ...at(R, b, -1, 1)),
+          pt("oa", ...at(R + w, a, 1.5, 0)),
+          pt("ob", ...at(R + w, b, 0, 1)),
+          pt("ia", ...at(R - w, a, -1, 1)),
+          pt("ib", ...at(R - w, b, 1, -1)),
+          arc("path", "c", "s", "e", R, a, b),
+          arc("outer", "c", "oa", "ob", R + w, a, b),
+          arc("inner", "c", "ia", "ib", R - w, a, b),
+          // Caps run counter-clockwise around the slot's ends.
+          arc("cap1", "s", "ia", "oa", w, a + Math.PI, a + 2 * Math.PI),
+          arc("cap2", "e", "ob", "ib", w, b, b + Math.PI),
+          // Radial construction lines: each end's points lie on them, so the
+          // caps meet the outer and inner arcs tangentially.
+          ln("r1", "c", "s"),
+          ln("r2", "c", "e"),
+        ],
+        constraints: [
+          k("k1", "radius_arc", ["path"], { value: R }),
+          k("k2", "radius_arc", ["cap1"], { value: w }),
+          k("k3", "on_extension", ["oa", "r1"]),
+          k("k4", "on_extension", ["ia", "r1"]),
+          k("k5", "on_extension", ["ob", "r2"]),
+          k("k6", "on_extension", ["ib", "r2"]),
+        ],
+      };
+    })(),
   },
   {
     id: "trapezoid",
@@ -526,13 +631,85 @@ export const EXAMPLES: readonly Example[] = [
         ln("l4", "p4", "p1"),
       ],
       constraints: [
-        k("k1", "horizontal_l", ["l1"]),
-        k("k2", "horizontal_l", ["l3"]),
-        k("k3", "p2p_distance", ["p1", "p2"], { distance: 60 }),
-        k("k4", "p2p_distance", ["p3", "p4"], { distance: 32 }),
+        k("k1", "horizontal_line", ["l1"]),
+        k("k2", "horizontal_line", ["l3"]),
+        k("k3", "distance_points", ["p1", "p2"], { value: 60 }),
+        k("k4", "distance_points", ["p3", "p4"], { value: 32 }),
         k("k5", "equal_length", ["l2", "l4"]),
-        k("k6", "coordinate_y", ["p4"], { y: 30 }),
-        k("k7", "coordinate_x", ["p4"], { x: 14 }),
+        k("k6", "y", ["p4"], { value: 30 }),
+        k("k7", "x", ["p4"], { value: 14 }),
+      ],
+    },
+  },
+  {
+    id: "segment-point",
+    label: "Point on segment",
+    description:
+      "A point starting past the end of a line is pulled onto the segment, not its extension",
+    sketch: {
+      entities: [
+        pt("p1", -40, -10, true),
+        pt("p2", 20, 20, true),
+        ln("l1", "p1", "p2"),
+        pt("p3", 60, 50, false),
+      ],
+      constraints: [k("k1", "on_line", ["p3", "l1"])],
+    },
+  },
+  {
+    id: "segment-distance",
+    label: "Distance past segment end",
+    description:
+      "Past a line's end, point-to-line distance is measured to the nearest endpoint",
+    sketch: {
+      entities: [
+        pt("p1", -40, 0, true),
+        pt("p2", 0, 0, true),
+        ln("l1", "p1", "p2"),
+        pt("p3", 40, 15, false),
+      ],
+      constraints: [
+        k("k1", "distance_point_line", ["p3", "l1"], { value: 25 }),
+      ],
+    },
+  },
+  {
+    id: "segment-tangent",
+    label: "Tangent within segment",
+    description:
+      "A circle beyond a line's end slides back so the tangency point lies on the segment",
+    sketch: {
+      entities: [
+        pt("p1", -50, 0, true),
+        pt("p2", 10, 0, true),
+        ln("l1", "p1", "p2"),
+        pt("p3", 45, 30, false),
+        circ("c1", "p3", 15),
+      ],
+      constraints: [
+        k("k1", "radius_circle", ["c1"], { value: 15 }),
+        k("k2", "tangent_line_circle", ["l1", "c1"]),
+      ],
+    },
+  },
+  {
+    id: "segment-midpoint",
+    label: "Midpoint on segment",
+    description:
+      "A horizontal line whose midpoint must land on a diagonal segment, not its extension",
+    sketch: {
+      entities: [
+        pt("p1", -20, -20, true),
+        pt("p2", 20, 20, true),
+        ln("l1", "p1", "p2"),
+        pt("p3", 40, -30, false),
+        pt("p4", 80, -10, false),
+        ln("l2", "p3", "p4"),
+      ],
+      constraints: [
+        k("k1", "midpoint_on_line", ["l2", "l1"]),
+        k("k2", "horizontal_line", ["l2"]),
+        k("k3", "distance_points", ["p3", "p4"], { value: 40 }),
       ],
     },
   },

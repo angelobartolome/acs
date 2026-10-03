@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
-use crate::{ParameterManager, constraints::Constraint};
+use crate::constraints::{Constraint, Var, xy};
 
 /// Constrains the directed angle from line L1 to line L2 to a specific value.
 ///
@@ -38,81 +38,26 @@ impl AngleConstraint {
 }
 
 impl Constraint for AngleConstraint {
+    fn vars(&self) -> Vec<Var<'_>> {
+        [xy(&self.p1), xy(&self.p2), xy(&self.p3), xy(&self.p4)].concat()
+    }
+
     fn num_residuals(&self) -> usize {
         1
     }
 
-    fn residual(&self, pm: &ParameterManager) -> DVector<f64> {
-        let p = pm.get_parameters();
-        let x1 = p[pm.get_global_index(&self.p1, 0).expect("p1.x")];
-        let y1 = p[pm.get_global_index(&self.p1, 1).expect("p1.y")];
-        let x2 = p[pm.get_global_index(&self.p2, 0).expect("p2.x")];
-        let y2 = p[pm.get_global_index(&self.p2, 1).expect("p2.y")];
-        let x3 = p[pm.get_global_index(&self.p3, 0).expect("p3.x")];
-        let y3 = p[pm.get_global_index(&self.p3, 1).expect("p3.y")];
-        let x4 = p[pm.get_global_index(&self.p4, 0).expect("p4.x")];
-        let y4 = p[pm.get_global_index(&self.p4, 1).expect("p4.y")];
-
-        let dx1 = x2 - x1;
-        let dy1 = y2 - y1;
-        let dx2 = x4 - x3;
-        let dy2 = y4 - y3;
-
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
+        let (dx1, dy1) = (x[2] - x[0], x[3] - x[1]);
+        let (dx2, dy2) = (x[6] - x[4], x[7] - x[5]);
         let dot = dx1 * dx2 + dy1 * dy2;
         let cross = dx1 * dy2 - dy1 * dx2;
+        let (s, c) = self.angle.sin_cos();
+        r[0] = dot * s - cross * c;
 
-        let sin_t = self.angle.sin();
-        let cos_t = self.angle.cos();
-
-        DVector::from(vec![dot * sin_t - cross * cos_t])
-    }
-
-    fn jacobian(&self, pm: &ParameterManager) -> DMatrix<f64> {
-        let n = pm.num_parameters();
-        let mut J = DMatrix::<f64>::zeros(1, n);
-
-        let p = pm.get_parameters();
-        let i1x = pm.get_global_index(&self.p1, 0).expect("p1.x");
-        let i1y = pm.get_global_index(&self.p1, 1).expect("p1.y");
-        let i2x = pm.get_global_index(&self.p2, 0).expect("p2.x");
-        let i2y = pm.get_global_index(&self.p2, 1).expect("p2.y");
-        let i3x = pm.get_global_index(&self.p3, 0).expect("p3.x");
-        let i3y = pm.get_global_index(&self.p3, 1).expect("p3.y");
-        let i4x = pm.get_global_index(&self.p4, 0).expect("p4.x");
-        let i4y = pm.get_global_index(&self.p4, 1).expect("p4.y");
-
-        let dx1 = p[i2x] - p[i1x];
-        let dy1 = p[i2y] - p[i1y];
-        let dx2 = p[i4x] - p[i3x];
-        let dy2 = p[i4y] - p[i3y];
-
-        let sin_t = self.angle.sin();
-        let cos_t = self.angle.cos();
-
-        // R = dot·sin_t − cross·cos_t
-        // ∂R/∂param = (∂dot/∂param)·sin_t − (∂cross/∂param)·cos_t
-        //
-        // For line 1 (dx1, dy1 depend on x1,y1,x2,y2):
-        //   ∂dot/∂x1 = −dx2,  ∂cross/∂x1 = −dy2
-        //   ∂dot/∂y1 = −dy2,  ∂cross/∂y1 =  dx2
-        //   ∂dot/∂x2 =  dx2,  ∂cross/∂x2 =  dy2
-        //   ∂dot/∂y2 =  dy2,  ∂cross/∂y2 = −dx2
-        //
-        // For line 2 (dx2, dy2 depend on x3,y3,x4,y4):
-        //   ∂dot/∂x3 = −dx1,  ∂cross/∂x3 =  dy1
-        //   ∂dot/∂y3 = −dy1,  ∂cross/∂y3 = −dx1
-        //   ∂dot/∂x4 =  dx1,  ∂cross/∂x4 = −dy1
-        //   ∂dot/∂y4 =  dy1,  ∂cross/∂y4 =  dx1
-
-        J[(0, i1x)] = (-dx2) * sin_t - (-dy2) * cos_t;
-        J[(0, i1y)] = (-dy2) * sin_t - (dx2) * cos_t;
-        J[(0, i2x)] = (dx2) * sin_t - (dy2) * cos_t;
-        J[(0, i2y)] = (dy2) * sin_t - (-dx2) * cos_t;
-        J[(0, i3x)] = (-dx1) * sin_t - (dy1) * cos_t;
-        J[(0, i3y)] = (-dy1) * sin_t - (-dx1) * cos_t;
-        J[(0, i4x)] = (dx1) * sin_t - (-dy1) * cos_t;
-        J[(0, i4y)] = (dy1) * sin_t - (dx1) * cos_t;
-
-        J
+        let d_dot = [-dx2, -dy2, dx2, dy2, -dx1, -dy1, dx1, dy1];
+        let d_cross = [-dy2, dx2, dy2, -dx2, dy1, -dx1, -dy1, dx1];
+        for k in 0..8 {
+            j[(0, k)] = d_dot[k] * s - d_cross[k] * c;
+        }
     }
 }

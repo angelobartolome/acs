@@ -42,3 +42,43 @@ fn test_fixed_points() {
         "Movable point should be adjusted to y=4.0"
     );
 }
+
+#[test]
+fn add_constraint_rejects_unknown_or_wrong_kind_entities() {
+    let mut solver = ConstraintSolver::new();
+    solver.add_point(Point::new("p".into(), 0.0, 0.0, false));
+    solver.add_point(Point::new("c".into(), 0.0, 0.0, false));
+    solver.add_circle(Circle::new("circle".into(), "c".into(), 1.0, false));
+
+    let missing = solver.add_constraint(ConstraintType::Horizontal("p".into(), "nope".into()));
+    assert_eq!(missing, Err("'nope' is not a point".to_string()));
+
+    let wrong_kind = solver.add_constraint(ConstraintType::FixedRadius("p".into(), 2.0));
+    assert_eq!(wrong_kind, Err("'p' is not a circle or arc".to_string()));
+
+    // Rejected constraints are not kept, so the sketch still solves.
+    assert!(matches!(solver.solve(), Ok(SolverResult::Converged { .. })));
+}
+
+/// A component whose points are all fixed can't move: it's solved only if it
+/// already holds, and the rest of the sketch still solves.
+#[test]
+fn all_fixed_component_reports_failure_when_violated() {
+    let mut solver = ConstraintSolver::new();
+    solver.add_point(Point::new("a".into(), 0.0, 0.0, true));
+    solver.add_point(Point::new("b".into(), 1.0, 2.0, true));
+    solver.add_point(Point::new("c".into(), 0.0, 0.0, false));
+    solver.add_point(Point::new("d".into(), 3.0, 4.0, false));
+    solver
+        .add_constraint(ConstraintType::Horizontal("a".into(), "b".into()))
+        .unwrap();
+    solver
+        .add_constraint(ConstraintType::Coincident("c".into(), "d".into()))
+        .unwrap();
+
+    let result = solver.solve().unwrap();
+    assert!(matches!(result, SolverResult::MaxIterationsReached { .. }), "{result:?}");
+    let d = solver.get_point("d".into()).unwrap();
+    let c = solver.get_point("c".into()).unwrap();
+    assert!((c.x - d.x).abs() < 1e-9 && (c.y - d.y).abs() < 1e-9);
+}

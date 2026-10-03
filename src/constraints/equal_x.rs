@@ -1,9 +1,8 @@
 #![allow(non_snake_case)] // Makes sense for mathematical variables
-#![allow(unused_parens)]
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
-use crate::{ParameterManager, constraints::Constraint};
+use crate::constraints::{Constraint, Var, set_row};
 
 pub struct EqualXConstraint {
     pub p1: String, // Index of the first point
@@ -17,30 +16,16 @@ impl EqualXConstraint {
 }
 
 impl Constraint for EqualXConstraint {
+    fn vars(&self) -> Vec<Var<'_>> {
+        vec![Var::X(&self.p1)]
+    }
+
     fn num_residuals(&self) -> usize {
         1
     }
 
-    fn residual(&self, param_manager: &ParameterManager) -> DVector<f64> {
-        // Get the x parameter for the point
-        let p1_x_idx = param_manager
-            .get_global_index(&self.p1, 0)
-            .expect("Point not found");
-        let params = param_manager.get_parameters();
-        let x1 = params[p1_x_idx];
-
-        DVector::from(vec![x1 - self.x])
-    }
-
-    fn jacobian(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
-        let total_params = param_manager.num_parameters();
-        let mut J = DMatrix::<f64>::zeros(1, total_params);
-
-        // Get the x parameter index for the point
-        if let Some(p1_x_idx) = param_manager.get_global_index(&self.p1, 0) {
-            J[(0, p1_x_idx)] = 1.0; // derivative wrt p1.x
-        }
-
-        J
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
+        r[0] = x[0] - self.x;
+        set_row(j, 0, &[1.0]);
     }
 }

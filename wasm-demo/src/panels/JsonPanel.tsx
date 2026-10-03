@@ -33,7 +33,7 @@ export function JsonPanel() {
   const currentSketchJson = () => {
     const { entities, constraints } = sketchStore.getState();
     return JSON.stringify(
-      { primitives: sketchToPrimitives({ entities, constraints }) },
+      { version: 1, primitives: sketchToPrimitives({ entities, constraints }) },
       null,
       2,
     );

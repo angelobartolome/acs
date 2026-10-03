@@ -1,13 +1,10 @@
-#![allow(non_snake_case)]
+use nalgebra::DMatrix;
 
-use nalgebra::{DMatrix, DVector};
+use crate::constraints::segment::{foot_overshoot, line_signed_distance};
+use crate::constraints::{Constraint, Var, set_row, xy};
 
-use crate::{ParameterManager, constraints::Constraint};
-
-/// Constrains a line to be tangent to a circle.
-///
-/// The perpendicular distance from the circle's center to the infinite line
-/// through `pa`–`pb` equals the circle's radius.
+/// Constrains a Line (the segment between its endpoints) to be tangent to a
+/// circle.
 ///
 /// Entities:
 ///   - `line_pa_id`       – first point of the line
@@ -15,9 +12,11 @@ use crate::{ParameterManager, constraints::Constraint};
 ///   - `circle_center_id` – center point of the circle
 ///   - `circle_id`        – circle entity (radius at param 0)
 ///
-/// Let dx = bx−ax, dy = by−ay, L² = dx²+dy²
-/// area = dy·(cx−ax) − dx·(cy−ay)
-/// Residual: area² − r²·L² = 0
+/// Residuals:
+///   R₀ = |C / L| − r   (the center is r away from the line through a, b)
+///   R₁ = overshoot     (the tangency point, i.e. the foot of the
+///                       perpendicular from the center, lies on the segment;
+///                       0 while it does, else how far past an endpoint it is)
 pub struct TangentLineCircleConstraint {
     pub line_pa_id: String,
     pub line_pb_id: String,
@@ -42,71 +41,30 @@ impl TangentLineCircleConstraint {
 }
 
 impl Constraint for TangentLineCircleConstraint {
+    fn vars(&self) -> Vec<Var<'_>> {
+        [
+            &xy(&self.circle_center_id)[..],
+            &xy(&self.line_pa_id),
+            &xy(&self.line_pb_id),
+            &[Var::Radius(&self.circle_id)],
+        ]
+        .concat()
+    }
+
     fn num_residuals(&self) -> usize {
-        1
+        2
     }
 
-    fn residual(&self, pm: &ParameterManager) -> DVector<f64> {
-        let p = pm.get_parameters();
-        let ax = p[pm.get_global_index(&self.line_pa_id, 0).expect("pa.x")];
-        let ay = p[pm.get_global_index(&self.line_pa_id, 1).expect("pa.y")];
-        let bx = p[pm.get_global_index(&self.line_pb_id, 0).expect("pb.x")];
-        let by = p[pm.get_global_index(&self.line_pb_id, 1).expect("pb.y")];
-        let cx = p[pm.get_global_index(&self.circle_center_id, 0).expect("center.x")];
-        let cy = p[pm.get_global_index(&self.circle_center_id, 1).expect("center.y")];
-        let r = p[pm.get_global_index(&self.circle_id, 0).expect("circle.r")];
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
+        // x = [cx, cy, ax, ay, bx, by, radius]
+        let (d, gd) = line_signed_distance(x[0], x[1], x[2], x[3], x[4], x[5]);
+        let sign = if d >= 0.0 { 1.0 } else { -1.0 };
+        r[0] = d.abs() - x[6];
+        set_row(j, 0, &gd.map(|v| sign * v));
+        j[(0, 6)] = -1.0;
 
-        let dx = bx - ax;
-        let dy = by - ay;
-        let l2 = dx * dx + dy * dy;
-        let area = dy * (cx - ax) - dx * (cy - ay);
-
-        DVector::from(vec![area * area - r * r * l2])
-    }
-
-    fn jacobian(&self, pm: &ParameterManager) -> DMatrix<f64> {
-        let n = pm.num_parameters();
-        let mut J = DMatrix::<f64>::zeros(1, n);
-
-        let p = pm.get_parameters();
-        let i_ax = pm.get_global_index(&self.line_pa_id, 0).expect("pa.x");
-        let i_ay = pm.get_global_index(&self.line_pa_id, 1).expect("pa.y");
-        let i_bx = pm.get_global_index(&self.line_pb_id, 0).expect("pb.x");
-        let i_by = pm.get_global_index(&self.line_pb_id, 1).expect("pb.y");
-        let i_cx = pm.get_global_index(&self.circle_center_id, 0).expect("center.x");
-        let i_cy = pm.get_global_index(&self.circle_center_id, 1).expect("center.y");
-        let i_r = pm.get_global_index(&self.circle_id, 0).expect("circle.r");
-
-        let ax = p[i_ax];
-        let ay = p[i_ay];
-        let bx = p[i_bx];
-        let by = p[i_by];
-        let cx = p[i_cx];
-        let cy = p[i_cy];
-        let r = p[i_r];
-
-        let dx = bx - ax;
-        let dy = by - ay;
-        let l2 = dx * dx + dy * dy;
-        let area = dy * (cx - ax) - dx * (cy - ay);
-
-        // R = area² − r²·L²
-        // ∂R/∂param = 2·area·(∂area/∂param) − r²·(∂L²/∂param)
-        //
-        // area = (by−ay)(cx−ax) − (bx−ax)(cy−ay), so:
-        // ∂area/∂ax = cy−by, ∂area/∂ay = bx−cx
-        // ∂area/∂bx = ay−cy, ∂area/∂by = cx−ax
-        // ∂area/∂cx = by−ay, ∂area/∂cy = ax−bx
-        // ∂L²/∂ax = −2dx, ∂L²/∂ay = −2dy, ∂L²/∂bx = 2dx, ∂L²/∂by = 2dy
-
-        J[(0, i_ax)] = 2.0 * area * (cy - by) - r * r * (-2.0 * dx);
-        J[(0, i_ay)] = 2.0 * area * (bx - cx) - r * r * (-2.0 * dy);
-        J[(0, i_bx)] = 2.0 * area * (ay - cy) - r * r * (2.0 * dx);
-        J[(0, i_by)] = 2.0 * area * (cx - ax) - r * r * (2.0 * dy);
-        J[(0, i_cx)] = 2.0 * area * (by - ay);
-        J[(0, i_cy)] = 2.0 * area * (ax - bx);
-        J[(0, i_r)] = -2.0 * r * l2;
-
-        J
+        let (over, go) = foot_overshoot(x[0], x[1], x[2], x[3], x[4], x[5]);
+        r[1] = over;
+        set_row(j, 1, &go);
     }
 }

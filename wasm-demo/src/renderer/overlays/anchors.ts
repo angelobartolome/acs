@@ -4,6 +4,7 @@ import type {
   SketchEntity,
 } from "../../core/model/types";
 import { isArc, isCircle, isLine, isPoint } from "../../core/model/types";
+import { getConstraintDef } from "../../core/constraints/registry";
 import type { Vec2 } from "../../core/sketch/store";
 
 export type Resolver = (id: EntityId) => SketchEntity | undefined;
@@ -42,42 +43,8 @@ export function constraintAnchor(
   };
 }
 
-/** Short badge text per constraint type (falls back to the first letters). */
-const BADGES: Record<string, string> = {
-  horizontal_pp: "H",
-  vertical_pp: "V",
-  horizontal_l: "H",
-  vertical_l: "V",
-  parallel: "\u2225",
-  perpendicular_ll: "\u22A5",
-  perpendicular_pppp: "\u22A5",
-  p2p_coincident: "\u2261",
-  point_on_line_pl: "\u22C5L",
-  point_on_line_ppp: "\u22C5L",
-  point_on_circle: "\u22C5O",
-  p2p_distance: "\u2194",
-  p2l_distance: "\u2194",
-  l2l_angle_pppp: "\u2220",
-  l2l_angle_ll: "\u2220",
-  equal_length: "=",
-  equal_radius_cc: "R=",
-  equal_radius_aa: "R=",
-  circle_radius: "R",
-  arc_radius: "R",
-  tangent_lc: "tan",
-  midpoint_on_line_ll: "M",
-  midpoint_on_line_pppp: "M",
-  p2p_symmetric_ppp: "S",
-  p2p_symmetric_ppl: "S",
-  coordinate_x: "X",
-  coordinate_y: "Y",
-};
 
-export function badgeText(type: string): string {
-  return BADGES[type] ?? type.slice(0, 2).toUpperCase();
+export function badgeText(defKey: string): string {
+  return getConstraintDef(defKey)?.badge ?? defKey.slice(0, 2).toUpperCase();
 }
 
-/** Extract constraint ids from skip entries shaped like "id:reason". */
-export function skippedIdSet(skipped: readonly string[]): Set<string> {
-  return new Set(skipped.map((s) => s.split(":")[0]));
-}

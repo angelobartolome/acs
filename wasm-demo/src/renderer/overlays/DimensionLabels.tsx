@@ -8,6 +8,7 @@ import { COLORS } from "../theme";
 
 function formatParam(unit: string, value: number): string {
   if (unit === "angle") return `${((value * 180) / Math.PI).toFixed(1)}\u00B0`;
+  if (unit === "side") return value < 0 ? "-" : "+";
   return value.toFixed(2);
 }
 
@@ -26,7 +27,7 @@ export function DimensionLabels() {
   const labels = useMemo(() => {
     const out: { id: string; text: string; x: number; y: number }[] = [];
     for (const c of constraints) {
-      const def = getConstraintDef(c.type);
+      const def = getConstraintDef(c.def);
       if (def === undefined || def.scalarParams === undefined) continue;
       const anchor = constraintAnchor(c, resolve);
       if (anchor === null) continue;

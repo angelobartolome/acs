@@ -1,6 +1,6 @@
 [package]
 name = "acs"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 authors = ["Angelo Bartolome <angelo.m.bartolome@gmail.com>"]
 description = "A geometric constraint solver written in Rust with WebAssembly bindings for web applications."
@@ -8,27 +8,19 @@ license = "MIT"
 repository = "https://github.com/angelobartolome/acs"
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib", "rlib", "staticlib"]
 
 [features]
-default = ["console_error_panic_hook"]
-
+# Exports the sketch solver C ABI (`P3DSketch_Solve` / `P3DSketch_Free`,
+# include/p3d_sketch_solver.h) from the static library. Not needed for WASM.
+c-abi = []
 
 [dependencies]
 wasm-bindgen = "0.2.84"
-
-# The `console_error_panic_hook` crate provides better debugging of panics by
-# logging them with `console.error`. This is great for development, but requires
-# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
-# code size when deploying.
-console_error_panic_hook = { version = "0.1.7", optional = true }
-web-sys = { version = "0.3.77", features = ["console"] }
 nalgebra = "0.33.2"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-[dev-dependencies]
-wasm-bindgen-test = "0.3.34"
+# float_roundtrip: parse floats correctly rounded, so fixed values come back bit for bit.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

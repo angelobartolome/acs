@@ -1,8 +1,11 @@
 import { useMemo } from "react";
 
 import { getConstraintDef } from "../core/constraints/registry";
+import {
+  type ConstraintFlag,
+  constraintFlags,
+} from "../core/solver/SolverService";
 import { useSketchStore } from "../hooks/useSketchStore";
-import { skippedIdSet } from "../renderer/overlays/anchors";
 import { NumberField } from "./NumberField";
 
 const RAD = Math.PI / 180;
@@ -16,18 +19,11 @@ export function ConstraintList() {
   const updateConstraintParams = useSketchStore((s) => s.updateConstraintParams);
   const highlightId = useSketchStore((s) => s.highlightConstraintId);
 
-  const skipped = useMemo(
+  const flags = useMemo(
     () =>
       lastOutcome !== null
-        ? skippedIdSet(lastOutcome.skippedConstraintIds)
-        : new Set<string>(),
-    [lastOutcome],
-  );
-  const conflicting = useMemo(
-    () =>
-      lastOutcome !== null
-        ? new Set(lastOutcome.conflictingConstraintIds)
-        : new Set<string>(),
+        ? constraintFlags(lastOutcome)
+        : new Map<string, ConstraintFlag>(),
     [lastOutcome],
   );
 
@@ -40,7 +36,7 @@ export function ConstraintList() {
   return (
     <ul className="flex flex-col">
       {constraints.map((c) => {
-        const def = getConstraintDef(c.type);
+        const def = getConstraintDef(c.def);
         return (
           <li
             key={c.id}
@@ -52,17 +48,18 @@ export function ConstraintList() {
           >
             <div className="flex items-center gap-2">
               <span className="font-medium text-slate-200">
-                {def?.label ?? c.type}
+                {def?.label ?? c.def}
               </span>
               <span className="text-slate-500">{c.id}</span>
-              {skipped.has(c.id) && (
-                <span className="rounded bg-amber-900 px-1 text-[10px] text-amber-300">
-                  skipped
-                </span>
-              )}
-              {conflicting.has(c.id) && (
-                <span className="rounded bg-rose-900 px-1 text-[10px] text-rose-300">
-                  conflict
+              {flags.has(c.id) && (
+                <span
+                  className={`rounded px-1 text-[10px] ${
+                    flags.get(c.id) === "redundant"
+                      ? "bg-amber-900 text-amber-300"
+                      : "bg-rose-900 text-rose-300"
+                  }`}
+                >
+                  {flags.get(c.id)}
                 </span>
               )}
               <button

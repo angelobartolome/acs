@@ -111,7 +111,9 @@ export function InspectorPanel() {
             value={e.endAngle / RAD}
             onCommit={(n) => commit({ endAngle: n * RAD })}
           />
-          <div className="text-xs text-slate-500">center: {e.center}</div>
+          <div className="text-xs text-slate-500">
+            center: {e.center}, start: {e.start}, end: {e.end}
+          </div>
         </>
       )}
     </div>

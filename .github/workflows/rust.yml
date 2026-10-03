@@ -34,6 +34,8 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Run C ABI tests
+      run: cargo test --features c-abi --test c_abi_test
     - name: Build WebAssembly
       run: |
         wasm-pack build --target web --out-dir pkg

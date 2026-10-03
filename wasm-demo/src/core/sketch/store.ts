@@ -138,7 +138,7 @@ export interface SketchState {
 
   // --- constraints ---
   addConstraint: (
-    type: string,
+    def: string,
     entities: EntityId[],
     params: Record<string, number>,
   ) => string;
@@ -291,12 +291,34 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
     }));
     return id;
   },
+  // An arc gets its own start and end points (so lines can share them); the
+  // solver keeps them on the arc.
   addArc: (center, radius, startAngle, endAngle) => {
+    const c = get().getEntity(center);
+    const { x: cx, y: cy } = c !== undefined && isPoint(c) ? c : { x: 0, y: 0 };
+    const at = (angle: number) => ({
+      x: cx + radius * Math.cos(angle),
+      y: cy + radius * Math.sin(angle),
+    });
+    const startPos = at(startAngle);
+    const endPos = at(endAngle);
+    const start = get().addPoint(startPos.x, startPos.y);
+    const end = get().addPoint(endPos.x, endPos.y);
     const id = nextId("a", get().entities, get().constraints);
     set((s) => ({
       entities: [
         ...s.entities,
-        { kind: "arc", id, center, radius, startAngle, endAngle, fixed: false },
+        {
+          kind: "arc",
+          id,
+          center,
+          start,
+          end,
+          radius,
+          startAngle,
+          endAngle,
+          fixed: false,
+        },
       ],
     }));
     return id;
@@ -320,6 +342,10 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
       else if (isLine(e)) {
         pointIds.add(e.p1);
         pointIds.add(e.p2);
+      } else if (isArc(e)) {
+        pointIds.add(e.center);
+        pointIds.add(e.start);
+        pointIds.add(e.end);
       } else pointIds.add(e.center);
     }
     set((s) => ({
@@ -371,9 +397,11 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
         if (doomed.has(e.id)) continue;
         const deps = isLine(e)
           ? [e.p1, e.p2]
-          : isCircle(e) || isArc(e)
-            ? [e.center]
-            : [];
+          : isArc(e)
+            ? [e.center, e.start, e.end]
+            : isCircle(e)
+              ? [e.center]
+              : [];
         if (deps.some((d) => doomed.has(d))) {
           doomed.add(e.id);
           grew = true;
@@ -396,12 +424,12 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
     if (sel.length > 0) get().deleteEntities(sel);
   },
 
-  addConstraint: (type, entityIds, params) => {
+  addConstraint: (def, entityIds, params) => {
     const id = nextId("k", get().entities, get().constraints);
     set((s) => ({
       constraints: [
         ...s.constraints,
-        { id, type, entities: entityIds, params },
+        { id, def, entities: entityIds, params },
       ],
     }));
     get().solveNow();

@@ -1,9 +1,8 @@
 #![allow(non_snake_case)] // Makes sense for mathematical variables
-#![allow(unused_parens)]
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
-use crate::{ParameterManager, constraints::Constraint};
+use crate::constraints::{Constraint, Var, set_row, xy};
 
 pub struct ParallelConstraint {
     pub p1: String, // Index of the first point (L1P1)
@@ -19,100 +18,18 @@ impl ParallelConstraint {
 }
 
 impl Constraint for ParallelConstraint {
+    fn vars(&self) -> Vec<Var<'_>> {
+        [xy(&self.p1), xy(&self.p2), xy(&self.p3), xy(&self.p4)].concat()
+    }
+
     fn num_residuals(&self) -> usize {
         1
     }
 
-    fn residual(&self, param_manager: &ParameterManager) -> DVector<f64> {
-        // Get the parameters for all four points
-        let p1_x_idx = param_manager
-            .get_global_index(&self.p1, 0)
-            .expect("Point 1 not found");
-        let p1_y_idx = param_manager
-            .get_global_index(&self.p1, 1)
-            .expect("Point 1 not found");
-        let p2_x_idx = param_manager
-            .get_global_index(&self.p2, 0)
-            .expect("Point 2 not found");
-        let p2_y_idx = param_manager
-            .get_global_index(&self.p2, 1)
-            .expect("Point 2 not found");
-        let p3_x_idx = param_manager
-            .get_global_index(&self.p3, 0)
-            .expect("Point 3 not found");
-        let p3_y_idx = param_manager
-            .get_global_index(&self.p3, 1)
-            .expect("Point 3 not found");
-        let p4_x_idx = param_manager
-            .get_global_index(&self.p4, 0)
-            .expect("Point 4 not found");
-        let p4_y_idx = param_manager
-            .get_global_index(&self.p4, 1)
-            .expect("Point 4 not found");
-
-        let params = param_manager.get_parameters();
-        let x1 = params[p1_x_idx];
-        let y1 = params[p1_y_idx];
-        let x2 = params[p2_x_idx];
-        let y2 = params[p2_y_idx];
-        let x3 = params[p3_x_idx];
-        let y3 = params[p3_y_idx];
-        let x4 = params[p4_x_idx];
-        let y4 = params[p4_y_idx];
-
-        let dx1 = x2 - x1;
-        let dy1 = y2 - y1;
-        let dx2 = x4 - x3;
-        let dy2 = y4 - y3;
-
-        DVector::from(vec![dx1 * dy2 - dy1 * dx2])
-    }
-
-    fn jacobian(&self, param_manager: &ParameterManager) -> DMatrix<f64> {
-        let total_params = param_manager.num_parameters();
-        let mut J = DMatrix::<f64>::zeros(1, total_params);
-
-        // Get parameter indices
-        if let (
-            Some(p1_x_idx),
-            Some(p1_y_idx),
-            Some(p2_x_idx),
-            Some(p2_y_idx),
-            Some(p3_x_idx),
-            Some(p3_y_idx),
-            Some(p4_x_idx),
-            Some(p4_y_idx),
-        ) = (
-            param_manager.get_global_index(&self.p1, 0),
-            param_manager.get_global_index(&self.p1, 1),
-            param_manager.get_global_index(&self.p2, 0),
-            param_manager.get_global_index(&self.p2, 1),
-            param_manager.get_global_index(&self.p3, 0),
-            param_manager.get_global_index(&self.p3, 1),
-            param_manager.get_global_index(&self.p4, 0),
-            param_manager.get_global_index(&self.p4, 1),
-        ) {
-            let params = param_manager.get_parameters();
-            let x1 = params[p1_x_idx];
-            let y1 = params[p1_y_idx];
-            let x2 = params[p2_x_idx];
-            let y2 = params[p2_y_idx];
-            let x3 = params[p3_x_idx];
-            let y3 = params[p3_y_idx];
-            let x4 = params[p4_x_idx];
-            let y4 = params[p4_y_idx];
-
-            // Partial derivatives of (dx1 * dy2 - dy1 * dx2)
-            J[(0, p1_x_idx)] = -(y4 - y3); // ∂r/∂x1
-            J[(0, p1_y_idx)] = (x4 - x3); // ∂r/∂y1
-            J[(0, p2_x_idx)] = (y4 - y3); // ∂r/∂x2
-            J[(0, p2_y_idx)] = -(x4 - x3); // ∂r/∂y2
-            J[(0, p3_x_idx)] = (y2 - y1); // ∂r/∂x3
-            J[(0, p3_y_idx)] = -(x2 - x1); // ∂r/∂y3
-            J[(0, p4_x_idx)] = -(y2 - y1); // ∂r/∂x4
-            J[(0, p4_y_idx)] = (x2 - x1); // ∂r/∂y4
-        }
-
-        J
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
+        let (dx1, dy1) = (x[2] - x[0], x[3] - x[1]);
+        let (dx2, dy2) = (x[6] - x[4], x[7] - x[5]);
+        r[0] = dx1 * dy2 - dy1 * dx2;
+        set_row(j, 0, &[-dy2, dx2, dy2, -dx2, dy1, -dx1, -dy1, dx1]);
     }
 }

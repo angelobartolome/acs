@@ -45,13 +45,13 @@ export function ConstraintBar() {
       setPending({ def, slotEntities: slots, params });
       return;
     }
-    addConstraint(def.type, slots, params);
+    addConstraint(def.key, slots, params);
     clearSelection();
   };
 
   const confirmPending = () => {
     if (pending === null) return;
-    addConstraint(pending.def.type, pending.slotEntities, pending.params);
+    addConstraint(pending.def.key, pending.slotEntities, pending.params);
     setPending(null);
     clearSelection();
   };
@@ -65,7 +65,7 @@ export function ConstraintBar() {
       </span>
       {defs.map((def) => (
         <button
-          key={def.type}
+          key={def.key}
           type="button"
           title={def.description}
           className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-200 hover:bg-sky-700"

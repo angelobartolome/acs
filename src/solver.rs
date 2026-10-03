@@ -1,31 +1,10 @@
+use crate::geometry::{Arc as GeoArc, Circle, Ellipse, Line};
+use crate::sketch_system::{Role, SketchSystem};
+pub use crate::sketch_system::Diagnosis;
 use crate::{
-    Constraint, ConstraintType, GeometrySystem, ParametricDogLegSolver, Point, create_constraint,
+    Constraint, ConstraintType, GeometrySystem, ParametricDogLegSolver, Point, check_vars,
+    create_constraint,
 };
-use crate::component_graph::{find_components, is_component_satisfied};
-use crate::dogleg_solver::build_param_manager;
-use crate::geometry::{Arc as GeoArc, Circle, Line};
-
-pub struct ConstraintGraph {
-    constraints: Vec<Box<dyn Constraint>>,
-}
-
-impl Default for ConstraintGraph {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ConstraintGraph {
-    pub fn new() -> Self {
-        Self {
-            constraints: Vec::new(),
-        }
-    }
-
-    pub fn get_constraints(&self) -> &[Box<dyn Constraint>] {
-        &self.constraints
-    }
-}
 
 #[derive(Debug)]
 pub enum SolverResult {
@@ -41,18 +20,11 @@ pub enum SolverResult {
     },
 }
 
-pub trait Solver {
-    fn solve(
-        &self,
-        geometry: &mut GeometrySystem,
-        constraint_graph: &ConstraintGraph,
-    ) -> Result<SolverResult, String>;
-}
-
 pub struct ConstraintSolver {
     geometry: GeometrySystem,
-    constraint_graph: ConstraintGraph,
-    constraint_types: Vec<ConstraintType>,
+    constraints: Vec<Box<dyn Constraint>>,
+    /// Parallel to `constraints`: how each takes part in the solve.
+    roles: Vec<Role>,
     solver: ParametricDogLegSolver,
 }
 
@@ -66,10 +38,8 @@ impl ConstraintSolver {
     pub fn new() -> Self {
         Self {
             geometry: GeometrySystem::new(),
-            constraint_graph: ConstraintGraph {
-                constraints: Vec::new(),
-            },
-            constraint_types: Vec::new(),
+            constraints: Vec::new(),
+            roles: Vec::new(),
             solver: ParametricDogLegSolver::new(),
         }
     }
@@ -94,183 +64,94 @@ impl ConstraintSolver {
         self.geometry.add_arc(arc)
     }
 
+    pub fn add_ellipse(&mut self, ellipse: Ellipse) -> String {
+        self.geometry.add_ellipse(ellipse)
+    }
+
+    /// Adds a constraint. Every entity it references must already be added,
+    /// with the right kind (a point where a point is expected, and so on).
+    /// Constraints are numbered in the order they're added (temporary ones
+    /// included); [`Diagnosis`] reports them by that index.
+    ///
+    /// Every Arc keeps its start and end Points on itself without any
+    /// constraint, so an `ArcRules` naming an arc's own center, start and
+    /// end Points is accepted and adds nothing: it is never Redundant and
+    /// doesn't change [`Self::dof`].
     pub fn add_constraint(&mut self, constraint_type: ConstraintType) -> Result<(), String> {
-        self.constraint_types.push(constraint_type.clone());
-        self.constraint_graph
-            .constraints
-            .push(create_constraint(constraint_type)?);
+        self.push_constraint(constraint_type, false)
+    }
+
+    /// Adds a temporary constraint, such as one holding a dragged point: a
+    /// soft goal, met as closely as the real constraints allow without ever
+    /// breaking them. [`Self::solve`]'s result is about the real constraints
+    /// only; temporaries are also left out of [`Self::dof`],
+    /// [`Self::fully_constrained_entity_ids`] and [`Self::diagnose`].
+    pub fn add_temporary_constraint(&mut self, constraint_type: ConstraintType) -> Result<(), String> {
+        self.push_constraint(constraint_type, true)
+    }
+
+    fn push_constraint(&mut self, constraint_type: ConstraintType, temporary: bool) -> Result<(), String> {
+        let implied = self.implied_by_geometry(&constraint_type);
+        let constraint = create_constraint(constraint_type)?;
+        check_vars(constraint.as_ref(), &self.geometry)?;
+        self.constraints.push(constraint);
+        self.roles.push(if implied {
+            Role::Implied
+        } else if temporary {
+            Role::Temporary
+        } else {
+            Role::Real
+        });
         Ok(())
     }
 
-    pub fn solve(&mut self) -> Result<SolverResult, String> {
-        let constraints = self.constraint_graph.get_constraints();
-
-        if constraints.is_empty() {
-            return Ok(SolverResult::Converged {
-                iterations: 0,
-                final_error: 0.0,
-                initial_error: 0.0,
-            });
-        }
-
-        let mut param_manager = build_param_manager(&self.geometry);
-        let components = find_components(&self.constraint_types);
-
-        const TOLF: f64 = 1e-10;
-        let mut total_iters = 0usize;
-        let mut any_max_iter = false;
-        let mut combined_initial_error = 0.0f64;
-        let mut combined_final_error = 0.0f64;
-
-        for component_indices in &components.components {
-            if is_component_satisfied(component_indices, constraints, &param_manager, TOLF) {
-                continue;
-            }
-            let component_constraints: Vec<&dyn Constraint> = component_indices
-                .iter()
-                .map(|&i| constraints[i].as_ref())
-                .collect();
-            let result = self.solver.solve_dl(&mut param_manager, &component_constraints);
-            match result {
-                SolverResult::Converged {
-                    iterations,
-                    final_error,
-                    initial_error,
-                } => {
-                    total_iters += iterations;
-                    combined_final_error = combined_final_error.max(final_error);
-                    combined_initial_error = combined_initial_error.max(initial_error);
-                }
-                SolverResult::MaxIterationsReached {
-                    iterations,
-                    final_error,
-                    initial_error,
-                } => {
-                    total_iters += iterations;
-                    combined_final_error = combined_final_error.max(final_error);
-                    combined_initial_error = combined_initial_error.max(initial_error);
-                    any_max_iter = true;
-                }
-            }
-        }
-
-        ParametricDogLegSolver::sync_geometry_from_parameters(
-            &mut param_manager,
-            &mut self.geometry,
-        )?;
-
-        if any_max_iter {
-            Ok(SolverResult::MaxIterationsReached {
-                iterations: total_iters,
-                final_error: combined_final_error,
-                initial_error: combined_initial_error,
-            })
-        } else {
-            Ok(SolverResult::Converged {
-                iterations: total_iters,
-                final_error: combined_final_error,
-                initial_error: combined_initial_error,
-            })
-        }
+    /// Whether a constraint says only what the geometry already holds: an
+    /// `ArcRules` for an arc's own center, start and end Points.
+    fn implied_by_geometry(&self, constraint_type: &ConstraintType) -> bool {
+        let ConstraintType::ArcRules(center, start, end, arc) = constraint_type else {
+            return false;
+        };
+        self.geometry
+            .get_arc(arc)
+            .is_some_and(|a| (&a.center, &a.start, &a.end) == (center, start, end))
     }
 
-    /// Returns the IDs of all geometry entities (points, circles, arcs) that are
-    /// fully constrained (degrees of freedom = 0) at the current configuration.
-    ///
-    /// DOF is computed per connected component using a rank/null-space analysis of
-    /// the analytical Jacobian. A free (non-fixed) parameter is considered *locked*
-    /// when no infinitesimal motion in the constraint null space moves it. An entity
-    /// is fully constrained when every one of its parameters is locked (fixed
-    /// parameters count as locked). Note that a `Line` owns no parameters; callers
-    /// should treat a line as fully constrained when both of its endpoints are.
-    ///
-    /// This should be evaluated at a solved (converged) configuration for the result
-    /// to be meaningful.
+    fn system(&self) -> SketchSystem<'_> {
+        SketchSystem::new(&self.geometry, &self.constraints, &self.roles)
+    }
+
+    /// Solves every Component of the sketch that isn't already solved and
+    /// writes the results back into the geometry.
+    pub fn solve(&mut self) -> Result<SolverResult, String> {
+        let mut system = SketchSystem::new(&self.geometry, &self.constraints, &self.roles);
+        let result = system.solve(&self.solver);
+        system.write_back(&mut self.geometry)?;
+        Ok(result)
+    }
+
+    /// IDs of the Points, Circles, Arcs and Ellipses that are fully constrained (zero
+    /// degrees of freedom) at the current configuration, from a rank analysis
+    /// of each Component's Jacobian. Fixed variables count as locked. A Line
+    /// owns no variables; callers treat it as fully constrained when both
+    /// endpoints are. Meaningful only at a solved configuration.
     pub fn fully_constrained_entity_ids(&self) -> Vec<String> {
-        use nalgebra::SymmetricEigen;
+        self.system().fully_constrained_entity_ids()
+    }
 
-        let constraints = self.constraint_graph.get_constraints();
-        let param_manager = build_param_manager(&self.geometry);
-        let info = param_manager.get_parameter_info();
-        let num_params = param_manager.num_parameters();
+    /// Degrees of freedom the constraints leave at the current configuration:
+    /// free variables minus the rank of each Component's Jacobian.
+    pub fn dof(&self) -> usize {
+        self.system().dof()
+    }
 
-        // Track, per global parameter column, whether it is locked (0 DOF).
-        // Fixed parameters are trivially locked. Free parameters that are never
-        // touched by any constraint are movable (not locked).
-        let mut locked = vec![false; num_params];
-        for (i, pi) in info.iter().enumerate() {
-            if pi.is_fixed {
-                locked[i] = true;
-            }
-        }
-
-        // Threshold for treating a singular/eigen value as zero (null space) and
-        // for treating a null-space motion component as nonzero. Consistent with
-        // the solver's 1e-10 convergence tolerance.
-        const ZERO_EIG: f64 = 1e-9;
-        const MOTION_EPS: f64 = 1e-7;
-
-        let fixed_mask: Vec<bool> = info.iter().map(|pi| pi.is_fixed).collect();
-        let components = find_components(&self.constraint_types);
-
-        for component_indices in &components.components {
-            let component_constraints: Vec<&dyn Constraint> = component_indices
-                .iter()
-                .map(|&i| constraints[i].as_ref())
-                .collect();
-            if component_constraints.is_empty() {
-                continue;
-            }
-
-            let (_res, jac) = ParametricDogLegSolver::build_system(
-                &param_manager,
-                &component_constraints,
-                &fixed_mask,
-            );
-
-            // Columns (parameters) actually referenced by this component's
-            // constraints. Only these can be locked by this component; every
-            // other column is left untouched (motion is free elsewhere).
-            let jtj = jac.transpose() * &jac; // num_params x num_params, symmetric PSD
-            let eig = SymmetricEigen::new(jtj);
-
-            // Accumulate squared motion available in the null space for each column.
-            let mut null_motion_sq = vec![0.0f64; num_params];
-            for (k, &lambda) in eig.eigenvalues.iter().enumerate() {
-                if lambda.abs() <= ZERO_EIG {
-                    let v = eig.eigenvectors.column(k);
-                    for r in 0..num_params {
-                        null_motion_sq[r] += v[r] * v[r];
-                    }
-                }
-            }
-
-            // A free column touched by this component is locked if it has no
-            // motion in the null space.
-            for pi in info.iter() {
-                if pi.is_fixed {
-                    continue;
-                }
-                let col = pi.global_index;
-                // Is this parameter's column referenced by the component Jacobian?
-                let touched = jac.column(col).iter().any(|&x| x.abs() > 0.0);
-                if touched && null_motion_sq[col].sqrt() <= MOTION_EPS {
-                    locked[col] = true;
-                }
-            }
-        }
-
-        // An entity is fully constrained iff all of its parameter columns are locked.
-        let mut per_entity: std::collections::BTreeMap<String, bool> = std::collections::BTreeMap::new();
-        for pi in info.iter() {
-            let entry = per_entity.entry(pi.entity_id.clone()).or_insert(true);
-            *entry = *entry && locked[pi.global_index];
-        }
-
-        per_entity
-            .into_iter()
-            .filter_map(|(id, all_locked)| if all_locked { Some(id) } else { None })
-            .collect()
+    /// Conflicting and Redundant constraints at the current configuration
+    /// (call it after [`Self::solve`]), by constraint index. Temporary
+    /// constraints are never reported. The rule is documented on
+    /// `SketchSystem::diagnose`: dependent constraints carrying residual in
+    /// an unsolved Component are Conflicting; in a Solved Component, a
+    /// minimal set of dependent constraints, latest first, is Redundant.
+    pub fn diagnose(&self) -> Diagnosis {
+        self.system().diagnose()
     }
 
     pub fn get_point(&self, id: String) -> Option<&Point> {
@@ -283,6 +164,10 @@ impl ConstraintSolver {
 
     pub fn get_arc(&self, id: String) -> Option<&GeoArc> {
         self.geometry.get_arc(&id)
+    }
+
+    pub fn get_ellipse(&self, id: String) -> Option<&Ellipse> {
+        self.geometry.get_ellipse(&id)
     }
 
     pub fn print_state(&self) {

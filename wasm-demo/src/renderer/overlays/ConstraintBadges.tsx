@@ -2,7 +2,8 @@ import { useMemo } from "react";
 
 import { worldToScreen } from "../../core/sketch/store";
 import { useSketchStore } from "../../hooks/useSketchStore";
-import { badgeText, constraintAnchor, skippedIdSet } from "./anchors";
+import { problemConstraintIds } from "../../core/solver/SolverService";
+import { badgeText, constraintAnchor } from "./anchors";
 import { COLORS } from "../theme";
 
 /**
@@ -19,10 +20,7 @@ export function ConstraintBadges() {
 
   const troubled = useMemo(() => {
     if (lastOutcome === null) return new Set<string>();
-    return new Set([
-      ...skippedIdSet(lastOutcome.skippedConstraintIds),
-      ...lastOutcome.conflictingConstraintIds,
-    ]);
+    return problemConstraintIds(lastOutcome);
   }, [lastOutcome]);
 
   const resolve = useMemo(() => {
@@ -49,7 +47,7 @@ export function ConstraintBadges() {
       seen.set(key, idx + 1);
       out.push({
         id: c.id,
-        text: badgeText(c.type),
+        text: badgeText(c.def),
         x: s.x + 10 + idx * 26,
         y: s.y - 14,
         bad: troubled.has(c.id),

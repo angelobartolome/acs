@@ -73,7 +73,7 @@ export default function App() {
   const exportSketch = () => {
     const { entities, constraints } = sketchStore.getState();
     const json = JSON.stringify(
-      { primitives: sketchToPrimitives({ entities, constraints }) },
+      { version: 1, primitives: sketchToPrimitives({ entities, constraints }) },
       null,
       2,
     );

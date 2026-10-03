@@ -2,22 +2,17 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use crate::{
-    Constraint, ConstraintGraph, EntityType, GeometrySystem, ParameterManager, Solver, SolverResult,
-};
+use crate::SolverResult;
 
-/// Selects how the Gauss-Newton step is computed inside the Dogleg solver.
-/// Matches the `dogLegGaussStep` option in FreeCAD's GCS.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum GaussStepMethod {
-    /// Direct solve `J h = -f` via full-pivot LU (default; avoids forming J^T J).
-    FullPivLU,
-    /// Minimum-norm solution `J^T (J J^T)^{-1} (-f)` via full-pivot LU.
-    LeastNormFullPivLU,
-    /// Minimum-norm solution via Cholesky of `J J^T` (falls back to LU if J J^T is rank-deficient).
-    LeastNormLdlt,
-}
+/// Residual tolerance (L-inf): a constraint, component or sketch is solved
+/// when every residual is within it.
+pub(crate) const TOLF: f64 = 1e-10;
 
+/// Residuals and their Jacobian with respect to the parameter vector.
+pub(crate) type System = (DVector<f64>, DMatrix<f64>);
+
+/// Dog-Leg trust-region least-squares core. Knows nothing about sketches:
+/// it moves a parameter vector `x` to drive `eval(x)`'s residuals to zero.
 pub struct ParametricDogLegSolver {
     max_iterations: usize,
     /// Convergence tolerance on the L-infinity norm of the residual vector.
@@ -26,34 +21,6 @@ pub struct ParametricDogLegSolver {
     tolg: f64,
     /// Convergence tolerance on the trust radius relative to the parameter norm.
     tolx: f64,
-    gauss_step: GaussStepMethod,
-}
-
-pub(crate) fn build_param_manager(geometry: &GeometrySystem) -> ParameterManager {
-    let mut pm = ParameterManager::new();
-
-    let mut point_ids: Vec<String> = geometry.get_all_points().keys().cloned().collect();
-    point_ids.sort();
-    for id in point_ids {
-        let point = geometry.get_point(&id).expect("point");
-        pm.register_entity(id, EntityType::Point, point);
-    }
-
-    let mut circle_ids: Vec<String> = geometry.get_all_circles().keys().cloned().collect();
-    circle_ids.sort();
-    for id in circle_ids {
-        let circle = geometry.get_circle(&id).expect("circle");
-        pm.register_entity(id, EntityType::Circle, circle);
-    }
-
-    let mut arc_ids: Vec<String> = geometry.get_all_arcs().keys().cloned().collect();
-    arc_ids.sort();
-    for id in arc_ids {
-        let arc = geometry.get_arc(&id).expect("arc");
-        pm.register_entity(id, EntityType::Arc, arc);
-    }
-
-    pm
 }
 
 impl Default for ParametricDogLegSolver {
@@ -66,10 +33,9 @@ impl ParametricDogLegSolver {
     pub fn new() -> Self {
         Self {
             max_iterations: 100,
-            tolf: 1e-10,
+            tolf: TOLF,
             tolg: 1e-80,
             tolx: 1e-80,
-            gauss_step: GaussStepMethod::FullPivLU,
         }
     }
 
@@ -77,43 +43,36 @@ impl ParametricDogLegSolver {
         self.max_iterations = max_iterations.max(1);
     }
 
-    pub fn set_gauss_step(&mut self, method: GaussStepMethod) {
-        self.gauss_step = method;
+    pub(crate) fn max_iterations(&self) -> usize {
+        self.max_iterations
     }
 
-    pub fn solve_parametric(
-        &self,
-        geometry: &mut GeometrySystem,
-        constraint_graph: &ConstraintGraph,
-    ) -> Result<SolverResult, String> {
-        let mut param_manager = build_param_manager(geometry);
-        let constraints = constraint_graph.get_constraints();
-        let refs: Vec<&dyn Constraint> = constraints.iter().map(|c| c.as_ref()).collect();
-        let result = self.solve_dl(&mut param_manager, &refs);
-        Self::sync_geometry_from_parameters(&mut param_manager, geometry)?;
-        Ok(result)
-    }
-
+    /// Minimizes ‖eval(x)‖² starting from `x`, leaving the result in `x`.
+    /// `eval` returns the residuals and their Jacobian with respect to `x`.
     pub(crate) fn solve_dl(
         &self,
-        param_manager: &mut ParameterManager,
-        constraints: &[&dyn Constraint],
+        x: &mut DVector<f64>,
+        eval: &mut dyn FnMut(&DVector<f64>) -> System,
     ) -> SolverResult {
-        if param_manager.num_parameters() == 0 {
-            return SolverResult::Converged {
-                iterations: 0,
-                final_error: 0.0,
-                initial_error: 0.0,
+        let (mut fx, mut jac) = eval(x);
+        if x.is_empty() {
+            // Nothing to move: solved only if it already is.
+            let error = fx.norm();
+            return if fx.amax() <= self.tolf {
+                SolverResult::Converged {
+                    iterations: 0,
+                    final_error: error,
+                    initial_error: error,
+                }
+            } else {
+                SolverResult::MaxIterationsReached {
+                    iterations: 0,
+                    final_error: error,
+                    initial_error: error,
+                }
             };
         }
 
-        let fixed_mask: Vec<bool> = param_manager
-            .get_parameter_info()
-            .iter()
-            .map(|info| info.is_fixed)
-            .collect();
-
-        let (mut fx, mut jac) = Self::build_system(param_manager, constraints, &fixed_mask);
         let mut err = 0.5 * fx.norm_squared();
         let initial_error = fx.norm();
 
@@ -140,10 +99,7 @@ impl ParametricDogLegSolver {
                 stop = 2; // gradient vanished
                 break;
             }
-            let x_norm = {
-                let p = param_manager.get_parameters();
-                p.iter().map(|v| v * v).sum::<f64>().sqrt()
-            };
+            let x_norm = x.norm();
             if delta <= self.tolx * (self.tolx + x_norm) {
                 stop = 2; // trust radius collapsed
                 break;
@@ -214,14 +170,8 @@ impl ParametricDogLegSolver {
             };
 
             // --- Apply trial step ---
-            let old_params: Vec<f64> = param_manager.get_parameters().to_vec();
-            for (i, &v) in h_dl.iter().enumerate() {
-                if !fixed_mask[i] {
-                    let _ = param_manager.set_parameter(i, old_params[i] + v);
-                }
-            }
-
-            let (fx_new, jac_new) = Self::build_system(param_manager, constraints, &fixed_mask);
+            let x_new = &*x + &h_dl;
+            let (fx_new, jac_new) = eval(&x_new);
             let err_new = 0.5 * fx_new.norm_squared();
 
             // Predicted reduction in the linear model vs actual reduction.
@@ -230,6 +180,7 @@ impl ParametricDogLegSolver {
 
             // Accept step only if both actual and predicted reductions are positive.
             let rho = if df_actual > 0.0 && dl_model > 0.0 {
+                *x = x_new;
                 fx = fx_new;
                 jac = jac_new;
                 err = err_new;
@@ -238,12 +189,7 @@ impl ParametricDogLegSolver {
                 fx_inf = fx.amax();
                 dl_model / df_actual
             } else {
-                // Reject: revert parameters; fx/jac remain valid for old_params.
-                for (i, &v) in old_params.iter().enumerate() {
-                    if !fixed_mask[i] {
-                        let _ = param_manager.set_parameter(i, v);
-                    }
-                }
+                // Reject: x, fx and jac stay at the previous point.
                 -1.0
             };
 
@@ -264,111 +210,71 @@ impl ParametricDogLegSolver {
         }
 
         let final_error = fx.norm();
-        match stop {
-            1 | 2 | 5 => SolverResult::Converged {
+        // Only a residual within tolerance counts as solved. Stops 2 and 5
+        // (vanished gradient, collapsed trust region, negligible step) also
+        // occur when stuck in a local minimum away from any solution.
+        let solved = stop == 1 || (matches!(stop, 2 | 5) && fx.amax() <= self.tolf);
+        if solved {
+            SolverResult::Converged {
                 iterations: iter,
                 final_error,
                 initial_error,
-            },
-            _ => SolverResult::MaxIterationsReached {
+            }
+        } else {
+            SolverResult::MaxIterationsReached {
                 iterations: iter,
                 final_error,
                 initial_error,
-            },
+            }
         }
     }
 
-    /// Computes the Gauss-Newton step using the selected linear-solve method.
+    /// Computes the Gauss-Newton step.
     /// Returns `None` only if every fallback fails.
     fn compute_gn_step(&self, jac: &DMatrix<f64>, fx: &DVector<f64>) -> Option<DVector<f64>> {
         let neg_fx = -fx;
         let svd_fallback = || jac.clone().svd(true, true).solve(&neg_fx, 1e-12).ok();
 
-        match self.gauss_step {
-            GaussStepMethod::FullPivLU => {
-                // Direct solve J h = -f; avoids forming the normal equations J^T J.
-                // nalgebra's full_piv_lu panics on non-square matrices, so fall back to SVD
-                // for rectangular systems (under/overdetermined).
-                if jac.nrows() == jac.ncols() {
-                    jac.clone().full_piv_lu().solve(&neg_fx).or_else(svd_fallback)
-                } else {
-                    svd_fallback()
-                }
-            }
-            GaussStepMethod::LeastNormFullPivLU => {
-                // Minimum-norm solution: h = J^T (J J^T)^{-1} (-f)
-                let jt = jac.transpose();
-                let jjt = jac * &jt;
-                jjt.full_piv_lu()
-                    .solve(&neg_fx)
-                    .map(|y| &jt * y)
-                    .or_else(svd_fallback)
-            }
-            GaussStepMethod::LeastNormLdlt => {
-                // Minimum-norm via Cholesky of J J^T (PSD); fall back to LU if rank-deficient.
-                let jt = jac.transpose();
-                let jjt = jac * &jt;
-                jjt.clone()
-                    .cholesky()
-                    .map(|chol| &jt * chol.solve(&neg_fx))
-                    .or_else(|| jjt.full_piv_lu().solve(&neg_fx).map(|y| &jt * y))
-                    .or_else(svd_fallback)
-            }
+        // Direct solve J h = -f; avoids forming the normal equations J^T J.
+        // nalgebra's full_piv_lu panics on non-square matrices, so fall back to SVD
+        // for rectangular systems (under/overdetermined).
+        if jac.nrows() == jac.ncols() {
+            jac.clone().full_piv_lu().solve(&neg_fx).or_else(svd_fallback)
+        } else {
+            svd_fallback()
         }
-    }
-
-    pub(crate) fn build_system(
-        param_manager: &ParameterManager,
-        constraints: &[&dyn Constraint],
-        fixed_mask: &[bool],
-    ) -> (DVector<f64>, DMatrix<f64>) {
-        let total_residuals: usize = constraints.iter().map(|c| c.num_residuals()).sum();
-        let total_vars = param_manager.num_parameters();
-
-        let mut residuals = DVector::<f64>::zeros(total_residuals);
-        let mut jacobian = DMatrix::<f64>::zeros(total_residuals, total_vars);
-
-        let mut row_offset = 0;
-        for c in constraints {
-            let r = c.residual(param_manager);
-            let j = c.jacobian(param_manager);
-            residuals.rows_mut(row_offset, r.len()).copy_from(&r);
-            jacobian.rows_mut(row_offset, j.nrows()).copy_from(&j);
-            row_offset += r.len();
-        }
-
-        for (i, &is_fixed) in fixed_mask.iter().enumerate() {
-            if is_fixed {
-                jacobian.column_mut(i).fill(0.0);
-            }
-        }
-
-        (residuals, jacobian)
-    }
-
-    pub(crate) fn sync_geometry_from_parameters(
-        param_manager: &mut ParameterManager,
-        geometry: &mut GeometrySystem,
-    ) -> Result<(), String> {
-        for (id, point) in geometry.get_all_points_mut() {
-            param_manager.update_entity_parameters(id, point)?;
-        }
-        for (id, circle) in geometry.get_all_circles_mut() {
-            param_manager.update_entity_parameters(id, circle)?;
-        }
-        for (id, arc) in geometry.get_all_arcs_mut() {
-            param_manager.update_entity_parameters(id, arc)?;
-        }
-        Ok(())
     }
 }
 
-impl Solver for ParametricDogLegSolver {
-    fn solve(
-        &self,
-        geometry: &mut GeometrySystem,
-        constraint_graph: &ConstraintGraph,
-    ) -> Result<SolverResult, String> {
-        self.solve_parametric(geometry, constraint_graph)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Intersect the unit circle with the line y = x: no sketch involved.
+    #[test]
+    fn solves_a_plain_nonlinear_system() {
+        let mut x = DVector::from_vec(vec![2.0, 0.5]);
+        let result = ParametricDogLegSolver::new().solve_dl(&mut x, &mut |x| {
+            let (a, b) = (x[0], x[1]);
+            let r = DVector::from_vec(vec![a * a + b * b - 1.0, a - b]);
+            let j = DMatrix::from_row_slice(2, 2, &[2.0 * a, 2.0 * b, 1.0, -1.0]);
+            (r, j)
+        });
+        assert!(matches!(result, SolverResult::Converged { .. }), "{result:?}");
+        let h = std::f64::consts::FRAC_1_SQRT_2;
+        assert!((x[0] - h).abs() < 1e-9 && (x[1] - h).abs() < 1e-9, "{x}");
+    }
+
+    #[test]
+    fn nothing_to_move_is_solved_only_if_already_satisfied() {
+        let dl = ParametricDogLegSolver::new();
+        let mut empty = DVector::zeros(0);
+        let zero = |_: &DVector<f64>| (DVector::from_vec(vec![0.0]), DMatrix::zeros(1, 0));
+        let off = |_: &DVector<f64>| (DVector::from_vec(vec![1.0]), DMatrix::zeros(1, 0));
+        assert!(matches!(dl.solve_dl(&mut empty, &mut { zero }), SolverResult::Converged { .. }));
+        assert!(matches!(
+            dl.solve_dl(&mut empty, &mut { off }),
+            SolverResult::MaxIterationsReached { .. }
+        ));
     }
 }

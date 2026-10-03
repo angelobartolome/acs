@@ -1,5 +1,5 @@
 use acs::{
-    Circle, ConstraintSolver, ConstraintType, EntityType, EqualRadiusConstraint, ParameterManager,
+    Circle, ConstraintSolver, ConstraintType, EntityType, EqualRadiusConstraint, VarRegistry,
     Point, SolverResult, constraints::Constraint,
 };
 
@@ -14,7 +14,7 @@ fn test_equal_radius_constraint_residual() {
     let circle2 = Circle::new("c2".to_string(), "center2".to_string(), 3.0, false);
 
     // Set up parameter manager
-    let mut param_manager = ParameterManager::new();
+    let mut param_manager = VarRegistry::new();
     param_manager.register_entity("center1".to_string(), EntityType::Point, &center1);
     param_manager.register_entity("center2".to_string(), EntityType::Point, &center2);
     param_manager.register_entity("c1".to_string(), EntityType::Circle, &circle1);
@@ -46,7 +46,7 @@ fn test_equal_radius_constraint_jacobian() {
     let circle2 = Circle::new("c2".to_string(), "center2".to_string(), 3.0, false);
 
     // Set up parameter manager
-    let mut param_manager = ParameterManager::new();
+    let mut param_manager = VarRegistry::new();
     param_manager.register_entity("center1".to_string(), EntityType::Point, &center1);
     param_manager.register_entity("center2".to_string(), EntityType::Point, &center2);
     param_manager.register_entity("c1".to_string(), EntityType::Circle, &circle1);
@@ -95,7 +95,7 @@ fn test_equal_radius_constraint_zero_residual() {
     let circle2 = Circle::new("c2".to_string(), "center2".to_string(), 4.0, false);
 
     // Set up parameter manager
-    let mut param_manager = ParameterManager::new();
+    let mut param_manager = VarRegistry::new();
     param_manager.register_entity("center1".to_string(), EntityType::Point, &center1);
     param_manager.register_entity("center2".to_string(), EntityType::Point, &center2);
     param_manager.register_entity("c1".to_string(), EntityType::Circle, &circle1);

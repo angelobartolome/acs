@@ -1,11 +1,291 @@
+#![allow(non_snake_case)]
+
 use nalgebra::{DMatrix, DVector};
 
-use crate::ParameterManager;
+use crate::{GeometrySystem, VarRegistry};
 
+/// One solver variable a constraint reads, named by role: a number the solver
+/// may move, such as a Point's x. Not a Parameter, which is a named, fixed
+/// value in the sketch.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Var<'a> {
+    /// x coordinate of a Point.
+    X(&'a str),
+    /// y coordinate of a Point.
+    Y(&'a str),
+    /// Radius of a Circle or Arc.
+    Radius(&'a str),
+    /// Start angle of an Arc, in radians.
+    StartAngle(&'a str),
+    /// End angle of an Arc, in radians.
+    EndAngle(&'a str),
+    /// Minor radius (`radmin`) of an Ellipse.
+    MinorRadius(&'a str),
+}
+
+impl Var<'_> {
+    /// ID of the entity this variable belongs to.
+    pub fn entity_id(&self) -> &str {
+        match self {
+            Var::X(id)
+            | Var::Y(id)
+            | Var::Radius(id)
+            | Var::StartAngle(id)
+            | Var::EndAngle(id)
+            | Var::MinorRadius(id) => id,
+        }
+    }
+
+    /// Global column of this variable in `pm`, if its entity is registered.
+    pub fn column(&self, pm: &VarRegistry) -> Option<usize> {
+        pm.get_global_index(self.entity_id(), self.index_in_entity())
+    }
+
+    /// Index of this variable within its entity's values.
+    fn index_in_entity(&self) -> usize {
+        match self {
+            Var::X(_) | Var::Radius(_) | Var::MinorRadius(_) => 0,
+            Var::Y(_) | Var::StartAngle(_) => 1,
+            Var::EndAngle(_) => 2,
+        }
+    }
+}
+
+/// A scalar a constraint reads: either a constant (a number, or a
+/// Parameter's value) or an entity property the solver may move, such as a
+/// Circle's radius.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Operand {
+    Const(f64),
+    /// x coordinate of a Point.
+    X(String),
+    /// y coordinate of a Point.
+    Y(String),
+    /// Radius of a Circle or Arc.
+    Radius(String),
+    /// Minor radius (`radmin`) of an Ellipse.
+    MinorRadius(String),
+}
+
+impl Operand {
+    /// The solver variable this operand reads, or `None` for a constant.
+    pub fn var(&self) -> Option<Var<'_>> {
+        match self {
+            Operand::Const(_) => None,
+            Operand::X(id) => Some(Var::X(id)),
+            Operand::Y(id) => Some(Var::Y(id)),
+            Operand::Radius(id) => Some(Var::Radius(id)),
+            Operand::MinorRadius(id) => Some(Var::MinorRadius(id)),
+        }
+    }
+}
+
+/// Values of `operands`, taking the variable ones from `x` in order (as laid
+/// out by their `var()`s), and the local column of each (`None` for constants).
+pub(crate) fn operand_values(operands: &[&Operand], x: &[f64]) -> Vec<(f64, Option<usize>)> {
+    let mut next = 0;
+    operands
+        .iter()
+        .map(|o| match o {
+            Operand::Const(v) => (*v, None),
+            _ => {
+                next += 1;
+                (x[next - 1], Some(next - 1))
+            }
+        })
+        .collect()
+}
+
+/// `[X(id), Y(id)]`: both coordinates of a Point.
+pub fn xy(id: &str) -> [Var<'_>; 2] {
+    [Var::X(id), Var::Y(id)]
+}
+
+/// Writes `g` into row `row` of a local Jacobian.
+pub(crate) fn set_row(j: &mut DMatrix<f64>, row: usize, g: &[f64]) {
+    for (k, &v) in g.iter().enumerate() {
+        j[(row, k)] = v;
+    }
+}
+
+/// A geometric constraint, written as a kernel over its own variables.
+///
+/// A constraint declares the variables it drives (`vars`), optionally the
+/// Guides it follows (`guides`), and evaluates residuals and their partials
+/// over those local values (`eval`). Gathering values from the global vector
+/// and scattering partials into the global Jacobian happen once, in the
+/// provided `residual` / `jacobian` methods and `eval_into`, which accumulate
+/// so a variable listed twice (two lines sharing a point) gets the sum of its
+/// partials.
 pub trait Constraint {
+    /// Variables this constraint drives: `eval` reads them first, in this
+    /// order, and writes their partials. The same variable may appear more
+    /// than once.
+    fn vars(&self) -> Vec<Var<'_>>;
+
+    /// Guides: variables `eval` also reads (after `vars()`, in this order)
+    /// that a drag must never move through this constraint, such as a
+    /// mirror's axis or an array's center: dragging a copy moves the copy, not
+    /// what it copies across. `eval` writes their partials like any other
+    /// input, so an ordinary solve moves them as the other constraints need
+    /// (adding Horizontal to a patterned side turns the pattern about a center
+    /// that moves with it). Only a solve with soft goals holds them (see
+    /// `SketchSystem::solve`). A variable may be both driven and a Guide.
+    fn guides(&self) -> Vec<Var<'_>> {
+        Vec::new()
+    }
+
     fn num_residuals(&self) -> usize;
-    fn residual(&self, _param_manager: &ParameterManager) -> DVector<f64>;
-    fn jacobian(&self, _param_manager: &ParameterManager) -> DMatrix<f64>;
+
+    /// Writes residuals into `r` (`num_residuals()` long) and their partials
+    /// into `j` (`num_residuals() × reads(self).len()`, zeroed on entry).
+    /// `x[k]` is the value of `reads(self)[k]`: the `vars()`, then the
+    /// `guides()`; column `k` of `j` is the partial w.r.t. `x[k]`.
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>);
+
+    fn residual(&self, pm: &VarRegistry) -> DVector<f64> {
+        let (r, _, _) = eval_local(self, pm, None);
+        DVector::from(r)
+    }
+
+    /// Partials w.r.t. every global variable, Guides included.
+    fn jacobian(&self, pm: &VarRegistry) -> DMatrix<f64> {
+        let (r, local, cols) = eval_local(self, pm, None);
+        let mut J = DMatrix::zeros(r.len(), pm.num_vars());
+        for (k, &col) in cols.iter().enumerate() {
+            for row in 0..r.len() {
+                J[(row, col)] += local[(row, k)];
+            }
+        }
+        J
+    }
+}
+
+/// Every variable `c` reads, as `eval` receives them: `vars()`, then
+/// `guides()`. Components are grouped by these, so a Guide joins the
+/// Component of the constraints that move it.
+pub fn reads<C: Constraint + ?Sized>(c: &C) -> Vec<Var<'_>> {
+    let mut all = c.vars();
+    all.extend(c.guides());
+    all
+}
+
+/// Evaluates `c` at the current values: its residuals, its local Jacobian and
+/// the global column of each of its columns. `guide_values`, when given, holds
+/// the Guides: they are read from that global value vector instead of `pm`,
+/// and their columns are dropped (driven columns only).
+fn eval_local<C: Constraint + ?Sized>(
+    c: &C,
+    pm: &VarRegistry,
+    guide_values: Option<&[f64]>,
+) -> (Vec<f64>, DMatrix<f64>, Vec<usize>) {
+    let (mut cols, mut x) = gather(&reads(c), pm);
+    let driven = c.vars().len();
+    let mut r = vec![0.0; c.num_residuals()];
+    let mut j = DMatrix::zeros(r.len(), cols.len());
+    let Some(values) = guide_values else {
+        c.eval(&x, &mut r, &mut j);
+        return (r, j, cols);
+    };
+    for (v, &col) in x[driven..].iter_mut().zip(&cols[driven..]) {
+        *v = values[col];
+    }
+    c.eval(&x, &mut r, &mut j);
+    cols.truncate(driven);
+    (r, j.columns(0, driven).into_owned(), cols)
+}
+
+/// Evaluates `c` at the current values, writing its residuals into
+/// `r[row..]` and adding its partials into `J[row.., column_of(global)]`.
+/// Variables whose global column maps to `None` (fixed ones) are skipped.
+///
+/// `guide_values`, when given, holds the Guides at a global value vector (a
+/// snapshot): they are read from it instead of `pm` and get no partials, so
+/// the residuals stay consistent with the Jacobian while other constraints
+/// move the Guides; see `SketchSystem::solve`.
+pub(crate) fn eval_into(
+    c: &dyn Constraint,
+    pm: &VarRegistry,
+    guide_values: Option<&[f64]>,
+    column_of: &dyn Fn(usize) -> Option<usize>,
+    row: usize,
+    r: &mut DVector<f64>,
+    J: &mut DMatrix<f64>,
+) {
+    let (local_r, local_j, cols) = eval_local(c, pm, guide_values);
+    let n = local_r.len();
+    for (i, v) in local_r.into_iter().enumerate() {
+        r[row + i] = v;
+    }
+    for (k, &global) in cols.iter().enumerate() {
+        if let Some(col) = column_of(global) {
+            for i in 0..n {
+                J[(row + i, col)] += local_j[(i, k)];
+            }
+        }
+    }
+}
+
+/// Global column and current value of each variable.
+///
+/// Panics on an unknown entity; `check_vars` rejects those when the
+/// constraint is added.
+fn gather(vars: &[Var<'_>], pm: &VarRegistry) -> (Vec<usize>, Vec<f64>) {
+    let cols: Vec<usize> = vars
+        .iter()
+        .map(|p| {
+            p.column(pm)
+                .unwrap_or_else(|| panic!("constraint references unknown variable {p:?}"))
+        })
+        .collect();
+    let values = cols.iter().map(|&c| pm.values()[c]).collect();
+    (cols, values)
+}
+
+/// Checks that every variable a constraint reads exists in `geometry` and
+/// belongs to the right kind of entity.
+pub fn check_vars(constraint: &dyn Constraint, geometry: &GeometrySystem) -> Result<(), String> {
+    for p in reads(constraint) {
+        let ok = match p {
+            Var::X(id) | Var::Y(id) => geometry.get_point(id).is_some(),
+            Var::Radius(id) => {
+                geometry.get_circle(id).is_some() || geometry.get_arc(id).is_some()
+            }
+            Var::StartAngle(id) | Var::EndAngle(id) => geometry.get_arc(id).is_some(),
+            Var::MinorRadius(id) => geometry.get_ellipse(id).is_some(),
+        };
+        if !ok {
+            let kind = match p {
+                Var::X(_) | Var::Y(_) => "a point",
+                Var::Radius(_) => "a circle or arc",
+                Var::StartAngle(_) | Var::EndAngle(_) => "an arc",
+                Var::MinorRadius(_) => "an ellipse",
+            };
+            return Err(format!("'{}' is not {kind}", p.entity_id()));
+        }
+    }
+    Ok(())
+}
+
+/// One of an Ellipse's two axes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EllipseAxis {
+    /// Through the center and the focus; its endpoints are the major radius
+    /// `a` from the center.
+    Major,
+    /// Perpendicular to the major axis at the center; its endpoints are the
+    /// minor radius `radmin` from the center.
+    Minor,
+}
+
+impl EllipseAxis {
+    /// `major` or `minor`, as the JSON `which` field names it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EllipseAxis::Major => "major",
+            EllipseAxis::Minor => "minor",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,7 +329,7 @@ pub enum ConstraintType {
     /// (p1_id, p2_id, distance)
     DistancePointPoint(String, String, f64),
 
-    /// Fixed perpendicular distance from a point to an infinite line.
+    /// Fixed distance from a point to a Line (the segment).
     /// (point_id, line_pa_id, line_pb_id, distance)
     DistancePointLine(String, String, String, f64),
 
@@ -65,40 +345,98 @@ pub enum ConstraintType {
     /// (L1P1, L1P2, L2P1, L2P2)
     EqualLength(String, String, String, String),
 
-    /// Force two points to be symmetric about a line (axis of symmetry).
-    /// (p_id, q_id, axis_pa_id, axis_pb_id)
-    Symmetric(String, String, String, String),
-
-    /// Midpoint of segment (l1a, l1b) lies on infinite line (l2a, l2b).
+    /// Midpoint of Line (l1a, l1b) lies on Line (l2a, l2b) (the segment).
     MidpointOfLineOnLine(String, String, String, String),
-}
 
-impl ConstraintType {
-    pub fn entity_ids(&self) -> Vec<&str> {
-        match self {
-            Self::Vertical(a, b) => vec![a, b],
-            Self::Horizontal(a, b) => vec![a, b],
-            Self::Coincident(a, b) => vec![a, b],
-            Self::EqualRadius(a, b) => vec![a, b],
-            Self::Concentric(a, b) => vec![a, b],
-            Self::EqualX(a, _) => vec![a],
-            Self::EqualY(a, _) => vec![a],
-            Self::FixedRadius(a, _) => vec![a],
-            Self::DistancePointPoint(a, b, _) => vec![a, b],
-            Self::PointOnLine(a, b, c) => vec![a, b, c],
-            Self::Midpoint(a, b, c) => vec![a, b, c],
-            Self::PointOnCircle(a, b, c) => vec![a, b, c],
-            Self::DistancePointLine(a, b, c, _) => vec![a, b, c],
-            Self::Parallel(a, b, c, d) => vec![a, b, c, d],
-            Self::Perpendicular(a, b, c, d) => vec![a, b, c, d],
-            Self::Tangent(a, b, c, d) => vec![a, b, c, d],
-            Self::TangentLineCircle(a, b, c, d) => vec![a, b, c, d],
-            Self::Angle(a, b, c, d, _) => vec![a, b, c, d],
-            Self::EqualLength(a, b, c, d) => vec![a, b, c, d],
-            Self::Symmetric(a, b, c, d) => vec![a, b, c, d],
-            Self::MidpointOfLineOnLine(a, b, c, d) => vec![a, b, c, d],
-        }
-    }
+    // ── Extension variants (measure against the infinite line through a
+    //    Line's endpoints; for sketches authored under PlaneGCS semantics) ──
+    /// A point lies on a Line's Extension.
+    /// (point_id, line_pa_id, line_pb_id)
+    PointOnExtension(String, String, String),
+
+    /// Fixed perpendicular distance from a point to a Line's Extension.
+    /// (point_id, line_pa_id, line_pb_id, distance)
+    DistancePointExtension(String, String, String, f64),
+
+    /// A circle is tangent to a Line's Extension (dist(center, line) = r).
+    /// (line_pa_id, line_pb_id, circle_center_point_id, circle_id)
+    TangentExtensionCircle(String, String, String, String),
+
+    /// Midpoint of Line (l1a, l1b) lies on the Extension of Line (l2a, l2b).
+    MidpointOfLineOnExtension(String, String, String, String),
+
+    // ── Linked Offsets and property relations ──
+    /// Signed perpendicular distance from a point to a Line's Extension:
+    /// side · cross(b − a, p − a) / |b − a| = distance, so the point is held
+    /// on the `side` (+1 left of a→b, −1 right) it was placed on.
+    /// (point_id, line_pa_id, line_pb_id, distance, side)
+    SignedDistancePointExtension(String, String, String, f64, f64),
+
+    /// param2 − param1 = difference.
+    /// (param1, param2, difference)
+    Difference(Operand, Operand, Operand),
+
+    /// param1 = param2.
+    /// (param1, param2)
+    Equal(Operand, Operand),
+
+    // ── Arcs ──────────────────────────────────────────────────────────────────
+    /// An arc's start and end Points lie at its radius from its center, at
+    /// its start and end angles.
+    /// (center_point_id, start_point_id, end_point_id, arc_id)
+    ArcRules(String, String, String, String),
+
+    /// A point lies on an arc's span (on its circle, between its start and
+    /// end angles counter-clockwise).
+    /// (point_id, arc_center_point_id, arc_id)
+    PointOnArc(String, String, String),
+
+    /// A Line (the segment) is tangent to an arc, touching it on both the
+    /// segment and the arc's span.
+    /// (line_pa_id, line_pb_id, arc_center_point_id, arc_id)
+    TangentLineArc(String, String, String, String),
+
+    // ── Arrays and mirror ──
+    /// Direction of p1 → p2 is `angle` radians CCW from +x.
+    /// (p1_id, p2_id, angle)
+    PointPointAngle(String, String, f64),
+
+    /// pB is pA mirrored across the Extension of the axis Line.
+    /// (pA_id, pB_id, axis_pa_id, axis_pb_id)
+    MirrorPointExtension(String, String, String, String),
+
+    /// pk is p0 rotated about center by `angle` radians CCW.
+    /// (p0_id, pk_id, center_id, angle)
+    CircularInstance(String, String, String, f64),
+
+    /// pk is p0 translated base_distance·n along dir_p1 → dir_p2.
+    /// (p0_id, pk_id, dir_p1_id, dir_p2_id, base_distance, n)
+    LinearInstance(String, String, String, String, f64, f64),
+
+    // ── Ellipses (center Point, focus Point, `radmin` Var) ──
+    /// A point lies on an ellipse.
+    /// (point_id, ellipse_center_id, ellipse_focus1_id, ellipse_id)
+    PointOnEllipse(String, String, String, String),
+
+    /// A Line (the segment) is tangent to an ellipse, touching it on the
+    /// segment.
+    /// (line_pa_id, line_pb_id, ellipse_center_id, ellipse_focus1_id, ellipse_id)
+    TangentLineEllipse(String, String, String, String, String),
+
+    /// A point is an endpoint (either one) of an ellipse's major or minor
+    /// axis.
+    /// (point_id, ellipse_center_id, ellipse_focus1_id, ellipse_id, axis)
+    EllipseAxisPoint(String, String, String, String, EllipseAxis),
+
+    /// Two points are the two endpoints of an ellipse's major or minor axis
+    /// (PlaneGCS's internal-alignment diameter).
+    /// (p1_id, p2_id, ellipse_center_id, ellipse_focus1_id, ellipse_id, axis)
+    EllipseDiameter(String, String, String, String, String, EllipseAxis),
+
+    /// A Line tangent to an arc at a Point they share (a line endpoint that
+    /// is an arc endpoint): the line is perpendicular to the radius there.
+    /// (point_id, other_line_end_id, arc_center_point_id)
+    TangentAtPoint(String, String, String),
 }
 
 pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Constraint>, String> {
@@ -167,12 +505,90 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         ConstraintType::EqualLength(p1, p2, p3, p4) => Ok(Box::new(
             crate::constraints::equal_length::EqualLengthConstraint::new(p1, p2, p3, p4),
         )),
-        ConstraintType::Symmetric(p, q, pa, pb) => Ok(Box::new(
-            crate::constraints::symmetric::SymmetricConstraint::new(p, q, pa, pb),
-        )),
         ConstraintType::MidpointOfLineOnLine(a, b, c, d) => Ok(Box::new(
             crate::constraints::midpoint_line_on_line::MidpointOfLineOnLineConstraint::new(
                 a, b, c, d,
+            ),
+        )),
+        ConstraintType::PointOnExtension(p, pa, pb) => Ok(Box::new(
+            crate::constraints::point_on_extension::PointOnExtensionConstraint::new(p, pa, pb),
+        )),
+        ConstraintType::DistancePointExtension(pt, pa, pb, d) => Ok(Box::new(
+            crate::constraints::distance_point_extension::DistancePointExtensionConstraint::new(
+                pt, pa, pb, d,
+            ),
+        )),
+        ConstraintType::TangentExtensionCircle(pa, pb, c_center, c) => Ok(Box::new(
+            crate::constraints::tangent_extension_circle::TangentExtensionCircleConstraint::new(
+                pa, pb, c_center, c,
+            ),
+        )),
+        ConstraintType::MidpointOfLineOnExtension(a, b, c, d) => Ok(Box::new(
+            crate::constraints::midpoint_line_on_extension::MidpointOfLineOnExtensionConstraint::new(
+                a, b, c, d,
+            ),
+        )),
+        ConstraintType::SignedDistancePointExtension(pt, pa, pb, d, side) => Ok(Box::new(
+            crate::constraints::signed_distance_point_extension::SignedDistancePointExtensionConstraint::new(
+                pt, pa, pb, d, side,
+            ),
+        )),
+        ConstraintType::Difference(a, b, d) => Ok(Box::new(
+            crate::constraints::difference::DifferenceConstraint::new(a, b, d),
+        )),
+        ConstraintType::Equal(a, b) => Ok(Box::new(
+            crate::constraints::equal::EqualConstraint::new(a, b),
+        )),
+        ConstraintType::ArcRules(center, start, end, arc) => Ok(Box::new(
+            crate::constraints::arc_rules::ArcRulesConstraint::new(center, start, end, arc),
+        )),
+        ConstraintType::PointOnArc(p, center, arc) => Ok(Box::new(
+            crate::constraints::point_on_arc::PointOnArcConstraint::new(p, center, arc),
+        )),
+        ConstraintType::TangentLineArc(pa, pb, center, arc) => Ok(Box::new(
+            crate::constraints::tangent_line_arc::TangentLineArcConstraint::new(
+                pa, pb, center, arc,
+            ),
+        )),
+        ConstraintType::TangentAtPoint(p, other, center) => Ok(Box::new(
+            crate::constraints::tangent_at_point::TangentAtPointConstraint::new(p, other, center),
+        )),
+        ConstraintType::PointPointAngle(p1, p2, angle) => Ok(Box::new(
+            crate::constraints::point_point_angle::PointPointAngleConstraint::new(p1, p2, angle),
+        )),
+        ConstraintType::MirrorPointExtension(a, b, pa, pb) => Ok(Box::new(
+            crate::constraints::mirror_point_extension::MirrorPointExtensionConstraint::new(
+                a, b, pa, pb,
+            ),
+        )),
+        ConstraintType::CircularInstance(p0, pk, c, angle) => Ok(Box::new(
+            crate::constraints::circular_instance::CircularInstanceConstraint::new(
+                p0, pk, c, angle,
+            ),
+        )),
+        ConstraintType::LinearInstance(p0, pk, d1, d2, base, n) => Ok(Box::new(
+            crate::constraints::linear_instance::LinearInstanceConstraint::new(
+                p0, pk, d1, d2, base, n,
+            ),
+        )),
+        ConstraintType::PointOnEllipse(p, center, focus, e) => Ok(Box::new(
+            crate::constraints::point_on_ellipse::PointOnEllipseConstraint::new(
+                p, center, focus, e,
+            ),
+        )),
+        ConstraintType::TangentLineEllipse(pa, pb, center, focus, e) => Ok(Box::new(
+            crate::constraints::tangent_line_ellipse::TangentLineEllipseConstraint::new(
+                pa, pb, center, focus, e,
+            ),
+        )),
+        ConstraintType::EllipseAxisPoint(p, center, focus, e, axis) => Ok(Box::new(
+            crate::constraints::ellipse_axis_point::EllipseAxisPointConstraint::new(
+                p, center, focus, e, axis,
+            ),
+        )),
+        ConstraintType::EllipseDiameter(p1, p2, center, focus, e, axis) => Ok(Box::new(
+            crate::constraints::ellipse_diameter::EllipseDiameterConstraint::new(
+                p1, p2, center, focus, e, axis,
             ),
         )),
     }
