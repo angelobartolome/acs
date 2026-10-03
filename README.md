@@ -233,6 +233,12 @@ Every constraint's analytical Jacobian is checked against finite differences (`t
 
 ---
 
+## Used by
+
+ACS solves the sketches in [Part3D](https://part3d.app), a parametric 3D CAD app for iPad and Mac.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
