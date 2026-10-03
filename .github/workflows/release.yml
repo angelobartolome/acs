@@ -1,10 +1,12 @@
 name: Release
 
-# Pushing a tag vX.Y.Z (matching Cargo.toml's version) builds the release artifacts with
-# scripts/release.sh, publishes them as a GitHub Release and publishes the crate (acs-solver)
-# to crates.io with the CARGO_REGISTRY_TOKEN secret. A manual run, or a pull request
-# that changes the release machinery, builds the same artifacts and attaches them to the run
-# without publishing.
+# Pushing a tag vX.Y.Z (matching Cargo.toml's version) builds the release artifacts and
+# publishes them as a GitHub Release, then publishes the crate (acs-solver) to crates.io with
+# the CARGO_REGISTRY_TOKEN secret. A manual run, or a pull request that changes the release
+# machinery, builds the same artifacts and attaches them to the run without publishing.
+#
+# The pieces build in parallel jobs, each on its own runner: one macOS job per Apple platform
+# (scripts/release.sh <platform>), the WASM npm package on Linux, and lint + tests alongside.
 on:
   push:
     tags: ["v*"]
@@ -26,9 +28,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
-    # The iOS and iOS Simulator static libraries need Xcode's SDKs.
-    runs-on: macos-latest
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,19 +47,16 @@ jobs:
             exit 1
           fi
 
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal --component clippy --no-self-update
 
-      - name: Install wasm-pack
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Lint
         run: cargo clippy --all-targets --all-features
@@ -67,23 +67,84 @@ jobs:
       - name: Check the crate packages
         run: cargo publish --dry-run
 
-      - name: Build the release artifacts
-        run: ./scripts/release.sh
+  apple:
+    needs: version
+    # The iOS and iOS Simulator static libraries need Xcode's SDKs.
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        platform: [macos-arm64, ios-arm64, ios-arm64-simulator]
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Upload the artifacts to the run
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
+
+      - name: Build the static library
+        run: ./scripts/release.sh ${{ matrix.platform }}
+
+      - name: Upload it to the run
         uses: actions/upload-artifact@v4
         with:
-          name: acs-${{ steps.version.outputs.version }}
-          path: |
-            dist/acs-${{ steps.version.outputs.version }}-*.tar.gz
-            dist/acs-${{ steps.version.outputs.version }}.tgz
+          name: acs-${{ needs.version.outputs.version }}-${{ matrix.platform }}
+          path: dist/acs-${{ needs.version.outputs.version }}-${{ matrix.platform }}.tar.gz
           if-no-files-found: error
 
+  wasm:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/wasm-release"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build the WASM npm package
+        run: ./scripts/release.sh wasm
+
+      - name: Upload it to the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: acs-${{ needs.version.outputs.version }}-npm
+          path: dist/acs-${{ needs.version.outputs.version }}.tgz
+          if-no-files-found: error
+
+  publish:
+    needs: [version, check, apple, wasm]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect the artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: acs-${{ needs.version.outputs.version }}-*
+          path: dist
+          merge-multiple: true
+
       - name: Publish the GitHub Release
-        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           gh release create "$GITHUB_REF_NAME" --title "ACS $VERSION" --generate-notes \
             "dist/acs-$VERSION-macos-arm64.tar.gz" \
@@ -91,8 +152,10 @@ jobs:
             "dist/acs-$VERSION-ios-arm64-simulator.tar.gz" \
             "dist/acs-$VERSION.tgz"
 
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
       - name: Publish the crate to crates.io
-        if: github.ref_type == 'tag'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish

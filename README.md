@@ -206,7 +206,8 @@ The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contrac
 
 ```bash
 cargo build --release --features c-abi
-./scripts/release.sh   # dist/acs-<version>-<platform>.tar.gz and dist/acs-<version>.tgz
+./scripts/release.sh   # everything, in parallel: dist/acs-<version>-<platform>.tar.gz and dist/acs-<version>.tgz
+./scripts/release.sh ios-arm64 wasm   # or only some pieces (macos-arm64, ios-arm64, ios-arm64-simulator, wasm)
 ```
 
 ### Releases
@@ -219,7 +220,7 @@ To cut a release, set `version` in `Cargo.toml`, merge it, then push a matching 
 git tag v0.1.4 && git push origin v0.1.4
 ```
 
-The [Release workflow](.github/workflows/release.yml) checks that the tag matches the crate version, runs clippy, the tests and `cargo publish --dry-run`, builds the artifacts with `scripts/release.sh` on macOS, publishes the GitHub Release, then publishes the crate with the `CARGO_REGISTRY_TOKEN` repository secret. Run it manually (Actions → Release → Run workflow) to build the artifacts without publishing.
+The [Release workflow](.github/workflows/release.yml) checks that the tag matches the crate version, then runs in parallel jobs: clippy, the tests and `cargo publish --dry-run`; one macOS job per Apple platform (`scripts/release.sh <platform>`); and the WASM package on Linux (`scripts/release.sh wasm`). A last job collects the artifacts, publishes the GitHub Release, then publishes the crate with the `CARGO_REGISTRY_TOKEN` repository secret. Run it manually (Actions → Release → Run workflow) to build the artifacts without publishing.
 
 ---
 
