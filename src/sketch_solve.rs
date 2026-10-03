@@ -296,10 +296,7 @@ pub fn solve_planegcs_sketch_json(request: &str) -> Result<String, String> {
 /// Solves one sketch whose constraints speak `vocabulary`, using the
 /// contract of `P3DSketch_Solve`:
 ///
-/// - Request: `{ "version": 1, "primitives": [...], "maxIterations"?: n,
-///   "vocabulary"?: "native" | "planegcs" }`. `vocabulary`, when given,
-///   chooses the constraint vocabulary instead of the entry point's default
-///   (`vocabulary` here), so one entry point can solve either.
+/// - Request: `{ "version": 1, "primitives": [...], "maxIterations"?: n }`.
 /// - Response: `{ "version": 1, "status": "converged" | "failed",
 ///   "primitives": [...], "conflicting": [...], "redundant": [...], "dof": n }`
 ///   with the request's primitives in the same order and their solved values.
@@ -309,8 +306,7 @@ pub fn solve_planegcs_sketch_json(request: &str) -> Result<String, String> {
 ///
 /// Returns `Ok(response)` when the request was understood, whatever the solve
 /// status, and `Err(response)` with `status: "invalid"` and an `error` naming
-/// the problem otherwise: malformed JSON, a wrong version, `maxIterations` or
-/// `vocabulary`,
+/// the problem otherwise: malformed JSON, a wrong version or `maxIterations`,
 /// a duplicate id, an unknown or unsupported type, a missing field, a
 /// reference to a missing entity or (native) a combination of entity kinds
 /// no variant of the type takes. When the problem is a constraint, the
@@ -324,14 +320,6 @@ fn solve_request(vocabulary: Vocabulary, request: &str) -> Result<String, Reject
     if root.get("version").and_then(Value::as_f64) != Some(1.0) {
         return Err("unsupported request version".into());
     }
-    let vocabulary = match root.get("vocabulary") {
-        None => vocabulary,
-        Some(v) => match v.as_str() {
-            Some("native") => Vocabulary::Native,
-            Some("planegcs") => Vocabulary::PlaneGcs,
-            _ => return Err(format!("vocabulary must be \"native\" or \"planegcs\", got {v}").into()),
-        },
-    };
     let primitives = root
         .get("primitives")
         .and_then(Value::as_array)

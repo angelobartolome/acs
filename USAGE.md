@@ -7,7 +7,7 @@ ACS exposes two integration paths:
 | Path | Use when |
 |------|----------|
 | **WASM JSON API** (`acsSolveSketch`) | Browser / JS frontend — send a JSON description of the sketch in ACS's native constraint vocabulary, receive updated positions back |
-| **PlaneGCS dialect** (`acsSolveSketchPlaneGcs`, C ABI `P3DSketch_Solve`) | The same contract, with constraints named as FreeCAD's GCS names them (see *PlaneGCS dialect* below) |
+| **PlaneGCS dialect** (`acsSolveSketchPlaneGcs`, C ABI `P3DSketch_Solve` with `P3D_SKETCH_VOCABULARY_PLANEGCS`) | The same contract, with constraints named as FreeCAD's GCS names them (see *PlaneGCS dialect* below) |
 | **Rust native API** (`ConstraintSolver`) | Server-side Rust or embedding ACS as a Rust crate |
 
 Both paths run the same dogleg solver with the same pre-solver optimization. The sections below cover each path and explain how to get the most out of the pre-solver.
@@ -29,7 +29,7 @@ await init();
 const response = JSON.parse(acsSolveSketch(JSON.stringify(sketchInput)));
 ```
 
-`acsSolveSketch` takes a JSON string and returns a JSON string. It uses the same contract (envelope, geometry, Parameters, response) as the `P3DSketch_Solve` C ABI; the two differ only in how constraints are named. `acsSolveSketch` speaks ACS's **native vocabulary** (below); `P3DSketch_Solve` and `acsSolveSketchPlaneGcs` speak the **PlaneGCS dialect**. A request and its response are otherwise identical whichever way ACS is called.
+`acsSolveSketch` takes a JSON string and returns a JSON string. It uses the same contract (envelope, geometry, Parameters, response) as the `P3DSketch_Solve` C ABI; the two differ only in how constraints are named. `acsSolveSketch` speaks ACS's **native vocabulary** (below) and `acsSolveSketchPlaneGcs` the **PlaneGCS dialect**; `P3DSketch_Solve` speaks the one its `vocabulary` argument names. A request and its response are otherwise identical whichever way ACS is called.
 
 | Export | Vocabulary |
 |---|---|
@@ -37,7 +37,7 @@ const response = JSON.parse(acsSolveSketch(JSON.stringify(sketchInput)));
 | `acsConstraintCatalog()` | native catalog |
 | `acsSolveSketchPlaneGcs(request)` | PlaneGCS dialect |
 | `acsPlaneGcsConstraintCatalog()` | PlaneGCS dialect catalog |
-| `P3DSketch_Solve` (C ABI, `--features c-abi`) | PlaneGCS dialect |
+| `P3DSketch_Solve` (C ABI, `--features c-abi`) | its `vocabulary` argument: `P3D_SKETCH_VOCABULARY_PLANEGCS` (0) or `P3D_SKETCH_VOCABULARY_NATIVE` (1) |
 
 In Rust: `sketch_solve::solve_sketch_json` (native), `solve_planegcs_sketch_json` (dialect), or `solve_sketch_json_in(Vocabulary, request)`.
 
@@ -47,12 +47,11 @@ In Rust: `sketch_solve::solve_sketch_json` (native), `solve_planegcs_sketch_json
 {
   "version": 1,
   "primitives": [ ...geometry..., ...constraints... ],
-  "maxIterations": 100,
-  "vocabulary": "native"
+  "maxIterations": 100
 }
 ```
 
-`version` must be `1`. `maxIterations` is optional (default 100). `vocabulary` is optional: `"native"` or `"planegcs"` chooses the constraint vocabulary, overriding the entry point's default (`acsSolveSketch` defaults to native; `acsSolveSketchPlaneGcs` and the C ABI to the dialect); any other value is rejected. Extra primitive fields (`isReference`, `isConstruction`, `group`) are accepted and passed through; `isReference: true` also holds the entity fixed (see below). A constraint with `"temporary": true` (such as one holding a dragged point) is a soft goal: the other (real) constraints hold exactly, and temporary ones are met as closely as those allow (a point on a Line dragged off it stays on the Line, at the closest point to the cursor; a fully constrained point doesn't move). `status` is about the real constraints only, so a temporary goal that can't be met never makes a solve `failed`; temporary constraints are also left out of `conflicting`, `redundant`, `dof` and `fullyConstrained`.
+`version` must be `1`. `maxIterations` is optional (default 100). Extra primitive fields (`isReference`, `isConstruction`, `group`) are accepted and passed through; `isReference: true` also holds the entity fixed (see below). A constraint with `"temporary": true` (such as one holding a dragged point) is a soft goal: the other (real) constraints hold exactly, and temporary ones are met as closely as those allow (a point on a Line dragged off it stays on the Line, at the closest point to the cursor; a fully constrained point doesn't move). `status` is about the real constraints only, so a temporary goal that can't be met never makes a solve `failed`; temporary constraints are also left out of `conflicting`, `redundant`, `dof` and `fullyConstrained`.
 
 All primitives live in one flat array — geometry first, then constraints, though order within each group does not matter.
 
@@ -128,7 +127,7 @@ Notes:
 
 #### PlaneGCS dialect
 
-The dialect names constraints as FreeCAD's GCS names them, one type per combination of entities. `P3DSketch_Solve` and `acsSolveSketchPlaneGcs` accept exactly these types and fields (and only these: a native type name is an unknown type there, and vice versa), mapping each straight onto ACS's internal constraints; the envelope, geometry, Parameters, rejections and response are the same as above. Property references are `{ "o_id", "prop" }`. Constraints with a `c_id` field also accept an explicit `center_id` override, and `point_on_circle` with an arc's id in `c_id` means the arc's full circle. `acsPlaneGcsConstraintCatalog()` lists the dialect in the same shape as the native catalog.
+The dialect names constraints as FreeCAD's GCS names them, one type per combination of entities. `acsSolveSketchPlaneGcs` and `P3DSketch_Solve` with `P3D_SKETCH_VOCABULARY_PLANEGCS` accept exactly these types and fields (and only these: a native type name is an unknown type there, and vice versa), mapping each straight onto ACS's internal constraints; the envelope, geometry, Parameters, rejections and response are the same as above. Property references are `{ "o_id", "prop" }`. Constraints with a `c_id` field also accept an explicit `center_id` override, and `point_on_circle` with an arc's id in `c_id` means the arc's full circle. `acsPlaneGcsConstraintCatalog()` lists the dialect in the same shape as the native catalog.
 
 | Dialect type | Fields | Native equivalent |
 |---|---|---|
@@ -227,11 +226,11 @@ A failed solve is a normal response, not an error.
 
 ### Rejected requests
 
-A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..." }` and nothing is solved. When the problem is a constraint, the response also has `constraintId`, and the error reads like `constraint k1: missing field 'value'`, `constraint k1: unknown type 'made_up'`, `constraint k1: 'ghost' is not a point` or (native) `constraint k1: unsupported combination for 'distance': got a: point, b: circle; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension)`. Other rejections include a wrong `version`, `maxIterations` or `vocabulary`, a duplicate id, geometry referencing a missing point (`line l1: 'p9' is not a point`), a Parameter without a numeric `value` (`param d: missing field 'value'`), an unknown Parameter id (`constraint k1: field 'distance': unknown Parameter 'd9'`), and a bad property reference (`constraint k1: field 'a': circle 'c1' has no property 'diameter'`, `... 'ghost' is not an entity`).
+A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..." }` and nothing is solved. When the problem is a constraint, the response also has `constraintId`, and the error reads like `constraint k1: missing field 'value'`, `constraint k1: unknown type 'made_up'`, `constraint k1: 'ghost' is not a point` or (native) `constraint k1: unsupported combination for 'distance': got a: point, b: circle; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension)`. Other rejections include a wrong `version` or `maxIterations`, a duplicate id, geometry referencing a missing point (`line l1: 'p9' is not a point`), a Parameter without a numeric `value` (`param d: missing field 'value'`), an unknown Parameter id (`constraint k1: field 'distance': unknown Parameter 'd9'`), and a bad property reference (`constraint k1: field 'a': circle 'c1' has no property 'diameter'`, `... 'ghost' is not an entity`).
 
 ### C ABI
 
-The same contract is exported to C from the static library built with `--features c-abi` (header: `include/p3d_sketch_solver.h`). It speaks the PlaneGCS dialect by default (it answers exactly as `acsSolveSketchPlaneGcs`); a request with `"vocabulary": "native"` uses the native vocabulary instead. `P3DSketch_Solve(request, &response)` returns `0` with the response for an understood request (whatever the solve `status`) and non-zero with the `invalid` response above for a malformed one. A null or non-UTF-8 request, or an internal panic, is also answered with an `invalid` response, never a crash. `*response` is always set and must be released with `P3DSketch_Free`. No state is kept between calls.
+The same contract is exported to C from the static library built with `--features c-abi` (header: `include/p3d_sketch_solver.h`). `P3DSketch_Solve(request, vocabulary, &response)` speaks the vocabulary its `vocabulary` argument names: `P3D_SKETCH_VOCABULARY_PLANEGCS` (0, answering exactly as `acsSolveSketchPlaneGcs`) or `P3D_SKETCH_VOCABULARY_NATIVE` (1, exactly as `acsSolveSketch`); any other value gets an `invalid` response. It returns `0` with the response for an understood request (whatever the solve `status`) and non-zero with the `invalid` response above for a malformed one. A null or non-UTF-8 request, or an internal panic, is also answered with an `invalid` response, never a crash. `*response` is always set and must be released with `P3DSketch_Free`. No state is kept between calls.
 
 ### Full example: a constrained square
 

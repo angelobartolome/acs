@@ -114,6 +114,12 @@ fn every_native_row_solves_through_the_native_entry_points() {
         let response = solve_sketch_json(&request).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert_converged(&response, &what);
         assert_eq!(acs_solve_sketch(&request), response, "{what}");
+        #[cfg(feature = "c-abi")]
+        assert_eq!(
+            c_abi_solve(acs::c_abi::P3D_SKETCH_VOCABULARY_NATIVE, &request),
+            (0, response),
+            "{what}"
+        );
     }
 }
 
@@ -127,17 +133,21 @@ fn every_dialect_row_solves_through_the_dialect_entry_points() {
         assert_converged(&response, &what);
         assert_eq!(acs_solve_sketch_planegcs(&request), response, "{what}");
         #[cfg(feature = "c-abi")]
-        assert_eq!(c_abi_solve(&request), (0, response), "{what}");
+        assert_eq!(
+            c_abi_solve(acs::c_abi::P3D_SKETCH_VOCABULARY_PLANEGCS, &request),
+            (0, response),
+            "{what}"
+        );
     }
 }
 
 #[cfg(feature = "c-abi")]
-fn c_abi_solve(request: &str) -> (i32, String) {
+fn c_abi_solve(vocabulary: i32, request: &str) -> (i32, String) {
     use acs::c_abi::{P3DSketch_Free, P3DSketch_Solve};
     use std::ffi::{CStr, CString, c_char};
     let request = CString::new(request).unwrap();
     let mut response: *mut c_char = std::ptr::null_mut();
-    let code = unsafe { P3DSketch_Solve(request.as_ptr(), &mut response) };
+    let code = unsafe { P3DSketch_Solve(request.as_ptr(), vocabulary, &mut response) };
     let text = unsafe { CStr::from_ptr(response) }
         .to_str()
         .unwrap()
