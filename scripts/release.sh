@@ -11,7 +11,12 @@
 # Each archive unpacks to acs/{include/p3d_sketch_solver.h, lib/libp3d_sketch_solver.a,
 # VERSION}. <version> is the crate version from Cargo.toml, so every file name carries
 # it and several versions can sit side by side in one release.
-# Needs rustup (targets are added if missing), Xcode for the iOS SDKs, wasm-pack and npm.
+#
+# Usage: scripts/release.sh [macos-arm64 | ios-arm64 | ios-arm64-simulator | wasm ...]
+# With no argument it builds everything, in parallel: one cargo invocation for every Apple
+# target, and the WASM package alongside it. CI builds one piece per job.
+# Needs rustup (targets are added if missing), Xcode for the iOS SDKs (Apple pieces), and
+# wasm-pack and npm (wasm).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -21,38 +26,86 @@ DIST="$ROOT/dist"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-18.0}"
 
-mkdir -p "$DIST"
-
-build() {
-  local target="$1" platform="$2"
-  echo "Building the static library for $platform ($target)..."
-  rustup target list --installed | grep -qx "$target" || rustup target add "$target"
-  cargo build --release --lib --features c-abi --target "$target"
-
-  local staging="$DIST/_release-$platform"
-  local stage="$staging/acs"
-  rm -rf "$staging"
-  mkdir -p "$stage/include" "$stage/lib"
-  cp include/p3d_sketch_solver.h "$stage/include/"
-  cp "target/$target/release/libacs.a" "$stage/lib/libp3d_sketch_solver.a"
-  echo "$VERSION" > "$stage/VERSION"
-  local archive="acs-$VERSION-$platform.tar.gz"
-  tar -czf "$DIST/$archive" -C "$staging" acs
-  rm -rf "$staging"
-  echo "Packaged dist/$archive"
+target_of() {
+  case "$1" in
+    macos-arm64) echo aarch64-apple-darwin ;;
+    ios-arm64) echo aarch64-apple-ios ;;
+    ios-arm64-simulator) echo aarch64-apple-ios-sim ;;
+    *) return 1 ;;
+  esac
 }
 
-build aarch64-apple-darwin macos-arm64
-build aarch64-apple-ios ios-arm64
-build aarch64-apple-ios-sim ios-arm64-simulator
+PIECES=("$@")
+[ ${#PIECES[@]} -gt 0 ] || PIECES=(macos-arm64 ios-arm64 ios-arm64-simulator wasm)
+PLATFORMS=()
+BUILD_WASM=false
+for piece in "${PIECES[@]}"; do
+  if [ "$piece" = wasm ]; then
+    BUILD_WASM=true
+  elif target_of "$piece" > /dev/null; then
+    PLATFORMS+=("$piece")
+  else
+    echo "Unknown piece '$piece'; expected macos-arm64, ios-arm64, ios-arm64-simulator or wasm" >&2
+    exit 2
+  fi
+done
 
-echo "Building the WASM npm package..."
-wasm-pack build --release --target web --out-dir pkg
-# npm names the tarball after the package (acs-solver); keep the release's acs-<version> names.
-npm pack ./pkg --pack-destination "$DIST"
-mv "$DIST/acs-solver-$VERSION.tgz" "$DIST/acs-$VERSION.tgz"
+mkdir -p "$DIST"
 
-echo "Done:"
-ls -lh "$DIST"/acs-"$VERSION"-*.tar.gz "$DIST"/acs-"$VERSION".tgz
-echo "Upload them to a release (the version is in every file name), e.g.:"
-echo "  gh release upload <tag> -R <owner>/<repo> dist/acs-$VERSION-*.tar.gz dist/acs-$VERSION.tgz"
+# The WASM package builds in the background, in its own target directory: cargo locks a
+# target directory, so sharing one would serialize the two builds.
+WASM_PID=""
+if $BUILD_WASM; then
+  echo "Building the WASM npm package (in the background)..."
+  CARGO_TARGET_DIR="$ROOT/target/wasm-release" wasm-pack build --release --target web --out-dir pkg \
+    > "$DIST/_wasm-pack.log" 2>&1 &
+  WASM_PID=$!
+fi
+
+if [ ${#PLATFORMS[@]} -gt 0 ]; then
+  # One cargo invocation builds every requested Apple target, scheduling all of them across the
+  # cores and sharing the host artifacts (build scripts, proc macros).
+  target_args=()
+  for platform in "${PLATFORMS[@]}"; do
+    target="$(target_of "$platform")"
+    rustup target list --installed | grep -qx "$target" || rustup target add "$target"
+    target_args+=(--target "$target")
+  done
+  echo "Building the static library for ${PLATFORMS[*]}..."
+  cargo build --release --lib --features c-abi "${target_args[@]}"
+
+  for platform in "${PLATFORMS[@]}"; do
+    target="$(target_of "$platform")"
+    staging="$DIST/_release-$platform"
+    stage="$staging/acs"
+    rm -rf "$staging"
+    mkdir -p "$stage/include" "$stage/lib"
+    cp include/p3d_sketch_solver.h "$stage/include/"
+    cp "target/$target/release/libacs.a" "$stage/lib/libp3d_sketch_solver.a"
+    echo "$VERSION" > "$stage/VERSION"
+    archive="acs-$VERSION-$platform.tar.gz"
+    tar -czf "$DIST/$archive" -C "$staging" acs
+    rm -rf "$staging"
+    echo "Packaged dist/$archive"
+  done
+fi
+
+if [ -n "$WASM_PID" ]; then
+  if ! wait "$WASM_PID"; then
+    cat "$DIST/_wasm-pack.log" >&2
+    echo "wasm-pack failed" >&2
+    exit 1
+  fi
+  rm -f "$DIST/_wasm-pack.log"
+  # npm names the tarball after the package (acs-solver); keep the release's acs-<version> names.
+  npm pack ./pkg --pack-destination "$DIST"
+  mv "$DIST/acs-solver-$VERSION.tgz" "$DIST/acs-$VERSION.tgz"
+  echo "Packaged dist/acs-$VERSION.tgz"
+fi
+
+echo "Done."
+if [ $# -eq 0 ]; then
+  ls -lh "$DIST"/acs-"$VERSION"-*.tar.gz "$DIST"/acs-"$VERSION".tgz
+  echo "Upload them to a release (the version is in every file name), e.g.:"
+  echo "  gh release upload <tag> -R <owner>/<repo> dist/acs-$VERSION-*.tar.gz dist/acs-$VERSION.tgz"
+fi
