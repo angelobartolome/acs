@@ -47,11 +47,12 @@ In Rust: `sketch_solve::solve_sketch_json` (native), `solve_planegcs_sketch_json
 {
   "version": 1,
   "primitives": [ ...geometry..., ...constraints... ],
-  "maxIterations": 100
+  "maxIterations": 100,
+  "vocabulary": "native"
 }
 ```
 
-`version` must be `1`. `maxIterations` is optional (default 100). Extra primitive fields (`isReference`, `isConstruction`, `group`) are accepted and passed through; `isReference: true` also holds the entity fixed (see below). A constraint with `"temporary": true` (such as one holding a dragged point) is a soft goal: the other (real) constraints hold exactly, and temporary ones are met as closely as those allow (a point on a Line dragged off it stays on the Line, at the closest point to the cursor; a fully constrained point doesn't move). `status` is about the real constraints only, so a temporary goal that can't be met never makes a solve `failed`; temporary constraints are also left out of `conflicting`, `redundant`, `dof` and `fullyConstrained`.
+`version` must be `1`. `maxIterations` is optional (default 100). `vocabulary` is optional: `"native"` or `"planegcs"` chooses the constraint vocabulary, overriding the entry point's default (`acsSolveSketch` defaults to native; `acsSolveSketchPlaneGcs` and the C ABI to the dialect); any other value is rejected. Extra primitive fields (`isReference`, `isConstruction`, `group`) are accepted and passed through; `isReference: true` also holds the entity fixed (see below). A constraint with `"temporary": true` (such as one holding a dragged point) is a soft goal: the other (real) constraints hold exactly, and temporary ones are met as closely as those allow (a point on a Line dragged off it stays on the Line, at the closest point to the cursor; a fully constrained point doesn't move). `status` is about the real constraints only, so a temporary goal that can't be met never makes a solve `failed`; temporary constraints are also left out of `conflicting`, `redundant`, `dof` and `fullyConstrained`.
 
 All primitives live in one flat array — geometry first, then constraints, though order within each group does not matter.
 
@@ -226,11 +227,11 @@ A failed solve is a normal response, not an error.
 
 ### Rejected requests
 
-A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..." }` and nothing is solved. When the problem is a constraint, the response also has `constraintId`, and the error reads like `constraint k1: missing field 'value'`, `constraint k1: unknown type 'made_up'`, `constraint k1: 'ghost' is not a point` or (native) `constraint k1: unsupported combination for 'distance': got a: point, b: circle; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension)`. Other rejections include a wrong `version` or `maxIterations`, a duplicate id, geometry referencing a missing point (`line l1: 'p9' is not a point`), a Parameter without a numeric `value` (`param d: missing field 'value'`), an unknown Parameter id (`constraint k1: field 'distance': unknown Parameter 'd9'`), and a bad property reference (`constraint k1: field 'a': circle 'c1' has no property 'diameter'`, `... 'ghost' is not an entity`).
+A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..." }` and nothing is solved. When the problem is a constraint, the response also has `constraintId`, and the error reads like `constraint k1: missing field 'value'`, `constraint k1: unknown type 'made_up'`, `constraint k1: 'ghost' is not a point` or (native) `constraint k1: unsupported combination for 'distance': got a: point, b: circle; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension)`. Other rejections include a wrong `version`, `maxIterations` or `vocabulary`, a duplicate id, geometry referencing a missing point (`line l1: 'p9' is not a point`), a Parameter without a numeric `value` (`param d: missing field 'value'`), an unknown Parameter id (`constraint k1: field 'distance': unknown Parameter 'd9'`), and a bad property reference (`constraint k1: field 'a': circle 'c1' has no property 'diameter'`, `... 'ghost' is not an entity`).
 
 ### C ABI
 
-The same contract is exported to C from the static library built with `--features c-abi` (header: `include/p3d_sketch_solver.h`), speaking the PlaneGCS dialect (it answers exactly as `acsSolveSketchPlaneGcs`). `P3DSketch_Solve(request, &response)` returns `0` with the response for an understood request (whatever the solve `status`) and non-zero with the `invalid` response above for a malformed one. A null or non-UTF-8 request, or an internal panic, is also answered with an `invalid` response, never a crash. `*response` is always set and must be released with `P3DSketch_Free`. No state is kept between calls.
+The same contract is exported to C from the static library built with `--features c-abi` (header: `include/p3d_sketch_solver.h`). It speaks the PlaneGCS dialect by default (it answers exactly as `acsSolveSketchPlaneGcs`); a request with `"vocabulary": "native"` uses the native vocabulary instead. `P3DSketch_Solve(request, &response)` returns `0` with the response for an understood request (whatever the solve `status`) and non-zero with the `invalid` response above for a malformed one. A null or non-UTF-8 request, or an internal panic, is also answered with an `invalid` response, never a crash. `*response` is always set and must be released with `P3DSketch_Free`. No state is kept between calls.
 
 ### Full example: a constrained square
 

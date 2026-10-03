@@ -196,7 +196,7 @@ int  P3DSketch_Solve(const char *requestJson, char **responseJson); // 0 = under
 void P3DSketch_Free(char *p);                                        // releases *responseJson
 ```
 
-The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, with constraints in the [PlaneGCS dialect](USAGE.md#planegcs-dialect) (as `acsSolveSketchPlaneGcs` in WASM). `scripts/release.sh` builds macOS arm64, iOS arm64 and iOS Simulator archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`) and the WASM npm tarball (`dist/acs-<version>.tgz`).
+The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, with constraints in the [PlaneGCS dialect](USAGE.md#planegcs-dialect) (as `acsSolveSketchPlaneGcs` in WASM) unless the request sets `"vocabulary": "native"`. `scripts/release.sh` builds macOS arm64, iOS arm64 and iOS Simulator archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`) and the WASM npm tarball (`dist/acs-<version>.tgz`).
 
 ```bash
 cargo build --release --features c-abi

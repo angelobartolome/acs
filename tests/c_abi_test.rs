@@ -122,6 +122,75 @@ fn freeing_null_is_a_no_op() {
 
 /// Builds the static library with the `c-abi` feature (`cargo test` builds
 /// only the rlib) into its own target directory, returning `libacs.a`.
+/// A sketch with one constraint pinning p2 10 from p1, as `distance` in the
+/// native vocabulary or `p2p_distance` in the dialect.
+fn distance_request(vocabulary: Option<&str>, native_type: bool) -> String {
+    let constraint = if native_type {
+        json!({ "id": "k1", "type": "distance", "a": "p1", "b": "p2", "value": 10.0 })
+    } else {
+        json!({ "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 10.0 })
+    };
+    let mut request = json!({ "version": 1, "primitives": [
+        { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
+        { "id": "p2", "type": "point", "x": 3.0, "y": 4.0, "fixed": false },
+        constraint
+    ]});
+    if let Some(v) = vocabulary {
+        request["vocabulary"] = json!(v);
+    }
+    request.to_string()
+}
+
+fn solved_distance(response: &str) -> f64 {
+    let resp: Value = serde_json::from_str(response).unwrap();
+    assert_eq!(resp["status"], "converged", "{response}");
+    let p2 = &resp["primitives"][1];
+    p2["x"].as_f64().unwrap().hypot(p2["y"].as_f64().unwrap())
+}
+
+/// Without `vocabulary` the C ABI speaks the PlaneGCS dialect, as it always
+/// has: GCS types solve and native ones are unknown.
+#[test]
+fn the_c_abi_defaults_to_the_planegcs_dialect() {
+    let (code, response) = call(&distance_request(None, false));
+    assert_eq!(code, 0);
+    assert!((solved_distance(&response) - 10.0).abs() < 1e-9);
+
+    let (code, response) = call(&distance_request(None, true));
+    assert_eq!(code, 1);
+    let resp = assert_invalid(&response);
+    assert!(resp["error"].as_str().unwrap().contains("unknown type 'distance'"), "{resp}");
+}
+
+/// `vocabulary: "native"` selects ACS's own constraint types through the same
+/// C function; `"planegcs"` names the default explicitly.
+#[test]
+fn the_c_abi_solves_the_vocabulary_a_request_names() {
+    let (code, response) = call(&distance_request(Some("native"), true));
+    assert_eq!(code, 0);
+    assert!((solved_distance(&response) - 10.0).abs() < 1e-9);
+
+    let (code, response) = call(&distance_request(Some("native"), false));
+    assert_eq!(code, 1);
+    assert_invalid(&response);
+
+    let (code, response) = call(&distance_request(Some("planegcs"), false));
+    assert_eq!(code, 0);
+    assert!((solved_distance(&response) - 10.0).abs() < 1e-9);
+}
+
+#[test]
+fn an_unknown_vocabulary_is_malformed() {
+    for bad in [json!("gcs"), json!(""), json!(1), json!(null)] {
+        let mut request: Value = serde_json::from_str(&distance_request(None, false)).unwrap();
+        request["vocabulary"] = bad.clone();
+        let (code, response) = call(&request.to_string());
+        assert_eq!(code, 1, "{bad}");
+        let resp = assert_invalid(&response);
+        assert!(resp["error"].as_str().unwrap().contains("vocabulary"), "{bad}: {resp}");
+    }
+}
+
 fn build_static_lib() -> PathBuf {
     let target_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("c-abi-target");
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());

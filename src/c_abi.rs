@@ -1,8 +1,9 @@
 //! The sketch solver C ABI (`include/p3d_sketch_solver.h`), exported from
 //! the static library when the `c-abi` feature is on.
 //!
-//! `P3DSketch_Solve` runs [`solve_planegcs_sketch_json`] (its clients speak the
-//! PlaneGCS dialect): 0 with its `Ok` response, 1
+//! `P3DSketch_Solve` runs [`solve_planegcs_sketch_json`]: the PlaneGCS dialect
+//! unless the request names another `vocabulary` (`"native"`), so existing
+//! clients are unaffected. 0 with its `Ok` response, 1
 //! with its `Err` (`status: "invalid"`) response. A null or non-UTF-8 request
 //! and a panic inside the solver are malformed too; nothing unwinds into C.
 //! Responses are allocated here and released by `P3DSketch_Free`.

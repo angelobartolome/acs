@@ -707,3 +707,33 @@ fn dragging_a_slot_endpoint_never_reports_redundancy() {
     }
     assert_slot_fully_determined(&solve(prims));
 }
+
+/// A request may name its vocabulary: `"planegcs"` makes the native entry
+/// points (`solve_sketch_json`, `acsSolveSketch`) read GCS types, and
+/// `"native"` is their default spelled out.
+#[test]
+fn a_request_can_choose_the_planegcs_dialect() {
+    let request = |vocabulary: &str, constraint: Value| {
+        json!({ "version": 1, "vocabulary": vocabulary, "primitives": [
+            { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
+            { "id": "p2", "type": "point", "x": 3.0, "y": 4.0 },
+            constraint
+        ]})
+        .to_string()
+    };
+    let gcs = json!({ "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 10.0 });
+    let native = json!({ "id": "k1", "type": "distance", "a": "p1", "b": "p2", "value": 10.0 });
+    for (vocabulary, constraint) in [("planegcs", gcs.clone()), ("native", native.clone())] {
+        let req = request(vocabulary, constraint);
+        for out in [solve_sketch_json(&req).expect("understood"), acs_solve_sketch(&req)] {
+            let resp: Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(resp["status"], "converged", "{vocabulary}: {resp}");
+            let p2 = &resp["primitives"][1];
+            let d = p2["x"].as_f64().unwrap().hypot(p2["y"].as_f64().unwrap());
+            assert!((d - 10.0).abs() < 1e-9, "{vocabulary}: {d}");
+        }
+    }
+    // The other vocabulary's type is unknown.
+    assert!(solve_sketch_json(&request("planegcs", native)).is_err());
+    assert!(solve_sketch_json(&request("native", gcs)).is_err());
+}

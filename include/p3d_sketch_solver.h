@@ -4,7 +4,9 @@
  * Solver-neutral: any solver library can implement these two functions. The request and
  * response are versioned JSON in the sketch primitive format.
  *
- * Request:  { "version": 1, "primitives": [...], "maxIterations"?: n }
+ * Request:  { "version": 1, "primitives": [...], "maxIterations"?: n,
+ *             "vocabulary"?: "planegcs" | "native" }
+ *           The constraint vocabulary defaults to "planegcs" (FreeCAD GCS's type names).
  * Response: { "version": 1, "status": "converged" | "failed" | "invalid",
  *             "primitives": [...], "conflicting": [...], "redundant": [...], "dof": n,
  *             "error"?: "..." }
