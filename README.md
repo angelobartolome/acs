@@ -2,7 +2,7 @@
 
 A geometric constraint solver written in Rust with WebAssembly bindings for web applications.
 
-![Demo of Horizontal and Vertical Constraints](/docs/demo.gif)
+![Demo of Horizontal and Vertical Constraints](https://raw.githubusercontent.com/angelobartolome/acs/main/docs/demo.gif)
 
 ## Overview
 
