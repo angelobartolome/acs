@@ -1,8 +1,9 @@
 //! The sketch solver C ABI (`include/p3d_sketch_solver.h`), exported from
 //! the static library when the `c-abi` feature is on.
 //!
-//! `P3DSketch_Solve` runs [`solve_planegcs_sketch_json`] (its clients speak the
-//! PlaneGCS dialect): 0 with its `Ok` response, 1
+//! `P3DSketch_Solve` runs [`solve_sketch_json_in`] in the vocabulary its caller
+//! names (`P3D_SKETCH_VOCABULARY_PLANEGCS`, 0, or `P3D_SKETCH_VOCABULARY_NATIVE`,
+//! 1): 0 with its `Ok` response, 1
 //! with its `Err` (`status: "invalid"`) response. A null or non-UTF-8 request
 //! and a panic inside the solver are malformed too; nothing unwinds into C.
 //! Responses are allocated here and released by `P3DSketch_Free`.
@@ -12,7 +13,13 @@ use std::panic::{self, AssertUnwindSafe};
 
 use serde_json::json;
 
-use crate::sketch_solve::solve_planegcs_sketch_json;
+use crate::constraint_catalog::Vocabulary;
+use crate::sketch_solve::solve_sketch_json_in;
+
+/// `P3D_SKETCH_VOCABULARY_PLANEGCS`: FreeCAD GCS's type names (the default).
+pub const P3D_SKETCH_VOCABULARY_PLANEGCS: c_int = 0;
+/// `P3D_SKETCH_VOCABULARY_NATIVE`: ACS's own constraint types.
+pub const P3D_SKETCH_VOCABULARY_NATIVE: c_int = 1;
 
 fn invalid(error: &str) -> String {
     json!({ "version": 1, "status": "invalid", "error": error }).to_string()
@@ -26,8 +33,10 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
         .unwrap_or("unknown panic")
 }
 
-/// Solves the sketch in `request_json`. Returns 0 when the request was
-/// understood (whatever the solve status) and non-zero for a malformed one.
+/// Solves the sketch in `request_json`, whose constraints are written in
+/// `vocabulary` (a `P3DSketchVocabulary`). Returns 0 when the request was
+/// understood (whatever the solve status) and non-zero for a malformed one or
+/// an unknown `vocabulary`.
 /// `*response_json` is always set (unless `response_json` itself is null, which
 /// returns non-zero) and must be released with [`P3DSketch_Free`].
 ///
@@ -39,12 +48,18 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn P3DSketch_Solve(
     request_json: *const c_char,
+    vocabulary: c_int,
     response_json: *mut *mut c_char,
 ) -> c_int {
     if response_json.is_null() {
         return 2;
     }
     let solved = panic::catch_unwind(AssertUnwindSafe(|| {
+        let vocabulary = match vocabulary {
+            P3D_SKETCH_VOCABULARY_PLANEGCS => Vocabulary::PlaneGcs,
+            P3D_SKETCH_VOCABULARY_NATIVE => Vocabulary::Native,
+            other => return Err(invalid(&format!("unknown vocabulary {other}"))),
+        };
         if request_json.is_null() {
             return Err(invalid("request is null"));
         }
@@ -52,7 +67,7 @@ pub unsafe extern "C" fn P3DSketch_Solve(
         let request = unsafe { CStr::from_ptr(request_json) }
             .to_str()
             .map_err(|_| invalid("request is not valid UTF-8"))?;
-        solve_planegcs_sketch_json(request)
+        solve_sketch_json_in(vocabulary, request)
     }));
     let (code, response) = match solved {
         Ok(Ok(response)) => (0, response),

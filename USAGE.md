@@ -7,7 +7,7 @@ ACS exposes two integration paths:
 | Path | Use when |
 |------|----------|
 | **WASM JSON API** (`acsSolveSketch`) | Browser / JS frontend — send a JSON description of the sketch in ACS's native constraint vocabulary, receive updated positions back |
-| **PlaneGCS dialect** (`acsSolveSketchPlaneGcs`, C ABI `P3DSketch_Solve`) | The same contract, with constraints named as FreeCAD's GCS names them (see *PlaneGCS dialect* below) |
+| **PlaneGCS dialect** (`acsSolveSketchPlaneGcs`, C ABI `P3DSketch_Solve` with `P3D_SKETCH_VOCABULARY_PLANEGCS`) | The same contract, with constraints named as FreeCAD's GCS names them (see *PlaneGCS dialect* below) |
 | **Rust native API** (`ConstraintSolver`) | Server-side Rust or embedding ACS as a Rust crate |
 
 Both paths run the same dogleg solver with the same pre-solver optimization. The sections below cover each path and explain how to get the most out of the pre-solver.
@@ -29,7 +29,7 @@ await init();
 const response = JSON.parse(acsSolveSketch(JSON.stringify(sketchInput)));
 ```
 
-`acsSolveSketch` takes a JSON string and returns a JSON string. It uses the same contract (envelope, geometry, Parameters, response) as the `P3DSketch_Solve` C ABI; the two differ only in how constraints are named. `acsSolveSketch` speaks ACS's **native vocabulary** (below); `P3DSketch_Solve` and `acsSolveSketchPlaneGcs` speak the **PlaneGCS dialect**. A request and its response are otherwise identical whichever way ACS is called.
+`acsSolveSketch` takes a JSON string and returns a JSON string. It uses the same contract (envelope, geometry, Parameters, response) as the `P3DSketch_Solve` C ABI; the two differ only in how constraints are named. `acsSolveSketch` speaks ACS's **native vocabulary** (below) and `acsSolveSketchPlaneGcs` the **PlaneGCS dialect**; `P3DSketch_Solve` speaks the one its `vocabulary` argument names. A request and its response are otherwise identical whichever way ACS is called.
 
 | Export | Vocabulary |
 |---|---|
@@ -37,7 +37,7 @@ const response = JSON.parse(acsSolveSketch(JSON.stringify(sketchInput)));
 | `acsConstraintCatalog()` | native catalog |
 | `acsSolveSketchPlaneGcs(request)` | PlaneGCS dialect |
 | `acsPlaneGcsConstraintCatalog()` | PlaneGCS dialect catalog |
-| `P3DSketch_Solve` (C ABI, `--features c-abi`) | PlaneGCS dialect |
+| `P3DSketch_Solve` (C ABI, `--features c-abi`) | its `vocabulary` argument: `P3D_SKETCH_VOCABULARY_PLANEGCS` (0) or `P3D_SKETCH_VOCABULARY_NATIVE` (1) |
 
 In Rust: `sketch_solve::solve_sketch_json` (native), `solve_planegcs_sketch_json` (dialect), or `solve_sketch_json_in(Vocabulary, request)`.
 
@@ -127,7 +127,7 @@ Notes:
 
 #### PlaneGCS dialect
 
-The dialect names constraints as FreeCAD's GCS names them, one type per combination of entities. `P3DSketch_Solve` and `acsSolveSketchPlaneGcs` accept exactly these types and fields (and only these: a native type name is an unknown type there, and vice versa), mapping each straight onto ACS's internal constraints; the envelope, geometry, Parameters, rejections and response are the same as above. Property references are `{ "o_id", "prop" }`. Constraints with a `c_id` field also accept an explicit `center_id` override, and `point_on_circle` with an arc's id in `c_id` means the arc's full circle. `acsPlaneGcsConstraintCatalog()` lists the dialect in the same shape as the native catalog.
+The dialect names constraints as FreeCAD's GCS names them, one type per combination of entities. `acsSolveSketchPlaneGcs` and `P3DSketch_Solve` with `P3D_SKETCH_VOCABULARY_PLANEGCS` accept exactly these types and fields (and only these: a native type name is an unknown type there, and vice versa), mapping each straight onto ACS's internal constraints; the envelope, geometry, Parameters, rejections and response are the same as above. Property references are `{ "o_id", "prop" }`. Constraints with a `c_id` field also accept an explicit `center_id` override, and `point_on_circle` with an arc's id in `c_id` means the arc's full circle. `acsPlaneGcsConstraintCatalog()` lists the dialect in the same shape as the native catalog.
 
 | Dialect type | Fields | Native equivalent |
 |---|---|---|
@@ -230,7 +230,7 @@ A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..
 
 ### C ABI
 
-The same contract is exported to C from the static library built with `--features c-abi` (header: `include/p3d_sketch_solver.h`), speaking the PlaneGCS dialect (it answers exactly as `acsSolveSketchPlaneGcs`). `P3DSketch_Solve(request, &response)` returns `0` with the response for an understood request (whatever the solve `status`) and non-zero with the `invalid` response above for a malformed one. A null or non-UTF-8 request, or an internal panic, is also answered with an `invalid` response, never a crash. `*response` is always set and must be released with `P3DSketch_Free`. No state is kept between calls.
+The same contract is exported to C from the static library built with `--features c-abi` (header: `include/p3d_sketch_solver.h`). `P3DSketch_Solve(request, vocabulary, &response)` speaks the vocabulary its `vocabulary` argument names: `P3D_SKETCH_VOCABULARY_PLANEGCS` (0, answering exactly as `acsSolveSketchPlaneGcs`) or `P3D_SKETCH_VOCABULARY_NATIVE` (1, exactly as `acsSolveSketch`); any other value gets an `invalid` response. It returns `0` with the response for an understood request (whatever the solve `status`) and non-zero with the `invalid` response above for a malformed one. A null or non-UTF-8 request, or an internal panic, is also answered with an `invalid` response, never a crash. `*response` is always set and must be released with `P3DSketch_Free`. No state is kept between calls.
 
 ### Full example: a constrained square
 

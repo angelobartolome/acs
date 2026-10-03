@@ -56,7 +56,7 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 
 Values (for `equal` and `difference`) are constants (numbers or sketch Parameters) or entity properties the solver may move (a point's `x`/`y`, a circle's or arc's `radius`, an ellipse's `radmin`).
 
-**PlaneGCS dialect.** Clients written against FreeCAD GCS send its type names (`p2p_distance`, `horizontal_l`, `tangent_lc`, …). Its entry points, the C ABI's `P3DSketch_Solve` and the WASM export `acsSolveSketchPlaneGcs`, accept those types unchanged and map each onto the same internal constraints; see [USAGE.md](USAGE.md#planegcs-dialect) for the mapping.
+**PlaneGCS dialect.** Clients written against FreeCAD GCS send its type names (`p2p_distance`, `horizontal_l`, `tangent_lc`, …). Its entry points, the C ABI's `P3DSketch_Solve` (with `P3D_SKETCH_VOCABULARY_PLANEGCS`) and the WASM export `acsSolveSketchPlaneGcs`, accept those types unchanged and map each onto the same internal constraints; see [USAGE.md](USAGE.md#planegcs-dialect) for the mapping.
 
 Internally each variant is a `ConstraintType` (`DistancePointLine`, `TangentExtensionCircle`, …) with an analytical Jacobian; see [SPEC.md](SPEC.md).
 
@@ -192,11 +192,17 @@ wasm-pack build --target web --out-dir pkg
 With the `c-abi` feature, the static library (`libacs.a`) exports the sketch solver C ABI, declared in [`include/p3d_sketch_solver.h`](include/p3d_sketch_solver.h):
 
 ```c
-int  P3DSketch_Solve(const char *requestJson, char **responseJson); // 0 = understood, non-zero = malformed
-void P3DSketch_Free(char *p);                                        // releases *responseJson
+typedef enum {
+    P3D_SKETCH_VOCABULARY_PLANEGCS = 0, // FreeCAD GCS's type names (the default)
+    P3D_SKETCH_VOCABULARY_NATIVE = 1,   // ACS's own types
+} P3DSketchVocabulary;
+
+// 0 = understood, non-zero = malformed (an unknown vocabulary included)
+int  P3DSketch_Solve(const char *requestJson, P3DSketchVocabulary vocabulary, char **responseJson);
+void P3DSketch_Free(char *p); // releases *responseJson
 ```
 
-The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, with constraints in the [PlaneGCS dialect](USAGE.md#planegcs-dialect) (as `acsSolveSketchPlaneGcs` in WASM). `scripts/release.sh` builds macOS arm64, iOS arm64 and iOS Simulator archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`) and the WASM npm tarball (`dist/acs-<version>.tgz`).
+The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, with constraints in the [PlaneGCS dialect](USAGE.md#planegcs-dialect) (as `acsSolveSketchPlaneGcs` in WASM) or the native vocabulary (as `acsSolveSketch`), as `vocabulary` says. `scripts/release.sh` builds macOS arm64, iOS arm64 and iOS Simulator archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`) and the WASM npm tarball (`dist/acs-<version>.tgz`).
 
 ```bash
 cargo build --release --features c-abi

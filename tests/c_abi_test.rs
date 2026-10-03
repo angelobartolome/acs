@@ -8,17 +8,25 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use acs::c_abi::{P3DSketch_Free, P3DSketch_Solve};
-use acs::sketch_solve::solve_planegcs_sketch_json;
+use acs::c_abi::{
+    P3D_SKETCH_VOCABULARY_NATIVE, P3D_SKETCH_VOCABULARY_PLANEGCS, P3DSketch_Free, P3DSketch_Solve,
+};
+use acs::sketch_solve::{solve_planegcs_sketch_json, solve_sketch_json};
 use serde_json::{Value, json};
 
-/// Calls `P3DSketch_Solve` with `request` (null when `None`) and returns its
-/// return code and response, released with `P3DSketch_Free`.
+/// Calls `P3DSketch_Solve` in the PlaneGCS dialect with `request` (null when
+/// `None`) and returns its return code and response, released with
+/// `P3DSketch_Free`.
 fn call_raw(request: Option<&[u8]>) -> (i32, String) {
+    call_in(P3D_SKETCH_VOCABULARY_PLANEGCS, request)
+}
+
+/// Calls `P3DSketch_Solve` in `vocabulary`.
+fn call_in(vocabulary: i32, request: Option<&[u8]>) -> (i32, String) {
     let owned = request.map(|bytes| CString::new(bytes).unwrap());
     let ptr = owned.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
     let mut response: *mut c_char = std::ptr::null_mut();
-    let code = unsafe { P3DSketch_Solve(ptr, &mut response) };
+    let code = unsafe { P3DSketch_Solve(ptr, vocabulary, &mut response) };
     assert!(!response.is_null(), "response must always be set");
     let text = unsafe { CStr::from_ptr(response) }
         .to_str()
@@ -109,13 +117,102 @@ fn non_utf8_request_is_malformed() {
 #[test]
 fn null_response_pointer_is_rejected_without_crashing() {
     let request = CString::new(understood_requests()[0].clone()).unwrap();
-    let code = unsafe { P3DSketch_Solve(request.as_ptr(), std::ptr::null_mut()) };
+    let code = unsafe {
+        P3DSketch_Solve(
+            request.as_ptr(),
+            P3D_SKETCH_VOCABULARY_PLANEGCS,
+            std::ptr::null_mut(),
+        )
+    };
     assert_ne!(code, 0);
 }
 
 #[test]
 fn freeing_null_is_a_no_op() {
     unsafe { P3DSketch_Free(std::ptr::null_mut()) };
+}
+
+/// A sketch with one constraint pinning p2 10 from p1, as `distance` in the
+/// native vocabulary or `p2p_distance` in the dialect.
+fn distance_request(native_type: bool) -> String {
+    let constraint = if native_type {
+        json!({ "id": "k1", "type": "distance", "a": "p1", "b": "p2", "value": 10.0 })
+    } else {
+        json!({ "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 10.0 })
+    };
+    json!({ "version": 1, "primitives": [
+        { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
+        { "id": "p2", "type": "point", "x": 3.0, "y": 4.0, "fixed": false },
+        constraint
+    ]})
+    .to_string()
+}
+
+fn solved_distance(response: &str) -> f64 {
+    let resp: Value = serde_json::from_str(response).unwrap();
+    assert_eq!(resp["status"], "converged", "{response}");
+    let p2 = &resp["primitives"][1];
+    p2["x"].as_f64().unwrap().hypot(p2["y"].as_f64().unwrap())
+}
+
+/// `P3D_SKETCH_VOCABULARY_PLANEGCS` (0) reads GCS types; native ones are
+/// unknown to it.
+#[test]
+fn the_planegcs_vocabulary_solves_gcs_types() {
+    let (code, response) = call_in(
+        P3D_SKETCH_VOCABULARY_PLANEGCS,
+        Some(distance_request(false).as_bytes()),
+    );
+    assert_eq!(code, 0);
+    assert!((solved_distance(&response) - 10.0).abs() < 1e-9);
+
+    let (code, response) = call_in(
+        P3D_SKETCH_VOCABULARY_PLANEGCS,
+        Some(distance_request(true).as_bytes()),
+    );
+    assert_eq!(code, 1);
+    let resp = assert_invalid(&response);
+    assert!(
+        resp["error"]
+            .as_str()
+            .unwrap()
+            .contains("unknown type 'distance'"),
+        "{resp}"
+    );
+}
+
+/// `P3D_SKETCH_VOCABULARY_NATIVE` (1) reads ACS's own types, answering exactly
+/// as `solve_sketch_json`.
+#[test]
+fn the_native_vocabulary_solves_native_types() {
+    let request = distance_request(true);
+    let (code, response) = call_in(P3D_SKETCH_VOCABULARY_NATIVE, Some(request.as_bytes()));
+    assert_eq!(code, 0);
+    assert_eq!(response, solve_sketch_json(&request).unwrap());
+    assert!((solved_distance(&response) - 10.0).abs() < 1e-9);
+
+    let (code, response) = call_in(
+        P3D_SKETCH_VOCABULARY_NATIVE,
+        Some(distance_request(false).as_bytes()),
+    );
+    assert_eq!(code, 1);
+    assert_invalid(&response);
+}
+
+#[test]
+fn an_unknown_vocabulary_is_malformed() {
+    for bad in [2, -1, 42] {
+        let (code, response) = call_in(bad, Some(distance_request(false).as_bytes()));
+        assert_eq!(code, 1, "{bad}");
+        let resp = assert_invalid(&response);
+        assert!(
+            resp["error"]
+                .as_str()
+                .unwrap()
+                .contains("unknown vocabulary"),
+            "{bad}: {resp}"
+        );
+    }
 }
 
 // ── The C smoke test ───────────────────────────────────────────────────────
@@ -167,10 +264,11 @@ fn build_c_smoke_test() -> PathBuf {
     out
 }
 
-/// Runs the C smoke test on `request` (stdin) and returns its exit code
-/// (`P3DSketch_Solve`'s return value) and stdout (the response).
-fn run_c(exe: &Path, request: &str) -> (i32, String) {
+/// Runs the C smoke test on `request` (stdin) with `args` and returns its exit
+/// code (`P3DSketch_Solve`'s return value) and stdout (the response).
+fn run_c(exe: &Path, args: &[&str], request: &str) -> (i32, String) {
     let mut child = Command::new(exe)
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -190,15 +288,21 @@ fn run_c(exe: &Path, request: &str) -> (i32, String) {
 fn c_smoke_test_gets_the_json_api_responses() {
     let exe = build_c_smoke_test();
     for request in understood_requests() {
-        let (code, response) = run_c(&exe, &request);
+        let (code, response) = run_c(&exe, &[], &request);
         assert_eq!(code, 0, "{request}");
         assert_eq!(response, solve_planegcs_sketch_json(&request).unwrap());
     }
     for request in malformed_requests() {
-        let (code, response) = run_c(&exe, &request);
+        let (code, response) = run_c(&exe, &[], &request);
         assert_ne!(code, 0, "{request}");
         assert_eq!(response, solve_planegcs_sketch_json(&request).unwrap_err());
     }
+
+    // The native vocabulary, from C.
+    let request = distance_request(true);
+    let (code, response) = run_c(&exe, &["--native"], &request);
+    assert_eq!(code, 0);
+    assert_eq!(response, solve_sketch_json(&request).unwrap());
 
     // A null request, from C.
     let out = Command::new(&exe).arg("--null").output().unwrap();
