@@ -1,3 +1,7 @@
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -7,6 +11,7 @@ import type {
   SketchEntity,
 } from "../model/types";
 import {
+  type ConstraintDef,
   CONSTRAINT_DEFS,
   applicableConstraints,
   constraintToPrimitive,
@@ -16,6 +21,11 @@ import {
   matchSelection,
   primitiveToConstraint,
 } from "./registry";
+
+const require = createRequire(import.meta.url);
+const pkgDir = dirname(require.resolve("acs/package.json"));
+const acs = (await import("acs")) as typeof import("acs");
+acs.initSync({ module: readFileSync(join(pkgDir, "acs_bg.wasm")) });
 
 function pt(id: string, x = 0, y = 0): PointEntity {
   return { kind: "point", id, x, y, fixed: false };
@@ -31,59 +41,57 @@ const ENTITIES: SketchEntity[] = [P1, P2, L1];
 const resolve = (id: string) => ENTITIES.find((e) => e.id === id);
 
 describe("ConstraintRegistry", () => {
-  it("covers all 27 JSON constraint types", () => {
-    expect(CONSTRAINT_DEFS.length).toBe(27);
-    const types = new Set(CONSTRAINT_DEFS.map((d) => d.type));
-    expect(types.size).toBe(27);
-    for (const t of [
-      "horizontal_pp",
-      "vertical_pp",
-      "horizontal_l",
-      "vertical_l",
-      "parallel",
-      "perpendicular_ll",
-      "perpendicular_pppp",
-      "p2p_coincident",
-      "point_on_line_pl",
-      "point_on_line_ppp",
-      "point_on_circle",
-      "p2p_distance",
-      "p2l_distance",
-      "l2l_angle_pppp",
-      "l2l_angle_ll",
-      "equal_length",
-      "equal_radius_cc",
-      "equal_radius_aa",
-      "circle_radius",
-      "arc_radius",
-      "tangent_lc",
-      "midpoint_on_line_ll",
-      "midpoint_on_line_pppp",
-      "p2p_symmetric_ppp",
-      "p2p_symmetric_ppl",
-      "coordinate_x",
-      "coordinate_y",
-    ]) {
-      expect(types.has(t), `missing ${t}`).toBe(true);
-    }
+  it("has one entry per row of the solver's native catalog, field for field", () => {
+    type Row = {
+      type: string;
+      fields: { name: string; kind: string }[];
+      extension?: boolean;
+    };
+    const catalog = JSON.parse(acs.acsConstraintCatalog()) as Row[];
+    const asRow = (def: ConstraintDef): Row => {
+      const kinds = expandedKinds(def);
+      const row: Row = {
+        type: def.type,
+        fields: [
+          ...def.entityFields.map((name, i) => ({ name, kind: kinds[i] })),
+          ...(def.scalarParams ?? []).map((p) => ({ name: p.key, kind: "scalar" })),
+          ...(def.valueFields ?? []).map((name) => ({ name, kind: "value" })),
+          ...(def.axisFields ?? []).map((name) => ({ name, kind: "axis" })),
+        ],
+      };
+      if (def.extension !== undefined) row.extension = def.extension;
+      return row;
+    };
+    const key = (r: Row) =>
+      JSON.stringify([
+        r.type,
+        r.fields.map((f) => `${f.name}:${f.kind}`),
+        r.extension ?? null,
+      ]);
+    expect(CONSTRAINT_DEFS.map(asRow).map(key).sort()).toEqual(
+      catalog.map(key).sort(),
+    );
   });
 
-  it("every def has matching entityFields and selection sizes", () => {
+  it("every def has a unique key and matching entityFields and selection sizes", () => {
+    expect(new Set(CONSTRAINT_DEFS.map((d) => d.key)).size).toBe(
+      CONSTRAINT_DEFS.length,
+    );
     for (const def of CONSTRAINT_DEFS) {
       expect(
         expandedKinds(def).length,
-        `${def.type} slot count`,
+        `${def.key} slot count`,
       ).toBe(def.entityFields.length);
     }
   });
 
   it("matches selection regardless of pick order", () => {
-    const def = getConstraintDef("point_on_line_pl");
+    const def = getConstraintDef("on_line");
     expect(def).toBeDefined();
     if (def === undefined) return;
     // point first
     expect(matchSelection(def, [P1, L1])).toEqual(["p1", "l1"]);
-    // line first — still slots point into p_id
+    // line first — still slots the point into `point`
     expect(matchSelection(def, [L1, P1])).toEqual(["p1", "l1"]);
   });
 
@@ -97,60 +105,105 @@ describe("ConstraintRegistry", () => {
   });
 
   it("finds applicable constraints for two points", () => {
-    const types = applicableConstraints([P1, P2]).map((d) => d.type);
-    expect(types).toContain("horizontal_pp");
-    expect(types).toContain("vertical_pp");
-    expect(types).toContain("p2p_coincident");
-    expect(types).toContain("p2p_distance");
-    expect(types).not.toContain("parallel");
+    const keys = applicableConstraints([P1, P2]).map((d) => d.key);
+    expect(keys).toContain("horizontal_points");
+    expect(keys).toContain("vertical_points");
+    expect(keys).toContain("coincident");
+    expect(keys).toContain("distance_points");
+    expect(keys).toContain("direction_points");
+    expect(keys).not.toContain("parallel");
+  });
+
+  it("offers both the segment and the Extension variant for a point and a line", () => {
+    const keys = applicableConstraints([P1, L1]).map((d) => d.key);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "distance_point_line",
+        "distance_point_extension",
+        "on_line",
+        "on_extension",
+        "midpoint",
+        "offset",
+      ]),
+    );
+  });
+
+  it("never offers or imports ellipse constraints (the demo has no ellipses)", () => {
+    for (const sel of [[P1], [P1, L1], [L1], [P1, P2]]) {
+      const keys = applicableConstraints(sel).map((d) => d.key);
+      expect(keys).not.toContain("on_ellipse");
+      expect(keys).not.toContain("tangent_line_ellipse");
+      expect(keys).not.toContain("ellipse_axis");
+    }
+    expect(
+      primitiveToConstraint(
+        { type: "ellipse_axis", ellipse: "e1", point: "p1", which: "major" },
+        "f",
+        resolve,
+      ),
+    ).toBeNull();
   });
 
   it("derives default scalar params from geometry", () => {
-    const def = getConstraintDef("p2p_distance");
+    const def = getConstraintDef("distance_points");
     expect(def).toBeDefined();
     if (def === undefined) return;
     const params = defaultParams(def, [P1, P2], resolve);
-    expect(params.distance).toBeCloseTo(5); // 3-4-5 triangle
+    expect(params.value).toBeCloseTo(5); // 3-4-5 triangle
   });
 
-  it("serializes constraints with exact JSON field names", () => {
+  it("serializes constraints with the native type and field names", () => {
     const c: ConstraintInstance = {
       id: "k1",
-      type: "p2p_distance",
+      def: "distance_points",
       entities: ["p1", "p2"],
-      params: { distance: 5 },
+      params: { value: 5 },
     };
     expect(constraintToPrimitive(c)).toEqual({
       id: "k1",
-      type: "p2p_distance",
-      p1_id: "p1",
-      p2_id: "p2",
-      distance: 5,
+      type: "distance",
+      a: "p1",
+      b: "p2",
+      value: 5,
     });
 
-    const sym: ConstraintInstance = {
+    const mirror: ConstraintInstance = {
       id: "k2",
-      type: "p2p_symmetric_ppl",
+      def: "mirror",
       entities: ["p1", "p2", "l1"],
       params: {},
     };
-    expect(constraintToPrimitive(sym)).toEqual({
+    expect(constraintToPrimitive(mirror)).toEqual({
       id: "k2",
-      type: "p2p_symmetric_ppl",
-      p1_id: "p1",
-      p2_id: "p2",
-      l_id: "l1",
+      type: "mirror",
+      source: "p1",
+      image: "p2",
+      axis: "l1",
+    });
+
+    const ext: ConstraintInstance = {
+      id: "k3",
+      def: "on_extension",
+      entities: ["p1", "l1"],
+      params: {},
+    };
+    expect(constraintToPrimitive(ext)).toEqual({
+      id: "k3",
+      type: "on",
+      extension: true,
+      point: "p1",
+      curve: "l1",
     });
   });
 
-  it("throws on unknown types or wrong entity counts", () => {
+  it("throws on unknown defs or wrong entity counts", () => {
     expect(() =>
-      constraintToPrimitive({ id: "k", type: "nope", entities: [], params: {} }),
+      constraintToPrimitive({ id: "k", def: "nope", entities: [], params: {} }),
     ).toThrow();
     expect(() =>
       constraintToPrimitive({
         id: "k",
-        type: "parallel",
+        def: "parallel",
         entities: ["l1"],
         params: {},
       }),
@@ -158,20 +211,41 @@ describe("ConstraintRegistry", () => {
   });
 
   it("round-trips primitives back into constraint instances", () => {
-    const prim = {
+    const L2 = ln("l2", "p2", "p1");
+    const byId = new Map([...ENTITIES, L2].map((e) => [e.id, e]));
+    const lookup = (id: string) => byId.get(id);
+    const prim = { id: "k9", type: "angle", a: "l1", b: "l2", value: 0.5 };
+    expect(primitiveToConstraint(prim, "fallback", lookup)).toEqual({
       id: "k9",
-      type: "l2l_angle_ll",
-      l1_id: "l1",
-      l2_id: "l2",
-      angle: 0.5,
-    };
-    const c = primitiveToConstraint(prim, "fallback");
-    expect(c).toEqual({
-      id: "k9",
-      type: "l2l_angle_ll",
+      def: "angle",
       entities: ["l1", "l2"],
-      params: { angle: 0.5 },
+      params: { value: 0.5 },
     });
-    expect(primitiveToConstraint({ type: "bogus" }, "f")).toBeNull();
+    expect(primitiveToConstraint({ type: "bogus" }, "f", lookup)).toBeNull();
+  });
+
+  it("infers the variant on import from the referenced entities' kinds", () => {
+    const kinds = (prim: Record<string, unknown>) =>
+      primitiveToConstraint(prim, "f", resolve);
+    expect(kinds({ type: "distance", a: "p1", b: "p2", value: 1 })?.def).toBe(
+      "distance_points",
+    );
+    expect(kinds({ type: "distance", a: "p1", b: "l1", value: 1 })?.def).toBe(
+      "distance_point_line",
+    );
+    expect(
+      kinds({ type: "distance", a: "p1", b: "l1", value: 1, extension: true }),
+    ).toMatchObject({ def: "distance_point_extension", entities: ["p1", "l1"] });
+    // a and b may come in either order
+    expect(kinds({ type: "distance", a: "l1", b: "p1", value: 1 })).toMatchObject({
+      def: "distance_point_line",
+      entities: ["p1", "l1"],
+    });
+    expect(kinds({ type: "horizontal", line: "l1" })?.def).toBe("horizontal_line");
+    expect(kinds({ type: "horizontal", a: "p1", b: "p2" })?.def).toBe(
+      "horizontal_points",
+    );
+    // no variant takes a point and a missing entity
+    expect(kinds({ type: "distance", a: "p1", b: "ghost", value: 1 })).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-use crate::parameter_system::ParametricEntity;
+use crate::var_registry::VarEntity;
 use std::collections::HashMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -19,15 +19,15 @@ impl Point {
     }
 }
 
-impl ParametricEntity for Point {
-    fn get_parameters(&self) -> Vec<f64> {
+impl VarEntity for Point {
+    fn values(&self) -> Vec<f64> {
         vec![self.x, self.y]
     }
 
-    fn set_parameters(&mut self, params: &[f64]) -> Result<(), String> {
+    fn set_values(&mut self, params: &[f64]) -> Result<(), String> {
         if params.len() != 2 {
             return Err(format!(
-                "Point requires exactly 2 parameters, got {}",
+                "Point requires exactly 2 values, got {}",
                 params.len()
             ));
         }
@@ -36,14 +36,14 @@ impl ParametricEntity for Point {
         Ok(())
     }
 
-    fn parameter_names(&self) -> Vec<String> {
+    fn var_names(&self) -> Vec<String> {
         vec![format!("{}.x", self.id), format!("{}.y", self.id)]
     }
 
-    fn is_parameter_fixed(&self, param_index: usize) -> bool {
-        match param_index {
+    fn is_var_fixed(&self, index: usize) -> bool {
+        match index {
             0 | 1 => self.fixed, // Both x and y are fixed if the point is fixed
-            _ => true,           // Invalid parameter indices are considered fixed
+            _ => true,           // Invalid variable indices are considered fixed
         }
     }
 }
@@ -86,15 +86,15 @@ impl Circle {
     }
 }
 
-impl ParametricEntity for Circle {
-    fn get_parameters(&self) -> Vec<f64> {
+impl VarEntity for Circle {
+    fn values(&self) -> Vec<f64> {
         vec![self.radius]
     }
 
-    fn set_parameters(&mut self, params: &[f64]) -> Result<(), String> {
+    fn set_values(&mut self, params: &[f64]) -> Result<(), String> {
         if params.len() != 1 {
             return Err(format!(
-                "Circle requires exactly 1 parameter, got {}",
+                "Circle requires exactly 1 values, got {}",
                 params.len()
             ));
         }
@@ -102,23 +102,31 @@ impl ParametricEntity for Circle {
         Ok(())
     }
 
-    fn parameter_names(&self) -> Vec<String> {
+    fn var_names(&self) -> Vec<String> {
         vec![format!("{}.radius", self.id)]
     }
 
-    fn is_parameter_fixed(&self, param_index: usize) -> bool {
-        match param_index {
+    fn is_var_fixed(&self, index: usize) -> bool {
+        match index {
             0 => self.fixed, // Radius is fixed if the circle is fixed
-            _ => true,       // Invalid parameter indices are considered fixed
+            _ => true,       // Invalid variable indices are considered fixed
         }
     }
 }
 
+/// An Arc: a span of a circle sweeping counter-clockwise from
+/// `start_angle` to `end_angle`, referencing its center, start and end
+/// Points. The endpoints always sit on it: the solver adds the arc's own
+/// rules (an `ArcRules` over these Points) for every arc.
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(getter_with_clone)]
 pub struct Arc {
     pub id: String,
     pub center: String, // Point ID
+    /// Start Point ID; always at `start_angle`.
+    pub start: String,
+    /// End Point ID; always at `end_angle`.
+    pub end: String,
     pub radius: f64,
     pub start_angle: f64, // in radians
     pub end_angle: f64,   // in radians
@@ -128,9 +136,12 @@ pub struct Arc {
 #[wasm_bindgen]
 impl Arc {
     #[wasm_bindgen(constructor)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         center: String,
+        start: String,
+        end: String,
         radius: f64,
         start_angle: f64,
         end_angle: f64,
@@ -139,6 +150,8 @@ impl Arc {
         Self {
             id,
             center,
+            start,
+            end,
             radius,
             start_angle,
             end_angle,
@@ -147,15 +160,15 @@ impl Arc {
     }
 }
 
-impl ParametricEntity for Arc {
-    fn get_parameters(&self) -> Vec<f64> {
+impl VarEntity for Arc {
+    fn values(&self) -> Vec<f64> {
         vec![self.radius, self.start_angle, self.end_angle]
     }
 
-    fn set_parameters(&mut self, params: &[f64]) -> Result<(), String> {
+    fn set_values(&mut self, params: &[f64]) -> Result<(), String> {
         if params.len() != 3 {
             return Err(format!(
-                "Arc requires exactly 3 parameters, got {}",
+                "Arc requires exactly 3 values, got {}",
                 params.len()
             ));
         }
@@ -165,7 +178,7 @@ impl ParametricEntity for Arc {
         Ok(())
     }
 
-    fn parameter_names(&self) -> Vec<String> {
+    fn var_names(&self) -> Vec<String> {
         vec![
             format!("{}.radius", self.id),
             format!("{}.start_angle", self.id),
@@ -173,10 +186,65 @@ impl ParametricEntity for Arc {
         ]
     }
 
-    fn is_parameter_fixed(&self, param_index: usize) -> bool {
-        match param_index {
-            0..=2 => self.fixed, // All parameters are fixed if the arc is fixed
-            _ => true,               // Invalid parameter indices are considered fixed
+    fn is_var_fixed(&self, index: usize) -> bool {
+        match index {
+            0..=2 => self.fixed, // All variables are fixed if the arc is fixed
+            _ => true,               // Invalid variable indices are considered fixed
+        }
+    }
+}
+
+/// An Ellipse: a center Point, a focus Point (`focus1`, which sets the
+/// major axis direction) and its minor radius `radmin`, which it owns as a
+/// Var. Its major radius is derived: `a = sqrt(radmin² + |focus1 − center|²)`.
+#[derive(Debug, Clone, PartialEq)]
+#[wasm_bindgen(getter_with_clone)]
+pub struct Ellipse {
+    pub id: String,
+    pub center: String, // Point ID
+    pub focus1: String, // Point ID
+    pub radmin: f64,
+    pub fixed: bool,
+}
+
+#[wasm_bindgen]
+impl Ellipse {
+    #[wasm_bindgen(constructor)]
+    pub fn new(id: String, center: String, focus1: String, radmin: f64, fixed: bool) -> Self {
+        Self {
+            id,
+            center,
+            focus1,
+            radmin,
+            fixed,
+        }
+    }
+}
+
+impl VarEntity for Ellipse {
+    fn values(&self) -> Vec<f64> {
+        vec![self.radmin]
+    }
+
+    fn set_values(&mut self, params: &[f64]) -> Result<(), String> {
+        if params.len() != 1 {
+            return Err(format!(
+                "Ellipse requires exactly 1 value, got {}",
+                params.len()
+            ));
+        }
+        self.radmin = params[0];
+        Ok(())
+    }
+
+    fn var_names(&self) -> Vec<String> {
+        vec![format!("{}.radmin", self.id)]
+    }
+
+    fn is_var_fixed(&self, index: usize) -> bool {
+        match index {
+            0 => self.fixed, // The minor radius is fixed if the ellipse is fixed
+            _ => true,
         }
     }
 }
@@ -187,6 +255,7 @@ pub struct GeometrySystem {
     lines: HashMap<String, Line>,
     circles: HashMap<String, Circle>,
     arcs: HashMap<String, Arc>,
+    ellipses: HashMap<String, Ellipse>,
 }
 
 impl Default for GeometrySystem {
@@ -202,6 +271,7 @@ impl GeometrySystem {
             lines: HashMap::new(),
             circles: HashMap::new(),
             arcs: HashMap::new(),
+            ellipses: HashMap::new(),
         }
     }
 
@@ -221,13 +291,7 @@ impl GeometrySystem {
         self.points.get(id)
     }
 
-    pub fn get_point_mut(&mut self, id: &str) -> Option<&mut Point> {
-        self.points.get_mut(id)
-    }
 
-    pub fn get_line(&self, id: &str) -> Option<&Line> {
-        self.lines.get(id)
-    }
 
     pub fn get_all_points(&self) -> &HashMap<String, Point> {
         &self.points
@@ -251,9 +315,6 @@ impl GeometrySystem {
         self.circles.get(id)
     }
 
-    pub fn get_circle_mut(&mut self, id: &str) -> Option<&mut Circle> {
-        self.circles.get_mut(id)
-    }
 
     pub fn get_all_circles(&self) -> &HashMap<String, Circle> {
         &self.circles
@@ -273,9 +334,6 @@ impl GeometrySystem {
         self.arcs.get(id)
     }
 
-    pub fn get_arc_mut(&mut self, id: &str) -> Option<&mut Arc> {
-        self.arcs.get_mut(id)
-    }
 
     pub fn get_all_arcs(&self) -> &HashMap<String, Arc> {
         &self.arcs
@@ -285,27 +343,25 @@ impl GeometrySystem {
         &mut self.arcs
     }
 
-    pub fn update_point(&mut self, id: &str, point: Point) -> Result<(), String> {
-        if !self.points.contains_key(id) {
-            return Err("Point not found".to_string());
-        }
-        self.points.insert(id.to_string(), point);
-        Ok(())
+    pub fn add_ellipse(&mut self, ellipse: Ellipse) -> String {
+        let id = ellipse.id.clone();
+        self.ellipses.insert(id.clone(), ellipse);
+        id
     }
 
-    pub fn update_circle(&mut self, id: &str, circle: Circle) -> Result<(), String> {
-        if !self.circles.contains_key(id) {
-            return Err("Circle not found".to_string());
-        }
-        self.circles.insert(id.to_string(), circle);
-        Ok(())
+    pub fn get_ellipse(&self, id: &str) -> Option<&Ellipse> {
+        self.ellipses.get(id)
     }
 
-    pub fn update_arc(&mut self, id: &str, arc: Arc) -> Result<(), String> {
-        if !self.arcs.contains_key(id) {
-            return Err("Arc not found".to_string());
-        }
-        self.arcs.insert(id.to_string(), arc);
-        Ok(())
+    pub fn get_all_ellipses(&self) -> &HashMap<String, Ellipse> {
+        &self.ellipses
     }
+
+    pub fn get_all_ellipses_mut(&mut self) -> &mut HashMap<String, Ellipse> {
+        &mut self.ellipses
+    }
+
+
+
+
 }

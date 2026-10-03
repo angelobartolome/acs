@@ -1,5 +1,9 @@
 /**
- * SolverService — adapter over the `acsSolveSketch` JSON API.
+ * SolverService — adapter over the `acsSolveSketch` JSON API, which uses
+ * the `P3DSketch_Solve` contract: request `{ version: 1, primitives,
+ * maxIterations? }`; response `{ version, status, primitives, conflicting,
+ * redundant, dof }`, or `{ version, status: "invalid", error, constraintId? }`
+ * for a rejected request; plus ACS's `stats` and `fullyConstrained`.
  *
  * Payload building and response parsing are pure functions (unit-testable
  * without wasm); the wasm entry point is injected into `AcsSolverService`.
@@ -26,13 +30,22 @@ export interface SolveStats {
   finalError: number;
 }
 
+export type SolveStatus = "converged" | "failed" | "invalid";
+
 export interface SolveOutcome {
   ok: boolean;
-  status: "converged" | "failed";
+  /** `invalid`: the solver couldn't read the request (see `error`) */
+  status: SolveStatus;
   /** entities with solved positions applied (input entities if failed) */
   entities: SketchEntity[];
-  skippedConstraintIds: string[];
-  conflictingConstraintIds: string[];
+  /** constraints that can't hold together with the others */
+  conflictingIds: string[];
+  /** constraints already implied by the others */
+  redundantIds: string[];
+  /** the constraint an `invalid` response rejected, if any */
+  rejectedConstraintId: string | null;
+  /** degrees of freedom the constraints leave (null if not solved) */
+  dof: number | null;
   /** IDs of entities that are fully constrained (degrees of freedom = 0) */
   fullyConstrainedIds: string[];
   error: string | null;
@@ -71,6 +84,8 @@ export function entityToPrimitive(e: SketchEntity): JsonPrimitive {
         id: e.id,
         type: "arc",
         c_id: e.center,
+        start_id: e.start,
+        end_id: e.end,
         radius: e.radius,
         start_angle: e.startAngle,
         end_angle: e.endAngle,
@@ -91,10 +106,11 @@ export function buildSolveRequest(
   maxIterations?: number,
 ): string {
   const body: {
+    version: 1;
     primitives: JsonPrimitive[];
-    max_iterations?: number;
-  } = { primitives: sketchToPrimitives(sketch) };
-  if (maxIterations !== undefined) body.max_iterations = maxIterations;
+    maxIterations?: number;
+  } = { version: 1, primitives: sketchToPrimitives(sketch) };
+  if (maxIterations !== undefined) body.maxIterations = maxIterations;
   return JSON.stringify(body);
 }
 
@@ -123,6 +139,7 @@ export function primitivesToSketch(prims: readonly unknown[]): ImportResult {
   const entities: SketchEntity[] = [];
   const constraints: ConstraintInstance[] = [];
   const warnings: string[] = [];
+  const constraintPrims: Record<string, unknown>[] = [];
   let anon = 0;
 
   for (const raw of prims) {
@@ -183,7 +200,9 @@ export function primitivesToSketch(prims: readonly unknown[]): ImportResult {
       }
       case "arc": {
         const center = asString(prim.c_id);
-        if (id === null || center === null) {
+        const start = asString(prim.start_id);
+        const end = asString(prim.end_id);
+        if (id === null || center === null || start === null || end === null) {
           warnings.push(`Skipped malformed arc ${id ?? "?"}`);
           break;
         }
@@ -191,6 +210,8 @@ export function primitivesToSketch(prims: readonly unknown[]): ImportResult {
           kind: "arc",
           id,
           center,
+          start,
+          end,
           radius: asNumber(prim.radius),
           startAngle: asNumber(prim.start_angle),
           endAngle: asNumber(prim.end_angle),
@@ -199,13 +220,24 @@ export function primitivesToSketch(prims: readonly unknown[]): ImportResult {
         entities.push(a);
         break;
       }
-      default: {
-        anon += 1;
-        const c = primitiveToConstraint(prim, `k_import_${anon}`);
-        if (c !== null) constraints.push(c);
-        else warnings.push(`Skipped unknown primitive type "${type}"`);
-      }
+      default:
+        constraintPrims.push(prim);
     }
+  }
+
+  // Constraints last: their variant is inferred from the kinds of the
+  // entities they reference, wherever those appear in the array.
+  const byId = new Map(entities.map((e) => [e.id, e]));
+  for (const prim of constraintPrims) {
+    anon += 1;
+    const c = primitiveToConstraint(prim, `k_import_${anon}`, (id) =>
+      byId.get(id),
+    );
+    if (c !== null) constraints.push(c);
+    else
+      warnings.push(
+        `Skipped unsupported constraint "${String(prim.type)}" ${asString(prim.id) ?? ""}`.trimEnd(),
+      );
   }
 
   return { sketch: { entities, constraints }, warnings };
@@ -220,8 +252,8 @@ function parseStats(v: unknown): SolveStats | null {
   const o = v as Record<string, unknown>;
   return {
     iterations: asNumber(o.iterations),
-    initialError: asNumber(o.initial_error),
-    finalError: asNumber(o.final_error),
+    initialError: asNumber(o.initialError),
+    finalError: asNumber(o.finalError),
   };
 }
 
@@ -273,6 +305,55 @@ export function applySolvedPrimitives(
   });
 }
 
+function invalidOutcome(
+  inputEntities: readonly SketchEntity[],
+  error: string,
+  requestJson: string,
+  responseJson: string,
+  durationMs: number,
+): SolveOutcome {
+  return {
+    ok: false,
+    status: "invalid",
+    entities: [...inputEntities],
+    conflictingIds: [],
+    redundantIds: [],
+    rejectedConstraintId: null,
+    dof: null,
+    fullyConstrainedIds: [],
+    error,
+    stats: null,
+    durationMs,
+    requestJson,
+    responseJson,
+    timestamp: Date.now(),
+  };
+}
+
+function parseStatus(v: unknown): SolveStatus {
+  return v === "converged" || v === "failed" ? v : "invalid";
+}
+
+export type ConstraintFlag = "conflicting" | "redundant" | "rejected";
+
+/** What the last solve said about individual constraints, by constraint id. */
+export function constraintFlags(outcome: SolveOutcome): Map<string, ConstraintFlag> {
+  const flags = new Map<string, ConstraintFlag>();
+  for (const id of outcome.redundantIds) flags.set(id, "redundant");
+  for (const id of outcome.conflictingIds) flags.set(id, "conflicting");
+  if (outcome.rejectedConstraintId !== null)
+    flags.set(outcome.rejectedConstraintId, "rejected");
+  return flags;
+}
+
+/** IDs of constraints the last solve flagged as a problem: conflicting or rejected. */
+export function problemConstraintIds(outcome: SolveOutcome): Set<string> {
+  const ids = new Set<string>();
+  for (const [id, flag] of constraintFlags(outcome))
+    if (flag !== "redundant") ids.add(id);
+  return ids;
+}
+
 export function parseSolveResponse(
   responseJson: string,
   inputEntities: readonly SketchEntity[],
@@ -283,41 +364,39 @@ export function parseSolveResponse(
   try {
     root = JSON.parse(responseJson);
   } catch (err) {
-    return {
-      ok: false,
-      status: "failed",
-      entities: [...inputEntities],
-      skippedConstraintIds: [],
-      conflictingConstraintIds: [],
-      fullyConstrainedIds: [],
-      error: `Invalid solver response: ${String(err)}`,
-      stats: null,
-      durationMs,
+    return invalidOutcome(
+      inputEntities,
+      `Invalid solver response: ${String(err)}`,
       requestJson,
       responseJson,
-      timestamp: Date.now(),
-    };
+      durationMs,
+    );
   }
 
   const o = (
     typeof root === "object" && root !== null ? root : {}
   ) as Record<string, unknown>;
 
-  const ok = o.ok === true;
+  const status = parseStatus(o.status);
+  const ok = status === "converged";
   const solvedPrims = Array.isArray(o.primitives) ? o.primitives : [];
+  const error = typeof o.error === "string" ? o.error : null;
 
   return {
     ok,
-    status: ok ? "converged" : "failed",
+    status,
     // Never silently apply non-converged results.
     entities: ok
       ? applySolvedPrimitives(inputEntities, solvedPrims)
       : [...inputEntities],
-    skippedConstraintIds: stringArray(o.skipped_constraint_ids),
-    conflictingConstraintIds: stringArray(o.conflicting_constraint_ids),
+    conflictingIds: stringArray(o.conflicting),
+    redundantIds: stringArray(o.redundant),
+    rejectedConstraintId:
+      status === "invalid" ? asString(o.constraintId) : null,
+    dof: typeof o.dof === "number" ? o.dof : null,
     // Only meaningful on a converged solve; the solver returns [] otherwise.
-    fullyConstrainedIds: ok ? stringArray(o.fully_constrained_ids) : [],
-    error: typeof o.error === "string" ? o.error : null,
+    fullyConstrainedIds: ok ? stringArray(o.fullyConstrained) : [],
+    error,
     stats: parseStats(o.stats),
     durationMs,
     requestJson,
@@ -346,21 +425,13 @@ export class AcsSolverService implements ISolverService {
     try {
       responseJson = this.solveFn(requestJson);
     } catch (err) {
-      const durationMs = performance.now() - started;
-      return {
-        ok: false,
-        status: "failed",
-        entities: [...sketch.entities],
-        skippedConstraintIds: [],
-        conflictingConstraintIds: [],
-        fullyConstrainedIds: [],
-        error: `Solver threw: ${String(err)}`,
-        stats: null,
-        durationMs,
+      return invalidOutcome(
+        sketch.entities,
+        `Solver threw: ${String(err)}`,
         requestJson,
-        responseJson: "",
-        timestamp: Date.now(),
-      };
+        "",
+        performance.now() - started,
+      );
     }
     const durationMs = performance.now() - started;
     return parseSolveResponse(

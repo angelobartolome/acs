@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
-use crate::{ParameterManager, constraints::Constraint};
+use crate::constraints::{Constraint, Var, set_row};
 
 /// Forces a circle or arc to maintain a specific radius.
 ///
@@ -22,24 +22,16 @@ impl FixedRadiusConstraint {
 }
 
 impl Constraint for FixedRadiusConstraint {
+    fn vars(&self) -> Vec<Var<'_>> {
+        vec![Var::Radius(&self.circle_id)]
+    }
+
     fn num_residuals(&self) -> usize {
         1
     }
 
-    fn residual(&self, pm: &ParameterManager) -> DVector<f64> {
-        let r_idx = pm
-            .get_global_index(&self.circle_id, 0)
-            .expect("circle radius not found");
-        let r = pm.get_parameters()[r_idx];
-        DVector::from(vec![r - self.target_radius])
-    }
-
-    fn jacobian(&self, pm: &ParameterManager) -> DMatrix<f64> {
-        let n = pm.num_parameters();
-        let mut J = DMatrix::<f64>::zeros(1, n);
-        if let Some(r_idx) = pm.get_global_index(&self.circle_id, 0) {
-            J[(0, r_idx)] = 1.0;
-        }
-        J
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
+        r[0] = x[0] - self.target_radius;
+        set_row(j, 0, &[1.0]);
     }
 }

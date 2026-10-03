@@ -21,32 +21,43 @@ A built-in pre-solver partitions each sketch into independent connected componen
 | Points | ✅ |
 | Lines (two-point) | ✅ |
 | Circles | ✅ |
-| Arcs | ✅ |
+| Arcs (center, start and end points) | ✅ |
+| Ellipses (center and focus points, minor radius) | ✅ |
 
 ### Constraints
 
-| Constraint | Description |
-|------------|-------------|
-| `Horizontal` | Two points share the same Y coordinate |
-| `Vertical` | Two points share the same X coordinate |
-| `Parallel` | Two lines are parallel |
-| `Perpendicular` | Two lines meet at 90° |
-| `Angle` | Directed angle between two lines equals a target (radians) |
-| `Coincident` | Two points overlap |
-| `EqualX` / `EqualY` | Pin a point to a coordinate value |
-| `PointOnLine` | Point lies on a line segment |
-| `DistancePointPoint` | Euclidean distance between two points |
-| `DistancePointLine` | Perpendicular distance from a point to a line |
-| `EqualLength` | Two line segments have the same length |
-| `Midpoint` | A point is the midpoint of a segment |
-| `MidpointOfLineOnLine` | The midpoint of a segment lies on an infinite line |
-| `Symmetric` | Two points are mirror images across an axis line |
-| `FixedRadius` | Circle or arc has a fixed radius |
-| `EqualRadius` | Two circles share the same radius |
-| `Concentric` | Two circles share the same center |
-| `PointOnCircle` | Point lies on a circle's circumference |
-| `Tangent` | Two circles are externally tangent |
-| `TangentLineCircle` | A line is tangent to a circle |
+ACS names constraints by relationship (its **native vocabulary**, used by the JSON API `acsSolveSketch`). One type covers every combination of entities it makes sense for; the variant is inferred from the kinds of the entities its fields reference. Lines are segments: constraints measure against the segment unless they are **Extension** variants (`extension: true`), which measure against the infinite line through a line's endpoints so sketches authored under infinite-line semantics, such as PlaneGCS's, keep their meaning.
+
+| Type | Entities | Description |
+|------|----------|-------------|
+| `coincident` | point, point | Two points overlap |
+| `horizontal` / `vertical` | line, or two points | Horizontal / vertical |
+| `parallel` / `perpendicular` | line, line | Two lines are parallel / perpendicular |
+| `angle` | line, line | Directed angle between two lines (radians) |
+| `direction` | line, or two points | Direction from +X (radians, counter-clockwise) |
+| `distance` | point, point or line (`extension?`) | Point–point distance; point–segment distance; with `extension`, distance to the line's Extension |
+| `offset` | point, line | Distance from a point to a line's Extension on a given side (Linked Offsets) |
+| `on` | point, line (`extension?`) / circle / arc / ellipse | Point lies on the segment (or Extension), circle, arc's span, or ellipse |
+| `midpoint` | point, line | A point is the midpoint of a line |
+| `midpoint_on` | line, line (`extension?`) | The midpoint of one line lies on another line (or its Extension) |
+| `tangent` | line–circle (`extension?`), line–arc, circle–circle, line–ellipse | Tangency on the segment (and arc span); circles touch externally |
+| `concentric` | circle/arc, circle/arc | Share a center |
+| `equal` | line–line, circle/arc–circle/arc, or values | Equal length, equal radius, or `a = b` |
+| `radius` | circle or arc | Fixed radius |
+| `difference` | values | `b − a = value` |
+| `x` / `y` | point | Pin a point to a coordinate value |
+| `mirror` | point, point, line | A point is another mirrored across a line's Extension |
+| `rotation` | point, point, center point | A point is another rotated about a center by a given angle (circular array copy) |
+| `translation` | point, point, two direction points | A point is another translated `distance × count` along a direction (linear array copy) |
+| `ellipse_axis` | ellipse, point, `which` (`major`/`minor`) | A point is an end of an ellipse's major or minor axis |
+
+Values (for `equal` and `difference`) are constants (numbers or sketch Parameters) or entity properties the solver may move (a point's `x`/`y`, a circle's or arc's `radius`, an ellipse's `radmin`).
+
+**PlaneGCS dialect.** Clients written against FreeCAD GCS send its type names (`p2p_distance`, `horizontal_l`, `tangent_lc`, …). Its entry points, the C ABI's `P3DSketch_Solve` and the WASM export `acsSolveSketchPlaneGcs`, accept those types unchanged and map each onto the same internal constraints; see [USAGE.md](USAGE.md#planegcs-dialect) for the mapping.
+
+Internally each variant is a `ConstraintType` (`DistancePointLine`, `TangentExtensionCircle`, …) with an analytical Jacobian; see [SPEC.md](SPEC.md).
+
+Sketch **Parameters** (JSON `param`) are named fixed values any scalar field may reference by id; see [USAGE.md](USAGE.md).
 
 ---
 
@@ -105,6 +116,7 @@ import init, { acsSolveSketch } from './pkg/acs.js';
 await init();
 
 const result = JSON.parse(acsSolveSketch(JSON.stringify({
+  version: 1,
   primitives: [
     { type: "point", id: "tl", x: 0,  y: 10, fixed: false },
     { type: "point", id: "tr", x: 10, y: 10, fixed: false },
@@ -116,18 +128,18 @@ const result = JSON.parse(acsSolveSketch(JSON.stringify({
     { type: "line", id: "left",   p1_id: "tl", p2_id: "bl" },
     { type: "line", id: "right",  p1_id: "tr", p2_id: "br" },
 
-    { type: "coordinate_x", id: "cx_tl", p_id: "tl", x: 0  },
-    { type: "coordinate_y", id: "cy_tl", p_id: "tl", y: 10 },
-    { type: "p2p_distance",  id: "w", p1_id: "tl", p2_id: "tr", distance: 10 },
-    { type: "p2p_distance",  id: "h", p1_id: "tl", p2_id: "bl", distance: 10 },
-    { type: "horizontal_l",  id: "h_top",    l_id: "top"    },
-    { type: "horizontal_l",  id: "h_bottom", l_id: "bottom" },
-    { type: "vertical_l",    id: "v_left",   l_id: "left"   },
-    { type: "vertical_l",    id: "v_right",  l_id: "right"  },
+    { type: "x",          id: "cx_tl",    point: "tl", value: 0  },
+    { type: "y",          id: "cy_tl",    point: "tl", value: 10 },
+    { type: "distance",   id: "w",        a: "tl", b: "tr", value: 10 },
+    { type: "distance",   id: "h",        a: "tl", b: "bl", value: 10 },
+    { type: "horizontal", id: "h_top",    line: "top"    },
+    { type: "horizontal", id: "h_bottom", line: "bottom" },
+    { type: "vertical",   id: "v_left",   line: "left"   },
+    { type: "vertical",   id: "v_right",  line: "right"  },
   ]
 })));
 
-if (result.ok) {
+if (result.status === 'converged') {
   const pts = Object.fromEntries(
     result.primitives
       .filter(p => p.type === 'point')
@@ -162,12 +174,29 @@ cargo build --release
 wasm-pack build --target web --out-dir pkg
 ```
 
+### C ABI (static library)
+
+With the `c-abi` feature, the static library (`libacs.a`) exports the sketch solver C ABI, declared in [`include/p3d_sketch_solver.h`](include/p3d_sketch_solver.h):
+
+```c
+int  P3DSketch_Solve(const char *requestJson, char **responseJson); // 0 = understood, non-zero = malformed
+void P3DSketch_Free(char *p);                                        // releases *responseJson
+```
+
+The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, with constraints in the [PlaneGCS dialect](USAGE.md#planegcs-dialect) (as `acsSolveSketchPlaneGcs` in WASM). `scripts/release.sh` builds macOS arm64, iOS arm64 and iOS Simulator archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`) and the WASM npm tarball (`dist/acs-<version>.tgz`).
+
+```bash
+cargo build --release --features c-abi
+./scripts/release.sh   # dist/acs-<version>-<platform>.tar.gz and dist/acs-<version>.tgz
+```
+
 ---
 
 ## Testing
 
 ```bash
 cargo test
+cargo test --features c-abi   # C ABI tests, including a C smoke test (needs cc)
 ```
 
 ---

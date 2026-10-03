@@ -71,3 +71,29 @@ fn test_underconstrained_point_not_constrained() {
         "b can still slide in x and should NOT be fully constrained: {ids:?}"
     );
 }
+
+/// PointOnLine must remove one degree of freedom at the solution. (A squared-
+/// distance residual has a zero Jacobian row there, which used to leave the
+/// point looking free.) Point-on-line plus a fixed x pins it completely.
+#[test]
+fn test_point_on_line_removes_one_dof() {
+    let mut solver = ConstraintSolver::new();
+    solver.add_point(Point::new("a".into(), 0.0, 0.0, true));
+    solver.add_point(Point::new("b".into(), 1.0, 1.0, true));
+    solver.add_point(Point::new("p".into(), 0.5, 0.2, false));
+
+    solver
+        .add_constraint(ConstraintType::PointOnLine(
+            "p".into(),
+            "a".into(),
+            "b".into(),
+        ))
+        .unwrap();
+    solver
+        .add_constraint(ConstraintType::EqualX("p".into(), 0.5))
+        .unwrap();
+    solver.solve().unwrap();
+
+    let ids = solver.fully_constrained_entity_ids();
+    assert!(ids.contains(&"p".to_string()), "p should be fully constrained, got {ids:?}");
+}

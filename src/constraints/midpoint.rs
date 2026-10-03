@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
-use crate::{ParameterManager, constraints::Constraint};
+use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Constrains a point to be the midpoint of a line segment.
 ///
@@ -26,46 +26,19 @@ impl MidpointConstraint {
 }
 
 impl Constraint for MidpointConstraint {
+    fn vars(&self) -> Vec<Var<'_>> {
+        [xy(&self.midpoint_id), xy(&self.endpoint_a_id), xy(&self.endpoint_b_id)].concat()
+    }
+
     fn num_residuals(&self) -> usize {
         2
     }
 
-    fn residual(&self, pm: &ParameterManager) -> DVector<f64> {
-        let p = pm.get_parameters();
-        let mx = p[pm.get_global_index(&self.midpoint_id, 0).expect("m.x")];
-        let my = p[pm.get_global_index(&self.midpoint_id, 1).expect("m.y")];
-        let ax = p[pm.get_global_index(&self.endpoint_a_id, 0).expect("a.x")];
-        let ay = p[pm.get_global_index(&self.endpoint_a_id, 1).expect("a.y")];
-        let bx = p[pm.get_global_index(&self.endpoint_b_id, 0).expect("b.x")];
-        let by = p[pm.get_global_index(&self.endpoint_b_id, 1).expect("b.y")];
-
-        DVector::from(vec![
-            mx - (ax + bx) / 2.0,
-            my - (ay + by) / 2.0,
-        ])
-    }
-
-    fn jacobian(&self, pm: &ParameterManager) -> DMatrix<f64> {
-        let n = pm.num_parameters();
-        let mut J = DMatrix::<f64>::zeros(2, n);
-
-        let i_mx = pm.get_global_index(&self.midpoint_id, 0).expect("m.x");
-        let i_my = pm.get_global_index(&self.midpoint_id, 1).expect("m.y");
-        let i_ax = pm.get_global_index(&self.endpoint_a_id, 0).expect("a.x");
-        let i_ay = pm.get_global_index(&self.endpoint_a_id, 1).expect("a.y");
-        let i_bx = pm.get_global_index(&self.endpoint_b_id, 0).expect("b.x");
-        let i_by = pm.get_global_index(&self.endpoint_b_id, 1).expect("b.y");
-
-        // Row 0: R₀ = mx − (ax+bx)/2
-        J[(0, i_mx)] = 1.0;
-        J[(0, i_ax)] = -0.5;
-        J[(0, i_bx)] = -0.5;
-
-        // Row 1: R₁ = my − (ay+by)/2
-        J[(1, i_my)] = 1.0;
-        J[(1, i_ay)] = -0.5;
-        J[(1, i_by)] = -0.5;
-
-        J
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
+        // x = [mx, my, ax, ay, bx, by]
+        r[0] = x[0] - (x[2] + x[4]) / 2.0;
+        r[1] = x[1] - (x[3] + x[5]) / 2.0;
+        set_row(j, 0, &[1.0, 0.0, -0.5, 0.0, -0.5, 0.0]);
+        set_row(j, 1, &[0.0, 1.0, 0.0, -0.5, 0.0, -0.5]);
     }
 }

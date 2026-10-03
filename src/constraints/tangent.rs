@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
-use crate::{ParameterManager, constraints::Constraint};
+use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// External tangency between two circles: distance between centres = r1 + r2.
 ///
@@ -37,49 +37,22 @@ impl TangentConstraint {
 }
 
 impl Constraint for TangentConstraint {
+    fn vars(&self) -> Vec<Var<'_>> {
+        [&xy(&self.c1_center_id)[..], &[Var::Radius(&self.c1_id)], &xy(&self.c2_center_id), &[Var::Radius(&self.c2_id)]].concat()
+    }
+
     fn num_residuals(&self) -> usize {
         1
     }
 
-    fn residual(&self, pm: &ParameterManager) -> DVector<f64> {
-        let p = pm.get_parameters();
-        let cx1 = p[pm.get_global_index(&self.c1_center_id, 0).expect("c1 center.x")];
-        let cy1 = p[pm.get_global_index(&self.c1_center_id, 1).expect("c1 center.y")];
-        let cx2 = p[pm.get_global_index(&self.c2_center_id, 0).expect("c2 center.x")];
-        let cy2 = p[pm.get_global_index(&self.c2_center_id, 1).expect("c2 center.y")];
-        let r1 = p[pm.get_global_index(&self.c1_id, 0).expect("c1.r")];
-        let r2 = p[pm.get_global_index(&self.c2_id, 0).expect("c2.r")];
-
-        let dx = cx2 - cx1;
-        let dy = cy2 - cy1;
-        let sum_r = r1 + r2;
-
-        DVector::from(vec![dx * dx + dy * dy - sum_r * sum_r])
-    }
-
-    fn jacobian(&self, pm: &ParameterManager) -> DMatrix<f64> {
-        let n = pm.num_parameters();
-        let mut J = DMatrix::<f64>::zeros(1, n);
-
-        let p = pm.get_parameters();
-        let i_cx1 = pm.get_global_index(&self.c1_center_id, 0).expect("c1 center.x");
-        let i_cy1 = pm.get_global_index(&self.c1_center_id, 1).expect("c1 center.y");
-        let i_cx2 = pm.get_global_index(&self.c2_center_id, 0).expect("c2 center.x");
-        let i_cy2 = pm.get_global_index(&self.c2_center_id, 1).expect("c2 center.y");
-        let i_r1 = pm.get_global_index(&self.c1_id, 0).expect("c1.r");
-        let i_r2 = pm.get_global_index(&self.c2_id, 0).expect("c2.r");
-
-        let dx = p[i_cx2] - p[i_cx1];
-        let dy = p[i_cy2] - p[i_cy1];
-        let sum_r = p[i_r1] + p[i_r2];
-
-        J[(0, i_cx1)] = -2.0 * dx;
-        J[(0, i_cy1)] = -2.0 * dy;
-        J[(0, i_cx2)] = 2.0 * dx;
-        J[(0, i_cy2)] = 2.0 * dy;
-        J[(0, i_r1)] = -2.0 * sum_r;
-        J[(0, i_r2)] = -2.0 * sum_r;
-
-        J
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
+        // x = [cx1, cy1, r1, cx2, cy2, r2]
+        let (ddx, ddy, sum_r) = (x[3] - x[0], x[4] - x[1], x[2] + x[5]);
+        r[0] = ddx * ddx + ddy * ddy - sum_r * sum_r;
+        set_row(
+            j,
+            0,
+            &[-2.0 * ddx, -2.0 * ddy, -2.0 * sum_r, 2.0 * ddx, 2.0 * ddy, -2.0 * sum_r],
+        );
     }
 }

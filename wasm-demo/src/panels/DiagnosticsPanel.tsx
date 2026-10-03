@@ -1,14 +1,31 @@
+import type { SolveStatus } from "../core/solver/SolverService";
 import { useSketchStore } from "../hooks/useSketchStore";
 
-function StatusPill({ ok }: { ok: boolean }) {
+function StatusPill({ status }: { status: SolveStatus }) {
   return (
     <span
       className={`rounded px-2 py-0.5 text-[10px] font-semibold ${
-        ok ? "bg-emerald-900 text-emerald-300" : "bg-rose-900 text-rose-300"
+        status === "converged"
+          ? "bg-emerald-900 text-emerald-300"
+          : "bg-rose-900 text-rose-300"
       }`}
     >
-      {ok ? "converged" : "failed"}
+      {status}
     </span>
+  );
+}
+
+function IdList({ label, ids }: { label: string; ids: string[] }) {
+  if (ids.length === 0) return null;
+  return (
+    <div>
+      <div className="text-slate-500">{label}</div>
+      {ids.map((id) => (
+        <div key={id} className="text-amber-300">
+          {id}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -31,7 +48,7 @@ export function DiagnosticsPanel() {
   return (
     <div className="flex flex-col gap-2 px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
-        <StatusPill ok={lastOutcome.ok} />
+        <StatusPill status={lastOutcome.status} />
         <span className="text-slate-400">
           {lastOutcome.durationMs.toFixed(2)} ms
         </span>
@@ -49,28 +66,16 @@ export function DiagnosticsPanel() {
           <span>{fmtErr(lastOutcome.stats.initialError)}</span>
           <span className="text-slate-500">final error</span>
           <span>{fmtErr(lastOutcome.stats.finalError)}</span>
+          {lastOutcome.dof !== null && (
+            <>
+              <span className="text-slate-500">degrees of freedom</span>
+              <span>{lastOutcome.dof}</span>
+            </>
+          )}
         </div>
       )}
-      {lastOutcome.skippedConstraintIds.length > 0 && (
-        <div>
-          <div className="text-slate-500">skipped constraints</div>
-          {lastOutcome.skippedConstraintIds.map((s) => (
-            <div key={s} className="text-amber-300">
-              {s}
-            </div>
-          ))}
-        </div>
-      )}
-      {lastOutcome.conflictingConstraintIds.length > 0 && (
-        <div>
-          <div className="text-slate-500">conflicting constraints</div>
-          {lastOutcome.conflictingConstraintIds.map((s) => (
-            <div key={s} className="text-rose-300">
-              {s}
-            </div>
-          ))}
-        </div>
-      )}
+      <IdList label="conflicting constraints" ids={lastOutcome.conflictingIds} />
+      <IdList label="redundant constraints" ids={lastOutcome.redundantIds} />
       <div>
         <div className="mb-1 text-slate-500">
           history (last {history.length})

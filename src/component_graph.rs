@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{Constraint, ConstraintType, ParameterManager};
+use crate::Constraint;
+use crate::constraints::reads;
 
 struct UnionFind {
     parent: HashMap<String, String>,
@@ -56,29 +57,40 @@ pub struct ConnectedComponents {
     pub components: Vec<Vec<usize>>,
 }
 
-/// Partition constraints into connected components by shared entity IDs.
-pub fn find_components(constraint_types: &[ConstraintType]) -> ConnectedComponents {
-    let mut uf = UnionFind::new();
+/// Partition constraints into connected components by the entities they read,
+/// Guides included: a copy must be solved together with whatever moves its
+/// Guide, so it follows.
+pub fn find_components(constraints: &[Box<dyn Constraint>]) -> ConnectedComponents {
+    find_components_of(constraints.iter().map(|c| c.as_ref()))
+}
 
-    for ct in constraint_types {
-        let ids = ct.entity_ids();
-        for id in &ids {
+/// [`find_components`] over any sequence of constraints; indices are
+/// positions in that sequence.
+pub(crate) fn find_components_of<'c>(constraints: impl Iterator<Item = &'c dyn Constraint>) -> ConnectedComponents {
+    let entity_ids: Vec<Vec<String>> = constraints
+        .map(|c| {
+            let mut ids: Vec<String> =
+                reads(c).iter().map(|p| p.entity_id().to_string()).collect();
+            ids.dedup();
+            ids
+        })
+        .collect();
+
+    let mut uf = UnionFind::new();
+    for ids in &entity_ids {
+        for id in ids {
             uf.ensure(id);
         }
-        if ids.len() >= 2 {
-            for id in &ids[1..] {
-                uf.union(ids[0], id);
-            }
+        for id in ids.iter().skip(1) {
+            uf.union(&ids[0], id);
         }
     }
 
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, ct) in constraint_types.iter().enumerate() {
-        let ids = ct.entity_ids();
-        let root = if ids.is_empty() {
-            format!("__solo_{i}__")
-        } else {
-            uf.find(ids[0])
+    for (i, ids) in entity_ids.iter().enumerate() {
+        let root = match ids.first() {
+            Some(id) => uf.find(id),
+            None => format!("__solo_{i}__"),
         };
         groups.entry(root).or_default().push(i);
     }
@@ -86,16 +98,4 @@ pub fn find_components(constraint_types: &[ConstraintType]) -> ConnectedComponen
     ConnectedComponents {
         components: groups.into_values().collect(),
     }
-}
-
-/// Returns true if every constraint in this component has residual L-inf ≤ tolerance.
-pub fn is_component_satisfied(
-    indices: &[usize],
-    constraints: &[Box<dyn Constraint>],
-    param_manager: &ParameterManager,
-    tolerance: f64,
-) -> bool {
-    indices
-        .iter()
-        .all(|&i| constraints[i].residual(param_manager).amax() <= tolerance)
 }

@@ -1,8 +1,8 @@
 #![allow(non_snake_case)]
 
-use nalgebra::{DMatrix, DVector};
+use nalgebra::DMatrix;
 
-use crate::{ParameterManager, constraints::Constraint};
+use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Forces two circles to share the same center (concentric).
 ///
@@ -27,33 +27,18 @@ impl ConcentricConstraint {
 }
 
 impl Constraint for ConcentricConstraint {
+    fn vars(&self) -> Vec<Var<'_>> {
+        [xy(&self.center1_id), xy(&self.center2_id)].concat()
+    }
+
     fn num_residuals(&self) -> usize {
         2
     }
 
-    fn residual(&self, pm: &ParameterManager) -> DVector<f64> {
-        let p = pm.get_parameters();
-        let cx1 = p[pm.get_global_index(&self.center1_id, 0).expect("center1.x")];
-        let cy1 = p[pm.get_global_index(&self.center1_id, 1).expect("center1.y")];
-        let cx2 = p[pm.get_global_index(&self.center2_id, 0).expect("center2.x")];
-        let cy2 = p[pm.get_global_index(&self.center2_id, 1).expect("center2.y")];
-        DVector::from(vec![cx1 - cx2, cy1 - cy2])
-    }
-
-    fn jacobian(&self, pm: &ParameterManager) -> DMatrix<f64> {
-        let n = pm.num_parameters();
-        let mut J = DMatrix::<f64>::zeros(2, n);
-
-        let i_cx1 = pm.get_global_index(&self.center1_id, 0).expect("center1.x");
-        let i_cy1 = pm.get_global_index(&self.center1_id, 1).expect("center1.y");
-        let i_cx2 = pm.get_global_index(&self.center2_id, 0).expect("center2.x");
-        let i_cy2 = pm.get_global_index(&self.center2_id, 1).expect("center2.y");
-
-        J[(0, i_cx1)] = 1.0;
-        J[(0, i_cx2)] = -1.0;
-        J[(1, i_cy1)] = 1.0;
-        J[(1, i_cy2)] = -1.0;
-
-        J
+    fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
+        r[0] = x[0] - x[2];
+        r[1] = x[1] - x[3];
+        set_row(j, 0, &[1.0, 0.0, -1.0, 0.0]);
+        set_row(j, 1, &[0.0, 1.0, 0.0, -1.0]);
     }
 }

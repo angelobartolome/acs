@@ -2,7 +2,9 @@
  * Framework-agnostic sketch model. No React imports allowed in core/.
  *
  * The model mirrors the `acsSolveSketch` JSON API: points carry coordinates,
- * lines reference two point ids, circles/arcs reference a center point id.
+ * lines reference two point ids, circles reference a center point id, and
+ * arcs reference center, start and end point ids; the
+ * solver always keeps an arc's endpoints on it.
  */
 
 export type EntityId = string;
@@ -38,10 +40,14 @@ export interface ArcEntity {
   id: EntityId;
   /** id of the center point */
   center: EntityId;
+  /** id of the start point (at `startAngle`) */
+  start: EntityId;
+  /** id of the end point (at `endAngle`) */
+  end: EntityId;
   radius: number;
   /** radians */
   startAngle: number;
-  /** radians */
+  /** radians; the arc sweeps counter-clockwise from startAngle */
   endAngle: number;
   fixed: boolean;
 }
@@ -52,10 +58,13 @@ export type EntityKind = SketchEntity["kind"];
 /** An applied constraint. `entities` is ordered per the registry selection spec. */
 export interface ConstraintInstance {
   id: string;
-  /** JSON constraint type, e.g. "p2p_distance" */
-  type: string;
+  /**
+   * key of its registry entry (a variant of a native type), e.g.
+   * "distance_point_line" for a `distance` from a point to a line
+   */
+  def: string;
   entities: EntityId[];
-  /** scalar params keyed by JSON field name (distance/angle/radius/x/y) */
+  /** scalar params keyed by JSON field name (value/side/angle/distance/count) */
   params: Record<string, number>;
 }
 

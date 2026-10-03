@@ -1,11 +1,16 @@
-//! Solve Part3D
+//! JSON sketch API: parses primitives, solves, and builds the response.
+//! Constraint types and their fields are declared in `constraint_catalog`,
+//! once per vocabulary: ACS's native one ([`solve_sketch_json`]) and the
+//! PlaneGCS dialect ([`solve_planegcs_sketch_json`]). The
+//! envelope, geometry primitives and Parameters are the same in both.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
-use crate::geometry::{Arc as GeoArc, Circle, Line, Point};
-use crate::{ConstraintSolver, ConstraintType, SolverResult};
+use crate::geometry::{Arc as GeoArc, Circle, Ellipse, Line, Point};
+use crate::constraint_catalog::{References, Vocabulary};
+use crate::{ConstraintSolver, SolverResult};
 
 fn as_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key)?.as_str()
@@ -15,35 +20,7 @@ fn as_string(v: &Value, key: &str) -> Option<String> {
     as_str(v, key).map(String::from)
 }
 
-/// `distance`, `angle`, etc. may be number, numeric string, or param ref object.
-fn extract_scalar_f64(v: &Value) -> Option<f64> {
-    if let Some(n) = v.as_f64() {
-        return Some(n);
-    }
-    if let Some(i) = v.as_i64() {
-        return Some(i as f64);
-    }
-    if let Some(u) = v.as_u64() {
-        return Some(u as f64);
-    }
-    if let Some(s) = v.as_str() {
-        return s.parse().ok();
-    }
-    None
-}
-
-const GEOMETRY_TYPES: &[&str] = &[
-    "point",
-    "line",
-    "circle",
-    "arc",
-    "ellipse",
-    "arc_of_ellipse",
-    "hyperbola",
-    "arc_of_hyperbola",
-    "parabola",
-    "arc_of_parabola",
-];
+const GEOMETRY_TYPES: &[&str] = &["point", "line", "circle", "arc", "ellipse"];
 
 fn is_geometry(t: &str) -> bool {
     GEOMETRY_TYPES.contains(&t)
@@ -72,283 +49,108 @@ fn build_line_endpoints(primitives: &[Value]) -> HashMap<String, (String, String
     m
 }
 
-fn constraint_to_acs(
-    c: &Value,
-    lines: &HashMap<String, (String, String)>,
-    skipped: &mut Vec<String>,
-) -> Option<ConstraintType> {
-    let ctype = as_str(c, "type")?;
-    let cid = as_string(c, "id").unwrap_or_default();
-
-    let line_pts = |lid: &str| -> Option<(String, String)> {
-        lines.get(lid).cloned()
-    };
-
-    match ctype {
-        "horizontal_pp" => {
-            let p1 = as_string(c, "p1_id")?;
-            let p2 = as_string(c, "p2_id")?;
-            Some(ConstraintType::Horizontal(p1, p2))
-        }
-        "vertical_pp" => {
-            let p1 = as_string(c, "p1_id")?;
-            let p2 = as_string(c, "p2_id")?;
-            Some(ConstraintType::Vertical(p1, p2))
-        }
-        "horizontal_l" => {
-            let lid = as_string(c, "l_id")?;
-            let (p1, p2) = line_pts(&lid)?;
-            Some(ConstraintType::Horizontal(p1, p2))
-        }
-        "vertical_l" => {
-            let lid = as_string(c, "l_id")?;
-            let (p1, p2) = line_pts(&lid)?;
-            Some(ConstraintType::Vertical(p1, p2))
-        }
-        "parallel" => {
-            let l1 = as_string(c, "l1_id")?;
-            let l2 = as_string(c, "l2_id")?;
-            let (a, b) = line_pts(&l1)?;
-            let (c2, d) = line_pts(&l2)?;
-            Some(ConstraintType::Parallel(a, b, c2, d))
-        }
-        "perpendicular_ll" => {
-            let l1 = as_string(c, "l1_id")?;
-            let l2 = as_string(c, "l2_id")?;
-            let (a, b) = line_pts(&l1)?;
-            let (c2, d) = line_pts(&l2)?;
-            Some(ConstraintType::Perpendicular(a, b, c2, d))
-        }
-        "perpendicular_pppp" => {
-            let a = as_string(c, "l1p1_id")?;
-            let b = as_string(c, "l1p2_id")?;
-            let c2 = as_string(c, "l2p1_id")?;
-            let d = as_string(c, "l2p2_id")?;
-            Some(ConstraintType::Perpendicular(a, b, c2, d))
-        }
-        "p2p_coincident" => {
-            let p1 = as_string(c, "p1_id")?;
-            let p2 = as_string(c, "p2_id")?;
-            Some(ConstraintType::Coincident(p1, p2))
-        }
-        "point_on_line_pl" => {
-            let p = as_string(c, "p_id")?;
-            let lid = as_string(c, "l_id")?;
-            let (a, b) = line_pts(&lid)?;
-            Some(ConstraintType::PointOnLine(p, a, b))
-        }
-        "point_on_line_ppp" => {
-            let p = as_string(c, "p_id")?;
-            let a = as_string(c, "lp1_id")?;
-            let b = as_string(c, "lp2_id")?;
-            Some(ConstraintType::PointOnLine(p, a, b))
-        }
-        "point_on_circle" => {
-            let p = as_string(c, "p_id")?;
-            let circle = as_string(c, "c_id")?;
-            let center = as_string(c, "center_id")?;
-            Some(ConstraintType::PointOnCircle(p, center, circle))
-        }
-        "p2p_distance" => {
-            let p1 = as_string(c, "p1_id")?;
-            let p2 = as_string(c, "p2_id")?;
-            let dist = c.get("distance").and_then(extract_scalar_f64)?;
-            Some(ConstraintType::DistancePointPoint(p1, p2, dist))
-        }
-        "p2l_distance" => {
-            let p = as_string(c, "p_id")?;
-            let lid = as_string(c, "l_id")?;
-            let (a, b) = line_pts(&lid)?;
-            let dist = c.get("distance").and_then(extract_scalar_f64)?;
-            Some(ConstraintType::DistancePointLine(p, a, b, dist))
-        }
-        "l2l_angle_pppp" => {
-            let p1 = as_string(c, "l1p1_id")?;
-            let p2 = as_string(c, "l1p2_id")?;
-            let p3 = as_string(c, "l2p1_id")?;
-            let p4 = as_string(c, "l2p2_id")?;
-            let ang = c.get("angle").and_then(extract_scalar_f64)?;
-            Some(ConstraintType::Angle(p1, p2, p3, p4, ang))
-        }
-        "l2l_angle_ll" => {
-            let l1 = as_string(c, "l1_id")?;
-            let l2 = as_string(c, "l2_id")?;
-            let (a, b) = line_pts(&l1)?;
-            let (c2, d) = line_pts(&l2)?;
-            let ang = c.get("angle").and_then(extract_scalar_f64)?;
-            Some(ConstraintType::Angle(a, b, c2, d, ang))
-        }
-        "equal_length" => {
-            let l1 = as_string(c, "l1_id")?;
-            let l2 = as_string(c, "l2_id")?;
-            let (a, b) = line_pts(&l1)?;
-            let (c2, d) = line_pts(&l2)?;
-            Some(ConstraintType::EqualLength(a, b, c2, d))
-        }
-        "equal_radius_cc" => {
-            let c1 = as_string(c, "c1_id")?;
-            let c2 = as_string(c, "c2_id")?;
-            Some(ConstraintType::EqualRadius(c1, c2))
-        }
-        "equal_radius_aa" => {
-            let a1 = as_string(c, "a1_id")?;
-            let a2 = as_string(c, "a2_id")?;
-            Some(ConstraintType::EqualRadius(a1, a2))
-        }
-        "circle_radius" => {
-            let circle = as_string(c, "c_id")?;
-            let r = c.get("radius").and_then(extract_scalar_f64)?;
-            Some(ConstraintType::FixedRadius(circle, r))
-        }
-        "arc_radius" => {
-            let arc = as_string(c, "a_id")?;
-            let r = c.get("radius").and_then(extract_scalar_f64)?;
-            Some(ConstraintType::FixedRadius(arc, r))
-        }
-        "tangent_lc" => {
-            let lid = as_string(c, "l_id")?;
-            let (pa, pb) = line_pts(&lid)?;
-            let circle = as_string(c, "c_id")?;
-            let center = as_string(c, "center_id")?;
-            Some(ConstraintType::TangentLineCircle(pa, pb, center, circle))
-        }
-        "midpoint_on_line_ll" => {
-            let l1 = as_string(c, "l1_id")?;
-            let l2 = as_string(c, "l2_id")?;
-            let (a, b) = line_pts(&l1)?;
-            let (c2, d) = line_pts(&l2)?;
-            Some(ConstraintType::MidpointOfLineOnLine(a, b, c2, d))
-        }
-        "midpoint_on_line_pppp" => {
-            let a = as_string(c, "l1p1_id")?;
-            let b = as_string(c, "l1p2_id")?;
-            let c2 = as_string(c, "l2p1_id")?;
-            let d = as_string(c, "l2p2_id")?;
-            Some(ConstraintType::MidpointOfLineOnLine(a, b, c2, d))
-        }
-        "p2p_symmetric_ppp" => {
-            let p1 = as_string(c, "p1_id")?;
-            let p2 = as_string(c, "p2_id")?;
-            let pm = as_string(c, "p_id")?;
-            Some(ConstraintType::Midpoint(pm, p1, p2))
-        }
-        "p2p_symmetric_ppl" => {
-            let p1 = as_string(c, "p1_id")?;
-            let p2 = as_string(c, "p2_id")?;
-            let lid = as_string(c, "l_id")?;
-            let (a, b) = line_pts(&lid)?;
-            Some(ConstraintType::Symmetric(p1, p2, a, b))
-        }
-        "coordinate_x" => {
-            let p = as_string(c, "p_id")?;
-            let x = c.get("x").and_then(extract_scalar_f64)?;
-            Some(ConstraintType::EqualX(p, x))
-        }
-        "coordinate_y" => {
-            let p = as_string(c, "p_id")?;
-            let y = c.get("y").and_then(extract_scalar_f64)?;
-            Some(ConstraintType::EqualY(p, y))
-        }
-        _ => {
-            skipped.push(format!("{}:{}", cid, ctype));
-            None
-        }
-    }
-}
-
-/// Resolve circle center point id for constraints that only reference `c_id`.
-fn enrich_circle_center_refs(primitives: &[Value]) -> Vec<Value> {
-    let mut circle_center: HashMap<String, String> = HashMap::new();
-    for p in primitives {
-        let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
-            continue;
-        };
-        if t != "circle" {
-            continue;
-        }
-        let Some(id) = as_str(p, "id") else {
-            continue;
-        };
-        if let Some(cid) = as_string(p, "c_id") {
-            circle_center.insert(id.to_string(), cid);
-        }
-    }
-
+/// Circle and Arc IDs mapped to their center Point IDs.
+fn build_centers(primitives: &[Value]) -> HashMap<String, String> {
     primitives
         .iter()
-        .map(|p| {
-            let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
-                return p.clone();
-            };
-            let needs_center = t == "point_on_circle" || t == "tangent_lc";
-            if !needs_center || p.get("center_id").is_some() {
-                return p.clone();
-            }
-            let Some(c_id) = as_str(p, "c_id") else {
-                return p.clone();
-            };
-            let Some(center) = circle_center.get(c_id).cloned() else {
-                return p.clone();
-            };
-            let mut o = p.clone();
-            if let Some(obj) = o.as_object_mut() {
-                obj.insert("center_id".to_string(), json!(center));
-            }
-            o
+        .filter(|p| matches!(as_str(p, "type"), Some("circle" | "arc")))
+        .filter_map(|p| Some((as_string(p, "id")?, as_string(p, "c_id")?)))
+        .collect()
+}
+
+/// Arc IDs mapped to their (start, end) Point IDs.
+fn build_arc_endpoints(primitives: &[Value]) -> HashMap<String, (String, String)> {
+    primitives
+        .iter()
+        .filter(|p| as_str(p, "type") == Some("arc"))
+        .filter_map(|p| {
+            Some((
+                as_string(p, "id")?,
+                (as_string(p, "start_id")?, as_string(p, "end_id")?),
+            ))
         })
         .collect()
 }
 
-fn register_geometry(cs: &mut ConstraintSolver, p: &Value) -> Result<(), String> {
-    let t = p
-        .get("type")
-        .and_then(|x| x.as_str())
-        .ok_or_else(|| "primitive missing type".to_string())?;
-    if !is_geometry(t) {
-        return Ok(());
-    }
+/// Ellipse IDs mapped to their (center, focus) Point IDs.
+fn build_ellipses(primitives: &[Value]) -> HashMap<String, (String, String)> {
+    primitives
+        .iter()
+        .filter(|p| as_str(p, "type") == Some("ellipse"))
+        .filter_map(|p| {
+            Some((
+                as_string(p, "id")?,
+                (as_string(p, "c_id")?, as_string(p, "focus1_id")?),
+            ))
+        })
+        .collect()
+}
 
+fn required_str(p: &Value, key: &str, what: &str) -> Result<String, String> {
+    as_string(p, key).ok_or_else(|| format!("{what}: missing field '{key}'"))
+}
+
+fn required_f64(p: &Value, key: &str, what: &str) -> Result<f64, String> {
+    p.get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| format!("{what}: missing field '{key}'"))
+}
+
+/// Whether the solver must hold an entity's own values (a Point's
+/// coordinates, a Circle's radius, an Arc's radius and angles, an Ellipse's
+/// `radmin`): `fixed`, or Reference Geometry (`isReference`), which never
+/// moves.
+fn fixed(p: &Value) -> bool {
+    let flag = |key| p.get(key).and_then(Value::as_bool).unwrap_or(false);
+    flag("fixed") || flag("isReference")
+}
+
+/// Adds one geometry primitive to the solver. Errors name the primitive and
+/// the missing field.
+fn register_geometry(cs: &mut ConstraintSolver, t: &str, id: &str, p: &Value) -> Result<(), String> {
+    let what = format!("{t} {id}");
+    let id = id.to_string();
     match t {
         "point" => {
-            let id = as_string(p, "id").ok_or_else(|| "point missing id".to_string())?;
-            let x = p.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let y = p.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let fixed = p.get("fixed").and_then(|v| v.as_bool()).unwrap_or(false);
-            cs.add_point(Point::new(id, x, y, fixed));
+            let x = required_f64(p, "x", &what)?;
+            let y = required_f64(p, "y", &what)?;
+            cs.add_point(Point::new(id, x, y, fixed(p)));
         }
         "line" => {
-            let id = as_string(p, "id").ok_or_else(|| "line missing id".to_string())?;
-            let p1 = as_string(p, "p1_id").ok_or_else(|| "line missing p1_id".to_string())?;
-            let p2 = as_string(p, "p2_id").ok_or_else(|| "line missing p2_id".to_string())?;
+            let p1 = required_str(p, "p1_id", &what)?;
+            let p2 = required_str(p, "p2_id", &what)?;
             cs.add_line(Line::new(id, p1, p2));
         }
         "circle" => {
-            let id = as_string(p, "id").ok_or_else(|| "circle missing id".to_string())?;
-            let center = as_string(p, "c_id").ok_or_else(|| "circle missing c_id".to_string())?;
-            let radius = p.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let fixed = p.get("fixed").and_then(|v| v.as_bool()).unwrap_or(false);
-            cs.add_circle(Circle::new(id, center, radius, fixed));
+            let center = required_str(p, "c_id", &what)?;
+            let radius = required_f64(p, "radius", &what)?;
+            cs.add_circle(Circle::new(id, center, radius, fixed(p)));
         }
         "arc" => {
-            let id = as_string(p, "id").ok_or_else(|| "arc missing id".to_string())?;
-            let center = as_string(p, "c_id").ok_or_else(|| "arc missing c_id".to_string())?;
-            let radius = p.get("radius").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let start_angle = p
-                .get("start_angle")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
-            let end_angle = p.get("end_angle").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let fixed = p.get("fixed").and_then(|v| v.as_bool()).unwrap_or(false);
+            let center = required_str(p, "c_id", &what)?;
+            let start = required_str(p, "start_id", &what)?;
+            let end = required_str(p, "end_id", &what)?;
+            let radius = required_f64(p, "radius", &what)?;
+            let start_angle = required_f64(p, "start_angle", &what)?;
+            let end_angle = required_f64(p, "end_angle", &what)?;
             cs.add_arc(GeoArc::new(
                 id,
                 center,
+                start,
+                end,
                 radius,
                 start_angle,
                 end_angle,
-                fixed,
+                fixed(p),
             ));
         }
-        _ => { /* ellipse etc. — not in ACS system */ }
+        "ellipse" => {
+            let center = required_str(p, "c_id", &what)?;
+            let focus = required_str(p, "focus1_id", &what)?;
+            let radmin = required_f64(p, "radmin", &what)?;
+            cs.add_ellipse(Ellipse::new(id, center, focus, radmin, fixed(p)));
+        }
+        _ => unreachable!("not a geometry type: {t}"),
     }
     Ok(())
 }
@@ -374,22 +176,30 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
             {
                 obj.insert("radius".to_string(), json!(c.radius));
             }
-        } else if t == "arc"
-            && let Some(a) = cs.get_arc(id.to_string())
+        } else if t == "arc" {
+            if let Some(a) = cs.get_arc(id.to_string())
+                && let Some(obj) = p.as_object_mut()
+            {
+                obj.insert("radius".to_string(), json!(a.radius));
+                obj.insert("start_angle".to_string(), json!(a.start_angle));
+                obj.insert("end_angle".to_string(), json!(a.end_angle));
+            }
+        } else if t == "ellipse"
+            && let Some(e) = cs.get_ellipse(id.to_string())
             && let Some(obj) = p.as_object_mut()
         {
-            obj.insert("radius".to_string(), json!(a.radius));
-            obj.insert("start_angle".to_string(), json!(a.start_angle));
-            obj.insert("end_angle".to_string(), json!(a.end_angle));
+            obj.insert("radmin".to_string(), json!(e.radmin));
         }
     }
 }
 
 /// Computes the set of fully-constrained (DOF = 0) entity IDs, including lines.
 ///
-/// The solver only knows about parameter-bearing entities (points, circles, arcs);
-/// a `Line` owns no parameters, so it is reported fully constrained when both of its
-/// endpoints (`p1_id`, `p2_id`) are fully constrained.
+/// The solver only knows about parameter-bearing entities (points, circles, arcs,
+/// ellipses); a `Line` owns no parameters, so it is reported fully constrained when
+/// both of its endpoints (`p1_id`, `p2_id`) are fully constrained. An ellipse's
+/// shape and place also depend on its center and focus Points, so it is reported
+/// only when its `radmin` and both of those Points are.
 fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<String> {
     let mut constrained: std::collections::BTreeSet<String> =
         cs.fully_constrained_entity_ids().into_iter().collect();
@@ -398,17 +208,20 @@ fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<Str
         let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
             continue;
         };
-        if t != "line" {
-            continue;
-        }
-        let (Some(id), Some(p1), Some(p2)) = (
-            as_string(p, "id"),
-            as_string(p, "p1_id"),
-            as_string(p, "p2_id"),
-        ) else {
+        let (keys, own_vars): (&[&str], bool) = match t {
+            "line" => (&["p1_id", "p2_id"], false),
+            "ellipse" => (&["c_id", "focus1_id"], true),
+            _ => continue,
+        };
+        let Some(id) = as_string(p, "id") else {
             continue;
         };
-        if constrained.contains(&p1) && constrained.contains(&p2) {
+        let points_locked = keys.iter().all(|k| {
+            as_string(p, k).is_some_and(|point| constrained.contains(&point))
+        });
+        if !points_locked {
+            constrained.remove(&id);
+        } else if !own_vars {
             constrained.insert(id);
         }
     }
@@ -416,123 +229,224 @@ fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<Str
     constrained.into_iter().collect()
 }
 
-/// Input: `{ "primitives": [ ... ], "max_iterations"?: number }` or a bare JSON array (primitives only).
-pub fn solve_sketch_primitives_json(input: &str) -> Result<String, String> {
-    let root: Value = serde_json::from_str(input).map_err(|e| e.to_string())?;
+/// The wire type of a Parameter: a named value constraints share by id. The
+/// solver holds it fixed and echoes it back unchanged.
+const PARAM: &str = "param";
 
-    let (primitives_val, max_iter) = if root.is_array() {
-        (root.clone(), None)
-    } else {
-        let arr = root
-            .get("primitives")
-            .cloned()
-            .filter(|v| v.is_array())
-            .ok_or_else(|| "expected object with primitives array or a bare array".to_string())?;
-        let mi = root
-            .get("max_iterations")
-            .and_then(|v| v.as_u64())
-            .map(|u| u as usize);
-        (arr, mi)
-    };
+/// Parameter id → value. Errors name a Parameter without a numeric `value`.
+fn build_params(typed: &[(&str, &str, &Value)]) -> Result<HashMap<String, f64>, String> {
+    typed
+        .iter()
+        .filter(|(t, ..)| *t == PARAM)
+        .map(|&(t, id, p)| Ok((id.to_string(), required_f64(p, "value", &format!("{t} {id}"))?)))
+        .collect()
+}
 
-    let primitives_arr = primitives_val
-        .as_array()
-        .ok_or_else(|| "primitives must be an array".to_string())?;
+/// Why a request couldn't be read, and the constraint it's about, if any.
+struct Rejection {
+    error: String,
+    constraint_id: Option<String>,
+}
 
-    let enriched = enrich_circle_center_refs(primitives_arr);
-    let lines = build_line_endpoints(&enriched);
+impl From<String> for Rejection {
+    fn from(error: String) -> Self {
+        Rejection {
+            error,
+            constraint_id: None,
+        }
+    }
+}
+
+impl From<&str> for Rejection {
+    fn from(error: &str) -> Self {
+        error.to_string().into()
+    }
+}
+
+fn constraint_error(id: &str, error: impl std::fmt::Display) -> Rejection {
+    Rejection {
+        error: format!("constraint {id}: {error}"),
+        constraint_id: Some(id.to_string()),
+    }
+}
+
+/// The `{ version: 1, status: "invalid", error, constraintId? }` response for
+/// a request that couldn't be read.
+fn error_response(r: Rejection) -> String {
+    let mut out = json!({ "version": 1, "status": "invalid", "error": r.error });
+    if let Some(id) = r.constraint_id {
+        out["constraintId"] = json!(id);
+    }
+    out.to_string()
+}
+
+/// Solves one sketch written in ACS's native constraint vocabulary
+/// (`acsSolveSketch`). See [`solve_sketch_json_in`] for the contract.
+pub fn solve_sketch_json(request: &str) -> Result<String, String> {
+    solve_sketch_json_in(Vocabulary::Native, request)
+}
+
+/// Solves one sketch written in the PlaneGCS dialect, the constraint types
+/// the dialect accepts (`P3DSketch_Solve`, `acsSolveSketchPlaneGcs`). See
+/// [`solve_sketch_json_in`] for the contract.
+pub fn solve_planegcs_sketch_json(request: &str) -> Result<String, String> {
+    solve_sketch_json_in(Vocabulary::PlaneGcs, request)
+}
+
+/// Solves one sketch whose constraints speak `vocabulary`, using the
+/// contract of `P3DSketch_Solve`:
+///
+/// - Request: `{ "version": 1, "primitives": [...], "maxIterations"?: n }`.
+/// - Response: `{ "version": 1, "status": "converged" | "failed",
+///   "primitives": [...], "conflicting": [...], "redundant": [...], "dof": n }`
+///   with the request's primitives in the same order and their solved values.
+///   ACS also adds `stats` (`iterations`, `initialError`, `finalError`) and
+///   `fullyConstrained` (entity IDs with zero degrees of freedom, only on a
+///   converged solve).
+///
+/// Returns `Ok(response)` when the request was understood, whatever the solve
+/// status, and `Err(response)` with `status: "invalid"` and an `error` naming
+/// the problem otherwise: malformed JSON, a wrong version or `maxIterations`,
+/// a duplicate id, an unknown or unsupported type, a missing field, a
+/// reference to a missing entity or (native) a combination of entity kinds
+/// no variant of the type takes. When the problem is a constraint, the
+/// response also carries its `constraintId`.
+pub fn solve_sketch_json_in(vocabulary: Vocabulary, request: &str) -> Result<String, String> {
+    solve_request(vocabulary, request).map_err(error_response)
+}
+
+fn solve_request(vocabulary: Vocabulary, request: &str) -> Result<String, Rejection> {
+    let root: Value = serde_json::from_str(request).map_err(|e| format!("invalid JSON: {e}"))?;
+    if root.get("version").and_then(Value::as_f64) != Some(1.0) {
+        return Err("unsupported request version".into());
+    }
+    let primitives = root
+        .get("primitives")
+        .and_then(Value::as_array)
+        .ok_or("request has no primitives array")?;
 
     let mut cs = ConstraintSolver::new();
-    if let Some(n) = max_iter {
-        cs.set_max_iterations(n);
+    if let Some(v) = root.get("maxIterations") {
+        let n = v
+            .as_u64()
+            .ok_or("maxIterations must be a non-negative whole number")?;
+        cs.set_max_iterations(n as usize);
     }
 
-    for p in &enriched {
-        register_geometry(&mut cs, p).map_err(|e| format!("geometry: {e}"))?;
-    }
-
-    let mut skipped_constraint_ids: Vec<String> = Vec::new();
-
-    for p in &enriched {
-        let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
-            continue;
+    let mut seen = HashSet::new();
+    let mut typed: Vec<(&str, &str, &Value)> = Vec::with_capacity(primitives.len());
+    for (i, p) in primitives.iter().enumerate() {
+        let t = as_str(p, "type").ok_or_else(|| format!("primitive #{i} has no type"))?;
+        let id = match as_str(p, "id") {
+            Some(id) => id,
+            // GCS keys a Parameter by its `name`, and GCS-style clients send
+            // them without an `id`; constraints then reference the name.
+            None if t == PARAM && vocabulary == Vocabulary::PlaneGcs => as_str(p, "name")
+                .ok_or_else(|| format!("primitive #{i} has no id or name"))?,
+            None => return Err(format!("primitive #{i} has no id").into()),
         };
-        if is_geometry(t) {
-            continue;
+        if !seen.insert(id) {
+            return Err(format!("duplicate id '{id}'").into());
         }
-
-        let Some(ct) = constraint_to_acs(p, &lines, &mut skipped_constraint_ids) else {
-            continue;
-        };
-
-        if let Err(e) = cs.add_constraint(ct) {
-            let id = as_string(p, "id").unwrap_or_default();
-            skipped_constraint_ids.push(format!("{}:add_error:{e}", id));
-        }
+        typed.push((t, id, p));
     }
 
-    let solve_result = cs.solve();
+    let refs = References {
+        line_endpoints: build_line_endpoints(primitives),
+        centers: build_centers(primitives),
+        params: build_params(&typed)?,
+        entity_types: typed
+            .iter()
+            .filter(|(t, ..)| is_geometry(t))
+            .map(|&(t, id, _)| (id.to_string(), t.to_string()))
+            .collect(),
+        arc_endpoints: build_arc_endpoints(primitives),
+        ellipses: build_ellipses(primitives),
+        vocabulary,
+    };
 
-    let mut out: Vec<Value> = primitives_arr.clone();
-
-    let (status, solve_status_num, error_msg, stats): (&str, i32, Option<String>, Option<Value>) =
-        match &solve_result {
-            Ok(SolverResult::Converged {
-                iterations,
-                final_error,
-                initial_error,
-            }) => (
-                "converged",
-                1,
-                None,
-                Some(json!({
-                    "iterations": iterations,
-                    "initial_error": initial_error,
-                    "final_error": final_error,
-                })),
-            ),
-            Ok(SolverResult::MaxIterationsReached {
-                iterations,
-                final_error,
-                initial_error,
-            }) => (
-                "failed",
-                2,
-                Some("Solver did not converge".to_string()),
-                Some(json!({
-                    "iterations": iterations,
-                    "initial_error": initial_error,
-                    "final_error": final_error,
-                })),
-            ),
-            Err(e) => ("failed", 2, Some(e.clone()), None),
-        };
-
-    if solve_result.is_ok() {
-        apply_solution_to_primitives(&mut out, &cs);
+    for &(t, id, p) in typed.iter().filter(|(t, ..)| is_geometry(t)) {
+        register_geometry(&mut cs, t, id, p)?;
+    }
+    check_geometry_references(&cs, &typed)?;
+    // JSON id of each constraint, by `ConstraintSolver` index.
+    let mut constraint_ids: Vec<&str> = Vec::new();
+    for &(t, id, p) in typed.iter().filter(|(t, ..)| !is_geometry(t) && *t != PARAM) {
+        let temporary = p.get("temporary").and_then(Value::as_bool).unwrap_or(false);
+        vocabulary
+            .parse(t, p, &refs)
+            .and_then(|ct| {
+                if temporary {
+                    cs.add_temporary_constraint(ct)
+                } else {
+                    cs.add_constraint(ct)
+                }
+            })
+            .map_err(|e| constraint_error(id, e))?;
+        constraint_ids.push(id);
     }
 
-    let ok_converged = matches!(solve_result, Ok(SolverResult::Converged { .. }));
+    let (converged, iterations, initial_error, final_error) = match cs.solve()? {
+        SolverResult::Converged {
+            iterations,
+            initial_error,
+            final_error,
+        } => (true, iterations, initial_error, final_error),
+        SolverResult::MaxIterationsReached {
+            iterations,
+            initial_error,
+            final_error,
+        } => (false, iterations, initial_error, final_error),
+    };
 
-    // Fully-constrained (DOF = 0) analysis is only meaningful at a converged
-    // configuration; report an empty list otherwise.
-    let fully_constrained: Vec<String> = if ok_converged {
-        fully_constrained_ids(&cs, primitives_arr)
+    let mut out = primitives.clone();
+    apply_solution_to_primitives(&mut out, &cs);
+
+    // Zero-DOF analysis is only meaningful at a solved configuration.
+    let fully_constrained = if converged {
+        fully_constrained_ids(&cs, primitives)
     } else {
         Vec::new()
     };
 
-    let response = json!({
-        "ok": ok_converged,
-        "status": status,
-        "solveStatus": solve_status_num,
-        "primitives": out,
-        "skipped_constraint_ids": skipped_constraint_ids,
-        "conflicting_constraint_ids": Vec::<String>::new(),
-        "fully_constrained_ids": fully_constrained,
-        "error": error_msg,
-        "stats": stats,
-    });
+    // Diagnosed at the solved position, after the solve.
+    let diagnosis = cs.diagnose();
+    let to_ids = |indices: &[usize]| -> Vec<&str> { indices.iter().map(|&i| constraint_ids[i]).collect() };
 
-    serde_json::to_string(&response).map_err(|e| e.to_string())
+    Ok(json!({
+        "version": 1,
+        "status": if converged { "converged" } else { "failed" },
+        "primitives": out,
+        "conflicting": to_ids(&diagnosis.conflicting),
+        "redundant": to_ids(&diagnosis.redundant),
+        "dof": cs.dof(),
+        "fullyConstrained": fully_constrained,
+        "stats": {
+            "iterations": iterations,
+            "initialError": initial_error,
+            "finalError": final_error,
+        },
+    })
+    .to_string())
+}
+
+/// Lines' endpoints, circles' centers, arcs' centers and endpoints and
+/// ellipses' centers and foci must be Points.
+fn check_geometry_references(cs: &ConstraintSolver, typed: &[(&str, &str, &Value)]) -> Result<(), String> {
+    for &(t, id, p) in typed {
+        let keys: &[&str] = match t {
+            "line" => &["p1_id", "p2_id"],
+            "circle" => &["c_id"],
+            "arc" => &["c_id", "start_id", "end_id"],
+            "ellipse" => &["c_id", "focus1_id"],
+            _ => continue,
+        };
+        for key in keys {
+            let target = as_str(p, key).unwrap_or_default();
+            if cs.get_point(target.to_string()).is_none() {
+                return Err(format!("{t} {id}: '{target}' is not a point"));
+            }
+        }
+    }
+    Ok(())
 }

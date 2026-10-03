@@ -40,3 +40,31 @@ fn test_point_on_line_constraint() {
         constrained_point.x
     );
 }
+
+#[test]
+fn point_on_line_clamps_to_segment() {
+    // Horizontal segment from (0,0) to (1,0); the point starts past its end.
+    // It must land on the segment itself, not on the line's extension.
+    let mut solver = ConstraintSolver::new();
+    solver.add_point(Point::new("a".into(), 0.0, 0.0, true));
+    solver.add_point(Point::new("b".into(), 1.0, 0.0, true));
+    solver.add_point(Point::new("p".into(), 5.0, 2.0, false));
+    solver
+        .add_constraint(ConstraintType::PointOnLine(
+            "p".into(),
+            "a".into(),
+            "b".into(),
+        ))
+        .unwrap();
+
+    let result = solver.solve().unwrap();
+    assert!(matches!(result, SolverResult::Converged { .. }), "{result:?}");
+
+    let p = solver.get_point("p".into()).unwrap();
+    assert!(p.y.abs() < 1e-8, "p should lie on the segment, got y = {}", p.y);
+    assert!(
+        (0.0..=1.0 + 1e-8).contains(&p.x),
+        "p should be within the segment's span, got x = {}",
+        p.x
+    );
+}
