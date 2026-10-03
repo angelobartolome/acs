@@ -1,9 +1,9 @@
 //! Guides: a mirror's axis, a rotation's center and a translation's
-//! direction. Dragging (temporary holds on) the source or the copy moves the
-//! other one and never the Guide; moving the Guide, by a drag or by its own
-//! constraints, carries the copy with it; and real constraints on the copies
-//! move a free Guide as they need (a patterned polygon turns about a center
-//! that moves with it).
+//! direction. They are ordinary unknowns in every solve, drags included:
+//! moving a Guide (by a drag or by other constraints) carries the copy with
+//! it; dragging the source or the copy moves the other one, and also moves a
+//! free Guide as needed (pin it to keep it put); every vertex of a patterned
+//! polygon drags alike.
 
 use acs::{Circle, ConstraintSolver, ConstraintType, Line, Point, SolverResult};
 
@@ -29,6 +29,13 @@ fn drag(solver: &mut ConstraintSolver, id: &str, x: f64, y: f64) {
     solver
         .add_temporary_constraint(ConstraintType::EqualY(s(id), y))
         .unwrap();
+}
+
+/// Holds `id` where it is with real constraints (a pinned Guide).
+fn pin(solver: &mut ConstraintSolver, id: &str) {
+    let (x, y) = at(solver, id);
+    solver.add_constraint(ConstraintType::EqualX(s(id), x)).unwrap();
+    solver.add_constraint(ConstraintType::EqualY(s(id), y)).unwrap();
 }
 
 fn solve(solver: &mut ConstraintSolver) {
@@ -66,8 +73,10 @@ fn mirror_sketch(source_fixed: bool) -> ConstraintSolver {
 }
 
 #[test]
-fn moving_the_mirror_source_moves_the_image_not_the_axis() {
+fn moving_the_mirror_source_moves_the_image_across_a_pinned_axis() {
     let mut solver = mirror_sketch(false);
+    pin(&mut solver, "m1");
+    pin(&mut solver, "m2");
     drag(&mut solver, "a", 4.0, 5.0);
     solve(&mut solver);
     assert_at(&solver, "b", 4.0, -5.0);
@@ -76,8 +85,10 @@ fn moving_the_mirror_source_moves_the_image_not_the_axis() {
 }
 
 #[test]
-fn moving_the_mirror_image_moves_the_source_not_the_axis() {
+fn moving_the_mirror_image_moves_the_source_across_a_pinned_axis() {
     let mut solver = mirror_sketch(false);
+    pin(&mut solver, "m1");
+    pin(&mut solver, "m2");
     drag(&mut solver, "b", 2.0, -1.0);
     solve(&mut solver);
     assert_at(&solver, "a", 2.0, 1.0);
@@ -88,6 +99,7 @@ fn moving_the_mirror_image_moves_the_source_not_the_axis() {
 #[test]
 fn moving_the_mirror_axis_moves_the_image() {
     let mut solver = mirror_sketch(true);
+    pin(&mut solver, "m1");
     // The axis becomes the line y = x: (1, 3) mirrors to (3, 1).
     drag(&mut solver, "m2", 2.0, 2.0);
     solve(&mut solver);
@@ -145,8 +157,9 @@ fn rotation_sketch(source_fixed: bool) -> ConstraintSolver {
 }
 
 #[test]
-fn moving_the_rotation_source_moves_the_copy_not_the_center() {
+fn moving_the_rotation_source_moves_the_copy_about_a_pinned_center() {
     let mut solver = rotation_sketch(false);
+    pin(&mut solver, "c");
     drag(&mut solver, "p0", 4.0, 2.0);
     solve(&mut solver);
     assert_at(&solver, "pk", 0.0, 4.0);
@@ -154,8 +167,9 @@ fn moving_the_rotation_source_moves_the_copy_not_the_center() {
 }
 
 #[test]
-fn moving_the_rotation_copy_moves_the_source_not_the_center() {
+fn moving_the_rotation_copy_moves_the_source_about_a_pinned_center() {
     let mut solver = rotation_sketch(false);
+    pin(&mut solver, "c");
     drag(&mut solver, "pk", 1.0, 5.0);
     solve(&mut solver);
     assert_at(&solver, "p0", 5.0, 1.0);
@@ -216,8 +230,10 @@ fn translation_sketch(source_fixed: bool) -> ConstraintSolver {
 }
 
 #[test]
-fn moving_the_translation_source_moves_the_copy_not_the_direction() {
+fn moving_the_translation_source_moves_the_copy_along_a_pinned_direction() {
     let mut solver = translation_sketch(false);
+    pin(&mut solver, "d1");
+    pin(&mut solver, "d2");
     drag(&mut solver, "p0", 1.0, 2.0);
     solve(&mut solver);
     assert_at(&solver, "pk", 4.0, 2.0);
@@ -226,8 +242,10 @@ fn moving_the_translation_source_moves_the_copy_not_the_direction() {
 }
 
 #[test]
-fn moving_the_translation_copy_moves_the_source_not_the_direction() {
+fn moving_the_translation_copy_moves_the_source_along_a_pinned_direction() {
     let mut solver = translation_sketch(false);
+    pin(&mut solver, "d1");
+    pin(&mut solver, "d2");
     drag(&mut solver, "pk", 5.0, -1.0);
     solve(&mut solver);
     assert_at(&solver, "p0", 2.0, -1.0);
@@ -238,6 +256,7 @@ fn moving_the_translation_copy_moves_the_source_not_the_direction() {
 #[test]
 fn moving_the_translation_direction_moves_the_copy() {
     let mut solver = translation_sketch(true);
+    pin(&mut solver, "d1");
     drag(&mut solver, "d2", 0.0, 4.0);
     solve(&mut solver);
     assert_at(&solver, "d2", 0.0, 4.0);
@@ -322,7 +341,7 @@ fn a_mirror_moves_a_free_axis_to_fit() {
 /// close to the cursor as it can, the image follows, and the free mirror axis
 /// never moves.
 #[test]
-fn constrained_drag_of_a_mirrored_point_never_moves_the_axis() {
+fn constrained_drag_of_a_mirrored_point_across_a_pinned_axis() {
     let mut solver = solver_with(&[
         ("a1", 0.0, -5.0, false),
         ("a2", 0.0, 5.0, false),
@@ -337,6 +356,8 @@ fn constrained_drag_of_a_mirrored_point_never_moves_the_axis() {
     solver
         .add_constraint(ConstraintType::MirrorPointExtension(s("src"), s("img"), s("a1"), s("a2")))
         .unwrap();
+    pin(&mut solver, "a1");
+    pin(&mut solver, "a2");
     drag(&mut solver, "src", 4.0, 6.0);
 
     let result = solver.solve().unwrap();
@@ -346,8 +367,9 @@ fn constrained_drag_of_a_mirrored_point_never_moves_the_axis() {
         let q = solver.get_point(s(id)).unwrap();
         (q.x, q.y)
     };
-    assert_eq!(p("a1"), (0.0, -5.0), "axis start moved");
-    assert_eq!(p("a2"), (0.0, 5.0), "axis end moved");
+    let ((a1x, a1y), (a2x, a2y)) = (p("a1"), p("a2"));
+    assert!(a1x.abs() < EPS && (a1y + 5.0).abs() < EPS, "axis start moved: ({a1x}, {a1y})");
+    assert!(a2x.abs() < EPS && (a2y - 5.0).abs() < EPS, "axis end moved: ({a2x}, {a2y})");
     let (sx, sy) = p("src");
     assert!((sx - 1.0).abs() < EPS && (sy - 6.0).abs() < 1e-6, "src slides along its line: ({sx}, {sy})");
     let (ix, iy) = p("img");
@@ -404,4 +426,46 @@ fn a_patterned_polygon_turns_about_a_free_center() {
         assert!((y3 - y4).abs() < EPS, "center fixed {center_fixed}: bottom side not horizontal");
         assert!(solver.diagnose().conflicting.is_empty(), "center fixed {center_fixed}");
     }
+}
+
+/// Every vertex of the pattern drags the same way, copies included: the
+/// polygon follows the cursor (its center is free, so it can move) and stays
+/// regular. Holding the center during a drag made a copy's drag chase the
+/// center the tangency moved, and the solve blew up.
+#[test]
+fn every_vertex_of_a_patterned_polygon_drags_alike() {
+    for k in 0..5 {
+        let mut solver = polygon(false);
+        let v = format!("v{k}");
+        let (x, y) = at(&solver, &v);
+        drag(&mut solver, &v, x + 3.0, y + 2.0);
+        solve(&mut solver);
+        assert_at(&solver, &v, x + 3.0, y + 2.0);
+        let side = |i: usize| {
+            let (a, b) = (at(&solver, &format!("v{i}")), at(&solver, &format!("v{}", (i + 1) % 5)));
+            (b.0 - a.0).hypot(b.1 - a.1)
+        };
+        for i in 1..5 {
+            assert!((side(i) - side(0)).abs() < 1e-8, "v{k}: side {i} is {} vs {}", side(i), side(0));
+        }
+    }
+}
+
+/// Dragging a mirror's image when nothing pins the axis: the drag reaches the
+/// cursor and the mirror still holds; the solver may move the axis too (the
+/// smallest change), as it may any free geometry.
+#[test]
+fn dragging_a_mirror_image_across_a_free_axis_keeps_the_mirror() {
+    let mut solver = mirror_sketch(false);
+    drag(&mut solver, "b", 2.0, -1.0);
+    solve(&mut solver);
+    assert_at(&solver, "b", 2.0, -1.0);
+    // a and b are mirror images across the line through m1 and m2.
+    let ((ax, ay), (bx, by), (m1x, m1y), (m2x, m2y)) =
+        (at(&solver, "a"), at(&solver, "b"), at(&solver, "m1"), at(&solver, "m2"));
+    let (dx, dy) = (m2x - m1x, m2y - m1y);
+    let mid = ((ax + bx) / 2.0, (ay + by) / 2.0);
+    let on_axis = dx * (mid.1 - m1y) - dy * (mid.0 - m1x);
+    let perpendicular = dx * (bx - ax) + dy * (by - ay);
+    assert!(on_axis.abs() < 1e-8 && perpendicular.abs() < 1e-8, "not mirror images");
 }

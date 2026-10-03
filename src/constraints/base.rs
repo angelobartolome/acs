@@ -124,13 +124,12 @@ pub trait Constraint {
     fn vars(&self) -> Vec<Var<'_>>;
 
     /// Guides: variables `eval` also reads (after `vars()`, in this order)
-    /// that a drag must never move through this constraint, such as a
-    /// mirror's axis or an array's center: dragging a copy moves the copy, not
-    /// what it copies across. `eval` writes their partials like any other
-    /// input, so an ordinary solve moves them as the other constraints need
-    /// (adding Horizontal to a patterned side turns the pattern about a center
-    /// that moves with it). Only a solve with soft goals holds them (see
-    /// `SketchSystem::solve`). A variable may be both driven and a Guide.
+    /// that the constraint copies across, such as a mirror's axis or an
+    /// array's center or direction. `eval` writes their partials like any
+    /// other input and every solve, drags included, moves them as the
+    /// constraints need (adding Horizontal to a patterned side turns the
+    /// pattern about a center that moves with it). A variable may be both
+    /// driven and a Guide.
     fn guides(&self) -> Vec<Var<'_>> {
         Vec::new()
     }
@@ -144,13 +143,13 @@ pub trait Constraint {
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>);
 
     fn residual(&self, pm: &VarRegistry) -> DVector<f64> {
-        let (r, _, _) = eval_local(self, pm, None);
+        let (r, _, _) = eval_local(self, pm);
         DVector::from(r)
     }
 
     /// Partials w.r.t. every global variable, Guides included.
     fn jacobian(&self, pm: &VarRegistry) -> DMatrix<f64> {
-        let (r, local, cols) = eval_local(self, pm, None);
+        let (r, local, cols) = eval_local(self, pm);
         let mut J = DMatrix::zeros(r.len(), pm.num_vars());
         for (k, &col) in cols.iter().enumerate() {
             for row in 0..r.len() {
@@ -171,48 +170,27 @@ pub fn reads<C: Constraint + ?Sized>(c: &C) -> Vec<Var<'_>> {
 }
 
 /// Evaluates `c` at the current values: its residuals, its local Jacobian and
-/// the global column of each of its columns. `guide_values`, when given, holds
-/// the Guides: they are read from that global value vector instead of `pm`,
-/// and their columns are dropped (driven columns only).
-fn eval_local<C: Constraint + ?Sized>(
-    c: &C,
-    pm: &VarRegistry,
-    guide_values: Option<&[f64]>,
-) -> (Vec<f64>, DMatrix<f64>, Vec<usize>) {
-    let (mut cols, mut x) = gather(&reads(c), pm);
-    let driven = c.vars().len();
+/// the global column of each of its columns.
+fn eval_local<C: Constraint + ?Sized>(c: &C, pm: &VarRegistry) -> (Vec<f64>, DMatrix<f64>, Vec<usize>) {
+    let (cols, x) = gather(&reads(c), pm);
     let mut r = vec![0.0; c.num_residuals()];
     let mut j = DMatrix::zeros(r.len(), cols.len());
-    let Some(values) = guide_values else {
-        c.eval(&x, &mut r, &mut j);
-        return (r, j, cols);
-    };
-    for (v, &col) in x[driven..].iter_mut().zip(&cols[driven..]) {
-        *v = values[col];
-    }
     c.eval(&x, &mut r, &mut j);
-    cols.truncate(driven);
-    (r, j.columns(0, driven).into_owned(), cols)
+    (r, j, cols)
 }
 
 /// Evaluates `c` at the current values, writing its residuals into
 /// `r[row..]` and adding its partials into `J[row.., column_of(global)]`.
 /// Variables whose global column maps to `None` (fixed ones) are skipped.
-///
-/// `guide_values`, when given, holds the Guides at a global value vector (a
-/// snapshot): they are read from it instead of `pm` and get no partials, so
-/// the residuals stay consistent with the Jacobian while other constraints
-/// move the Guides; see `SketchSystem::solve`.
 pub(crate) fn eval_into(
     c: &dyn Constraint,
     pm: &VarRegistry,
-    guide_values: Option<&[f64]>,
     column_of: &dyn Fn(usize) -> Option<usize>,
     row: usize,
     r: &mut DVector<f64>,
     J: &mut DMatrix<f64>,
 ) {
-    let (local_r, local_j, cols) = eval_local(c, pm, guide_values);
+    let (local_r, local_j, cols) = eval_local(c, pm);
     let n = local_r.len();
     for (i, v) in local_r.into_iter().enumerate() {
         r[row + i] = v;

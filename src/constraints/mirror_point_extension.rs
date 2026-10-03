@@ -23,9 +23,8 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// Residuals: B − A' (x and y), linear in B. For a degenerate axis
 /// (L ≈ 0) the residual is B − A.
 ///
-/// The axis points are Guides: dragging A or B never moves the axis, and
-/// moving the axis moves the image; other real constraints can move the axis
-/// (see `Constraint::guides`).
+/// The axis points are Guides (see `Constraint::guides`): moving the axis
+/// moves the image, and the solve moves a free axis as needed.
 pub struct MirrorPointExtensionConstraint {
     pub pA_id: String,
     pub pB_id: String,
@@ -49,7 +48,7 @@ impl Constraint for MirrorPointExtensionConstraint {
         [xy(&self.pA_id), xy(&self.pB_id)].concat()
     }
 
-    /// The axis is a Guide: a drag never moves it through this constraint.
+    /// The axis is a Guide: the input the image is mirrored across.
     fn guides(&self) -> Vec<Var<'_>> {
         [xy(&self.axis_pa_id), xy(&self.axis_pb_id)].concat()
     }

@@ -26,10 +26,8 @@ entries not listed are **0**.
 
 **Guides.** Some constraints copy across an input: a mirror's axis (17), a
 rotation's center (18), a translation's direction (19). Their partials,
-Guides included, are exact like every other, so an ordinary solve moves a
-Guide as the constraints need. Only a solve with soft goals (a drag) holds
-the Guides: dragging a copy never moves what it is copied across (see Solver
-Notes).
+Guides included, are exact like every other, so every solve, drags
+included, moves a free Guide as the constraints need (see Solver Notes).
 
 ---
 
@@ -734,9 +732,7 @@ convergence.
 reads, Guides included, and Guides are Component columns like any other
 variable. An ordinary solve, the degrees-of-freedom analysis and diagnosis
 use the full Jacobian, so real constraints move a free Guide as they need,
-and a copy of a free Guide is not fully constrained. A solve with soft goals
-(a drag) holds every Guide instead: the constraints that read it as a Guide
-read it from a snapshot taken when the solve starts and contribute no Guide
-partials, so a drag of a copy never moves it. If that solve converged but
-other constraints moved a Guide (so the live residuals aren't solved), the
-Component is solved again from a fresh snapshot, up to 50 times.
+and a copy of a free Guide is not fully constrained. Solves with soft goals
+(drags) treat Guides the same way: a drag of a copy may move a free Guide.
+(Holding Guides during drags made a copy's drag chase a Guide that other
+constraints moved, and diverge.)

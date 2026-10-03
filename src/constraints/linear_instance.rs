@@ -21,8 +21,8 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// Residuals: pk − p0 − s·u (x and y). For a degenerate direction (L ≈ 0)
 /// the residual is pk − p0.
 ///
-/// The direction points are Guides: a drag of the source or the copy never
-/// moves them, while other real constraints can (see `Constraint::guides`).
+/// The direction points are Guides (see `Constraint::guides`): the copy
+/// follows them, and the solve moves them, if free, as needed.
 pub struct LinearInstanceConstraint {
     pub p0_id: String,
     pub pk_id: String,
@@ -57,8 +57,7 @@ impl Constraint for LinearInstanceConstraint {
         [xy(&self.p0_id), xy(&self.pk_id)].concat()
     }
 
-    /// The direction points are Guides: a drag never moves them through this
-    /// constraint.
+    /// The direction points are Guides: the inputs the copy is moved along.
     fn guides(&self) -> Vec<Var<'_>> {
         [xy(&self.dir_p1_id), xy(&self.dir_p2_id)].concat()
     }
