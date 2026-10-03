@@ -26,5 +26,5 @@ pkg/
 
 .DS_Store
 
-# Release artifacts (scripts/release-sketch-solver.sh)
+# Release artifacts (scripts/release.sh)
 dist/

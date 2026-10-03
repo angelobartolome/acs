@@ -11,7 +11,7 @@ ACS is a 2-D geometric constraint solver: a Rust crate (`src/`) with WASM bindin
 - Pre-solver benchmark (a test, not `cargo bench`): `cargo test presolver_bench -- --nocapture`
 - WASM build: `wasm-pack build --target web --out-dir pkg`
 - C ABI tests (incl. a C smoke test that builds `libacs.a` and compiles `tests/c/smoke_test.c` with `cc`): `cargo test --features c-abi`
-- Release artifacts (static library + npm package): `scripts/release-sketch-solver.sh` -> `dist/` (macOS arm64, iOS arm64, iOS Simulator `sketch-solver-<version>-<platform>.tar.gz` + the npm tarball; `SKETCH_SOLVER_VERSION` overrides the version)
+- Release artifacts (static library + npm package): `scripts/release.sh` -> `dist/` (macOS arm64, iOS arm64, iOS Simulator `acs-<version>-<platform>.tar.gz` + the npm tarball `acs-<version>.tgz`; the version is the crate's)
 - Demo: `npm run dev` / `npm run build` / `npm run test` (vitest) in `wasm-demo/`
 
 CI (`.github/workflows/rust.yml`) runs clippy -> build -> test -> wasm-pack build. Keep clippy clean.
