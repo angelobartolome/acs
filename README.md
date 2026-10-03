@@ -2,7 +2,7 @@
 
 A geometric constraint solver written in Rust with WebAssembly bindings for web applications.
 
-![Demo of Horizontal and Vertical Constraints](https://raw.githubusercontent.com/angelobartolome/acs/main/docs/demo.gif)
+![Dragging points in the demo: tangent lines, a line tangent to an arc, and a curved slot](https://raw.githubusercontent.com/angelobartolome/acs/main/docs/demo.gif)
 
 ## Overview
 
