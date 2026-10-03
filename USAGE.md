@@ -180,6 +180,19 @@ In the dialect a `param` may come without an `id`, as GCS keys Parameters by `na
 
 The diameter alignments hold the pair symmetric about the center, along the axis, a diameter apart; which point takes which end isn't fixed (GCS assigns the ends once, by which point is nearer when the constraint is added), so each point keeps the end it is nearest. An ellipse tool typically writes the ellipse, a construction focus point, four axis points held by the two diameter alignments, and `p2p_distance`s on the diameters; mirrors and arrays tie a copy's minor radius to the source's with `equal` over `{ "o_id": "e1", "prop": "radmin" }`. Other GCS ellipse types (`internal_alignment_point2ellipse`, the focus alignments, `arc_of_ellipse`, …) are unknown types.
 
+#### Drags (soft goals)
+
+Mark a constraint `temporary: true` to make it a soft goal: in each component the real constraints hold exactly, and the temporary ones are met as closely as the real ones allow (least squares). A drag sends the sketch with goals holding the dragged geometry at the cursor, one solve per mouse move:
+
+```json
+{ "type": "point", "id": "p", "x": 2, "y": 0 },
+{ "type": "on", "id": "k", "point": "p", "curve": "l" },
+{ "type": "x", "id": "gx", "point": "p", "value": 6, "temporary": true },
+{ "type": "y", "id": "gy", "point": "p", "value": 3, "temporary": true }
+```
+
+With `l` running along y = 0, `p` slides along the line to (6, 0), the closest it can get to the cursor. A goal that can't be met never makes a solve `failed` and is never `conflicting` or `redundant`; `status`, `dof` and `fullyConstrained` consider only the real constraints. A Guide (a mirror's axis, an array's center or direction) is held during a drag, so dragging a copy never moves it.
+
 ### Output format
 
 ```json
@@ -204,9 +217,10 @@ The diameter alignments hold the pair symmetric about the center, along the axis
 | `redundant` | IDs of Redundant constraints, in request order. Only in a solved component: a minimal set of dependent constraints whose removal changes neither the solution nor `dof`, chosen latest first (of two duplicates, the later one) |
 | `dof` | Degrees of freedom the constraints leave: free values minus the rank of each component's Jacobian |
 
-`conflicting` and `redundant` are diagnosed per component at the solved position, so a sketch that only disagrees at its starting position reports nothing. Temporary constraints are never listed and their rows are left out of the diagnosis. A constraint between fixed geometry only is conflicting if it doesn't hold and redundant if it does.
 | `fullyConstrained` | *ACS extension.* IDs of entities with zero degrees of freedom; a line is included when both its endpoints are, an ellipse when its `radmin` and its center and focus points are. Only populated on a converged solve; `[]` otherwise |
 | `stats` | *ACS extension.* `iterations` (summed across components), `initialError`, `finalError` (max across components) |
+
+`conflicting` and `redundant` are diagnosed per component at the solved position, so a sketch that only disagrees at its starting position reports nothing. Temporary constraints are never listed and their rows are left out of the diagnosis. A constraint between fixed geometry only is conflicting if it doesn't hold and redundant if it does.
 
 A failed solve is a normal response, not an error.
 

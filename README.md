@@ -6,9 +6,12 @@ A geometric constraint solver written in Rust with WebAssembly bindings for web 
 
 ## Overview
 
-ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numerical solver with analytical Jacobians. It ships as both a Rust crate and a WASM module callable from JavaScript.
+ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numerical solver with analytical Jacobians. It ships as a Rust crate, a WASM module callable from JavaScript, and a static library behind a C ABI.
 
-A built-in pre-solver partitions each sketch into independent connected components and skips any component whose constraints are already satisfied — giving a 5–37× speedup on typical interactive edits.
+- **Components:** each sketch is split into independent connected components, each solved on its own. A built-in pre-solver skips any component whose constraints already hold, about 5–8× faster on the bundled drag benchmark (`cargo test --release --test presolver_bench -- --nocapture`).
+- **Diagnosis:** every solve reports the **Conflicting** constraints (they can't all hold), the **Redundant** ones (they repeat what others already fix), the sketch's remaining **degrees of freedom**, and which entities are **fully constrained**.
+- **Drags as soft goals:** constraints marked `temporary` (the cursor's position while dragging) are met as closely as the real constraints allow, and the real ones always hold exactly.
+- **Two vocabularies:** a native one with one type per relationship, and a PlaneGCS dialect that accepts FreeCAD GCS's type names unchanged.
 
 ---
 
@@ -90,7 +93,7 @@ use acs::{ConstraintSolver, ConstraintType, Point, SolverResult};
 let mut solver = ConstraintSolver::new();
 
 solver.add_point(Point::new("p1".into(), 0.0, 0.0, true));  // fixed
-solver.add_point(Point::new("p2".into(), 3.0, 4.0, false)); // free
+solver.add_point(Point::new("p2".into(), 1.0, 1.0, false)); // free
 
 solver.add_constraint(ConstraintType::DistancePointPoint(
     "p1".into(), "p2".into(), 5.0,
@@ -106,7 +109,8 @@ match solver.solve().unwrap() {
 }
 
 let p2 = solver.get_point("p2".into()).unwrap();
-println!("p2 = ({}, {})", p2.x, p2.y);
+println!("p2 = ({}, {})", p2.x, p2.y); // (3.54, 3.54): 5 from p1, along the way it started
+println!("{} degrees of freedom left", solver.dof()); // 1: p2 can still circle p1
 ```
 
 ### WASM / JavaScript API
@@ -149,9 +153,11 @@ if (result.status === 'converged') {
 }
 ```
 
-The WASM function takes a JSON string and returns a JSON string. The output `primitives` array mirrors the input with geometric parameters (`x`, `y`, `radius`) updated to the solved values.
+The WASM function takes a JSON string and returns a JSON string. The output `primitives` array mirrors the input with the solved values (`x`, `y`, `radius`, arc angles, an ellipse's `radmin`), alongside `status`, `conflicting`, `redundant`, `dof`, `fullyConstrained` and `stats`.
 
-For full JSON input/output format, constraint type strings, and performance tips see [USAGE.md](USAGE.md).
+To drag, add constraints marked `temporary: true` that hold the dragged geometry at the cursor, such as `{ type: "x", id: "gx", point: "p", value: 6, temporary: true }`. A point on a line, dragged off it, slides along the line to the closest point. See [USAGE.md](USAGE.md#drags-soft-goals).
+
+`acsConstraintCatalog()` and `acsPlaneGcsConstraintCatalog()` return each vocabulary's constraint types and fields as JSON. For the full JSON input/output format, constraint type strings, and performance tips see [USAGE.md](USAGE.md).
 
 ---
 
@@ -159,8 +165,9 @@ For full JSON input/output format, constraint type strings, and performance tips
 
 ### Prerequisites
 
-- Rust 1.70+
+- Rust 1.88+ (edition 2024)
 - `wasm-pack` (for WASM builds)
+- Xcode (for the iOS static libraries in `scripts/release.sh`)
 
 ### Rust library
 
@@ -192,12 +199,26 @@ cargo build --release --features c-abi
 
 ---
 
+### Demo
+
+`wasm-demo/` is a React sketcher built on the native vocabulary, with example sketches (slots, a curved slot, a patterned polygon, …). It uses the WASM package in `pkg/`, so build that first and rebuild it after any Rust change:
+
+```bash
+wasm-pack build --target web --out-dir pkg
+cd wasm-demo && npm install && npm run dev
+```
+
+---
+
 ## Testing
 
 ```bash
 cargo test
 cargo test --features c-abi   # C ABI tests, including a C smoke test (needs cc)
+cd wasm-demo && npm test      # demo and examples (vitest)
 ```
+
+Every constraint's analytical Jacobian is checked against finite differences (`tests/jacobian_fd_test.rs`).
 
 ---
 
@@ -207,6 +228,8 @@ cargo test --features c-abi   # C ABI tests, including a C smoke test (needs cc)
 |-----|----------|
 | [USAGE.md](USAGE.md) | Full WASM JSON API reference, Rust API reference, pre-solver guide |
 | [SPEC.md](SPEC.md) | Residual equations and analytical Jacobians for every constraint |
+| [CONTEXT.md](CONTEXT.md) | Glossary: Component, Guide, Extension, Conflicting, Redundant, … |
+| [AGENTS.md](AGENTS.md) | Architecture and how to add a constraint |
 
 ---
 
