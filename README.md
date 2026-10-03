@@ -66,16 +66,22 @@ Sketch **Parameters** (JSON `param`) are named fixed values any scalar field may
 
 ## Installation
 
-> This library is not yet published to crates.io or npm. Build from source or reference it via a local path.
-
 ### Rust crate
+
+ACS is published on crates.io as [`acs-solver`](https://crates.io/crates/acs-solver) (the name `acs` is taken); the library itself is `acs`:
 
 ```toml
 [dependencies]
-acs = { path = "../path/to/acs" }
+acs-solver = "0.1"
+```
+
+```rust
+use acs::{ConstraintSolver, ConstraintType, Point};
 ```
 
 ### WebAssembly package
+
+Download `acs-<version>.tgz` from the [Releases](https://github.com/angelobartolome/acs/releases) page and install it (`npm install ./acs-<version>.tgz`), or build it:
 
 ```bash
 wasm-pack build --target web --out-dir pkg
@@ -199,15 +205,15 @@ cargo build --release --features c-abi
 
 ### Releases
 
-Prebuilt artifacts are published on the [Releases](https://github.com/angelobartolome/acs/releases) page: the static library for macOS arm64, iOS arm64 and the iOS Simulator (`acs-<version>-<platform>.tar.gz`), and the WASM npm package (`acs-<version>.tgz`, installable with `npm install ./acs-<version>.tgz`).
+Each release publishes the crate to crates.io (`acs-solver`) and prebuilt artifacts on the [Releases](https://github.com/angelobartolome/acs/releases) page: the static library for macOS arm64, iOS arm64 and the iOS Simulator (`acs-<version>-<platform>.tar.gz`), and the WASM npm package (`acs-<version>.tgz`, package `acs-solver`, installable with `npm install ./acs-<version>.tgz`).
 
 To cut a release, set `version` in `Cargo.toml`, merge it, then push a matching tag:
 
 ```bash
-git tag v0.1.3 && git push origin v0.1.3
+git tag v0.1.4 && git push origin v0.1.4
 ```
 
-The [Release workflow](.github/workflows/release.yml) checks that the tag matches the crate version, runs clippy and the tests, builds the artifacts with `scripts/release.sh` on macOS and publishes the GitHub Release. Run it manually (Actions → Release → Run workflow) to build the artifacts without publishing.
+The [Release workflow](.github/workflows/release.yml) checks that the tag matches the crate version, runs clippy, the tests and `cargo publish --dry-run`, builds the artifacts with `scripts/release.sh` on macOS, publishes the GitHub Release, then publishes the crate with the `CARGO_REGISTRY_TOKEN` repository secret. Run it manually (Actions → Release → Run workflow) to build the artifacts without publishing.
 
 ---
 

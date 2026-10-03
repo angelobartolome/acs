@@ -1,7 +1,8 @@
 name: Release
 
 # Pushing a tag vX.Y.Z (matching Cargo.toml's version) builds the release artifacts with
-# scripts/release.sh and publishes them as a GitHub Release. A manual run, or a pull request
+# scripts/release.sh, publishes them as a GitHub Release and publishes the crate (acs-solver)
+# to crates.io with the CARGO_REGISTRY_TOKEN secret. A manual run, or a pull request
 # that changes the release machinery, builds the same artifacts and attaches them to the run
 # without publishing.
 on:
@@ -63,6 +64,9 @@ jobs:
       - name: Test
         run: cargo test --features c-abi
 
+      - name: Check the crate packages
+        run: cargo publish --dry-run
+
       - name: Build the release artifacts
         run: ./scripts/release.sh
 
@@ -86,3 +90,9 @@ jobs:
             "dist/acs-$VERSION-ios-arm64.tar.gz" \
             "dist/acs-$VERSION-ios-arm64-simulator.tar.gz" \
             "dist/acs-$VERSION.tgz"
+
+      - name: Publish the crate to crates.io
+        if: github.ref_type == 'tag'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
