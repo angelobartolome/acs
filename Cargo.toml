@@ -6,6 +6,12 @@ authors = ["Angelo Bartolome <angelo.m.bartolome@gmail.com>"]
 description = "A geometric constraint solver written in Rust with WebAssembly bindings for web applications."
 license = "MIT"
 repository = "https://github.com/angelobartolome/acs"
+readme = "README.md"
+keywords = ["constraint-solver", "geometry", "cad", "sketch", "wasm"]
+categories = ["mathematics", "graphics", "wasm"]
+# Only the library ships in the crate: not the demo (wasm-demo/), tests, scripts, CI,
+# docs/ or agent notes.
+include = ["/src/**/*.rs", "/include/p3d_sketch_solver.h", "/README.md", "/USAGE.md", "/SPEC.md", "/LICENSE"]
 
 [lib]
 crate-type = ["cdylib", "rlib", "staticlib"]
