@@ -6,7 +6,7 @@
 #   acs-<version>-macos-arm64.tar.gz          aarch64-apple-darwin
 #   acs-<version>-ios-arm64.tar.gz            aarch64-apple-ios
 #   acs-<version>-ios-arm64-simulator.tar.gz  aarch64-apple-ios-sim
-#   acs-<version>.tgz                         wasm-pack --target web, npm pack
+#   acs-<version>.tgz                         wasm-pack --target web, npm pack (package acs-solver)
 #
 # Each archive unpacks to acs/{include/p3d_sketch_solver.h, lib/libp3d_sketch_solver.a,
 # VERSION}. <version> is the crate version from Cargo.toml, so every file name carries
@@ -48,7 +48,9 @@ build aarch64-apple-ios-sim ios-arm64-simulator
 
 echo "Building the WASM npm package..."
 wasm-pack build --release --target web --out-dir pkg
+# npm names the tarball after the package (acs-solver); keep the release's acs-<version> names.
 npm pack ./pkg --pack-destination "$DIST"
+mv "$DIST/acs-solver-$VERSION.tgz" "$DIST/acs-$VERSION.tgz"
 
 echo "Done:"
 ls -lh "$DIST"/acs-"$VERSION"-*.tar.gz "$DIST"/acs-"$VERSION".tgz

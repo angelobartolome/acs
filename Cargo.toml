@@ -1,6 +1,6 @@
 [package]
-name = "acs"
-version = "0.1.3"
+name = "acs-solver"
+version = "0.1.4"
 edition = "2024"
 authors = ["Angelo Bartolome <angelo.m.bartolome@gmail.com>"]
 description = "A geometric constraint solver written in Rust with WebAssembly bindings for web applications."
@@ -14,6 +14,9 @@ categories = ["mathematics", "graphics", "wasm"]
 include = ["/src/**/*.rs", "/include/p3d_sketch_solver.h", "/README.md", "/USAGE.md", "/SPEC.md", "/LICENSE"]
 
 [lib]
+# The crate is `acs-solver` on crates.io (`acs` is taken); the library keeps the name `acs`
+# (`use acs::…`, libacs.a).
+name = "acs"
 crate-type = ["cdylib", "rlib", "staticlib"]
 
 [features]
