@@ -41,8 +41,8 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `distance` | point, point or line (`extension?`) | Point–point distance; point–segment distance; with `extension`, distance to the line's Extension |
 | `offset` | point, line | Distance from a point to a line's Extension on a given side (Linked Offsets) |
 | `on` | point, line (`extension?`) / circle / arc / ellipse | Point lies on the segment (or Extension), circle, arc's span, or ellipse |
-| `midpoint` | point, line | A point is the midpoint of a line |
-| `midpoint_on` | line, line (`extension?`) | The midpoint of one line lies on another line (or its Extension) |
+| `midpoint` | `entities`: [point, line] or [line, line] (`extension?`) | A point is the midpoint of a line; or the midpoint of one line lies on another line (or its Extension) |
+| `midpoint_on` | line, line (`extension?`) | *Deprecated in 0.1.6, removed in 0.1.7*: use `midpoint` with `entities: [line, line]` (likewise `midpoint` with `point`, `line` fields: use `entities: [point, line]`) |
 | `tangent` | line–circle (`extension?`), line–arc, circle–circle, line–ellipse | Tangency on the segment (and arc span); circles touch externally |
 | `concentric` | circle/arc, circle/arc | Share a center |
 | `equal` | line–line, circle/arc–circle/arc, or values | Equal length, equal radius, or `a = b` |
@@ -52,7 +52,7 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `mirror` | point, point, line | A point is another mirrored across a line's Extension |
 | `rotation` | point, point, center point | A point is another rotated about a center by a given angle (circular array copy) |
 | `translation` | point, point, two direction points | A point is another translated `distance × count` along a direction (linear array copy) |
-| `ellipse_axis` | ellipse, point, `which` (`major`/`minor`) | A point is an end of an ellipse's major or minor axis |
+| `ellipse_axis` | ellipse, point or two points, `which` (`major`/`minor`) | A point is an end of an ellipse's major or minor axis; or two points are its opposite ends |
 
 Values (for `equal` and `difference`) are constants (numbers or sketch Parameters) or entity properties the solver may move (a point's `x`/`y`, a circle's or arc's `radius`, an ellipse's `radmin`).
 

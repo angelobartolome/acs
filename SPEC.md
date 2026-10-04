@@ -420,7 +420,7 @@ with `S∞`; none has a "foot on the segment" condition.
 | `PointOnExtension(p, a, b)` (`on` + `extension`; GCS `point_on_extension_pl`) | PointOnLine | `R = S∞(p; a, b)` |
 | `DistancePointExtension(p, a, b, d)` (`distance` + `extension`; GCS `p2l_extension_distance`) | DistancePointLine | `d > 0: R = \|S∞(p; a, b)\| − d`; `d = 0: R = S∞(p; a, b)` |
 | `TangentExtensionCircle(a, b, c_center, c)` (`tangent` + `extension`; GCS `tangent_extension_lc`) | TangentLineCircle | `R = \|S∞(c_center; a, b)\| − r` (R₀ of TangentLineCircle, no R₁) |
-| `MidpointOfLineOnExtension(l1a, l1b, l2a, l2b)` (`midpoint_on` + `extension`; GCS `midpoint_on_extension_ll`) | MidpointOfLineOnLine | `R = S∞(m; l2a, l2b)`, `m = (l1a + l1b)/2` |
+| `MidpointOfLineOnExtension(l1a, l1b, l2a, l2b)` (`midpoint` `[line, line]` + `extension`; GCS `midpoint_on_extension_ll`) | MidpointOfLineOnLine | `R = S∞(m; l2a, l2b)`, `m = (l1a + l1b)/2` |
 
 **Jacobians:** `∂S∞` from the shared section; for the `|S∞|` forms,
 `sign(S∞)·∂S∞` (and `∂R/∂r = −1` for the tangent). For the midpoint, `l1a`
@@ -610,7 +610,7 @@ A free ellipse has 5 degrees of freedom.
 |------------------------|-----------|
 | `PointOnEllipse(p, c, f, E)` (`on`; GCS `point_on_ellipse`) | `R₀ = \|p − f\| + \|p − f₂\| − 2A` |
 | `EllipseAxisPoint(p, c, f, E, axis)` (`ellipse_axis`) | with `d = p − c`: major `R₀ = u × d`, `R₁ = \|d\| − A`; minor `R₀ = u · d`, `R₁ = \|d\| − b` |
-| `EllipseDiameter(p₁, p₂, c, f, E, axis)` (GCS `internal_alignment_ellipse_major_diameter` / `_minor_diameter`) | with `m = (p₁ + p₂)/2`, `h = (p₂ − p₁)/2`: `R₀,₁ = m − c`; major `R₂ = u × h`, `R₃ = \|h\| − A`; minor `R₂ = u · h`, `R₃ = \|h\| − b` |
+| `EllipseDiameter(p₁, p₂, c, f, E, axis)` (`ellipse_axis` with `a`, `b`; GCS `internal_alignment_ellipse_major_diameter` / `_minor_diameter`) | with `m = (p₁ + p₂)/2`, `h = (p₂ − p₁)/2`: `R₀,₁ = m − c`; major `R₂ = u × h`, `R₃ = \|h\| − A`; minor `R₂ = u · h`, `R₃ = \|h\| − b` |
 | `TangentLineEllipse(a, b, c, f, E)` (`tangent`; GCS `tangent_le`) | with `L = \|b − a\|`, `g = (b − a)/L`, `ν = rot90(g)`, `sᵢ = ν·(fᵢ − a)`, `σᵢ = g·(fᵢ − a)` (`f₁ = f`): `R₀ = \|c − f + s₁ν\| − A`, `R₁ = overshoot of σ_T = (s₁σ₂ + s₂σ₁)/(s₁ + s₂)` past `[0, L]` |
 
 All are unsquared and match GCS's semantics: `PointOnEllipse` is GCS's

@@ -19,6 +19,9 @@
 //! which becomes a solver variable. The JSON API, the catalogs returned by
 //! [`Vocabulary::catalog_json`] and the Jacobian test all read these tables,
 //! so supporting a constraint in a vocabulary means adding a row there.
+//!
+//! A field name `name[i]` addresses element `i` of the array field `name`
+//! (native `midpoint`'s `entities`); see [`field_path`].
 
 use std::collections::HashMap;
 
@@ -79,10 +82,12 @@ impl Vocabulary {
     }
 
     /// The catalog as JSON, one object per row:
-    /// `[{ "type", "fields": [{ "name", "kind" }], "extension"? }]`. A
-    /// native type with several variants has several rows; `extension` is
-    /// present on rows that take the flag (`false`: the segment variant,
-    /// `true`: the Extension variant).
+    /// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?,
+    /// "deprecated"? }]`. A native type with several variants has several
+    /// rows; `extension` is present on rows that take the flag (`false`: the
+    /// segment variant, `true`: the Extension variant). A field with an
+    /// `index` is that element of the array field `name`. `deprecated: true`
+    /// marks a form still accepted for one more release.
     pub fn catalog_json(self) -> String {
         let specs: Vec<Value> = self
             .specs()
@@ -91,7 +96,12 @@ impl Vocabulary {
                 let fields: Vec<Value> = s
                     .fields
                     .iter()
-                    .map(|&(name, kind)| json!({ "name": name, "kind": kind.as_str() }))
+                    .map(|&(name, kind)| match field_path(name) {
+                        (name, None) => json!({ "name": name, "kind": kind.as_str() }),
+                        (name, Some(i)) => {
+                            json!({ "name": name, "index": i, "kind": kind.as_str() })
+                        }
+                    })
                     .collect();
                 let mut row = json!({ "type": s.json_type, "fields": fields });
                 match s.extension {
@@ -99,10 +109,32 @@ impl Vocabulary {
                     ExtensionFlag::Segment => row["extension"] = json!(false),
                     ExtensionFlag::Extension => row["extension"] = json!(true),
                 }
+                if s.deprecated {
+                    row["deprecated"] = json!(true);
+                }
                 row
             })
             .collect();
         Value::Array(specs).to_string()
+    }
+}
+
+/// A field name split into the JSON key it reads and, for `name[i]`, the
+/// index of the array element: `"entities[1]"` → `("entities", Some(1))`,
+/// `"line"` → `("line", None)`.
+pub fn field_path(name: &str) -> (&str, Option<usize>) {
+    name.strip_suffix(']')
+        .and_then(|rest| rest.split_once('['))
+        .and_then(|(key, i)| Some((key, Some(i.parse().ok()?))))
+        .unwrap_or((name, None))
+}
+
+/// The value of field `name` of constraint `c`, reading into an array for
+/// `name[i]` (see [`field_path`]).
+pub fn field_value<'v>(c: &'v Value, name: &str) -> Option<&'v Value> {
+    match field_path(name) {
+        (key, None) => c.get(key),
+        (key, Some(i)) => c.get(key)?.as_array()?.get(i),
     }
 }
 
@@ -322,6 +354,8 @@ pub struct ConstraintSpec {
     /// (JSON field name, kind), in order.
     pub fields: &'static [(&'static str, FieldKind)],
     pub extension: ExtensionFlag,
+    /// A form still accepted, for one more release, with a replacement.
+    pub deprecated: bool,
     build: fn(&Args) -> ConstraintType,
 }
 
@@ -335,7 +369,16 @@ impl ConstraintSpec {
             json_type,
             fields,
             extension: ExtensionFlag::NotAccepted,
+            deprecated: false,
             build,
+        }
+    }
+
+    /// This row as a deprecated form (`deprecated: true` in the catalog).
+    pub const fn deprecated(self) -> Self {
+        ConstraintSpec {
+            deprecated: true,
+            ..self
         }
     }
 
@@ -365,9 +408,7 @@ impl ConstraintSpec {
     pub fn parse(&self, c: &Value, refs: &References) -> Result<ConstraintType, String> {
         let mut args = Args::default();
         for &(name, kind) in self.fields {
-            let field = c
-                .get(name)
-                .ok_or_else(|| format!("missing field '{name}'"))?;
+            let field = field_value(c, name).ok_or_else(|| format!("missing field '{name}'"))?;
             match kind {
                 FieldKind::Scalar => {
                     args.scalars.push(refs.scalar(name, field)?);

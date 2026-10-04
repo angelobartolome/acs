@@ -8,7 +8,7 @@ use acs::bindings::sketch_solve::{
     acs_constraint_catalog, acs_planegcs_constraint_catalog, acs_solve_sketch,
     acs_solve_sketch_planegcs,
 };
-use acs::constraint_catalog::{ConstraintSpec, ExtensionFlag, FieldKind, Vocabulary};
+use acs::constraint_catalog::{ConstraintSpec, ExtensionFlag, FieldKind, Vocabulary, field_path};
 use acs::sketch_solve::{solve_planegcs_sketch_json, solve_sketch_json};
 use serde_json::{Value, json};
 
@@ -95,7 +95,17 @@ fn sketch_for(spec: &ConstraintSpec, vocabulary: Vocabulary) -> Value {
                 json!({ entity_key: id, property_key: "radius" })
             }
         };
-        constraint[name] = value;
+        match field_path(name) {
+            (name, None) => constraint[name] = value,
+            (name, Some(i)) => {
+                if constraint.get(name).is_none() {
+                    constraint[name] = json!([]);
+                }
+                let array = constraint[name].as_array_mut().unwrap();
+                array.resize(array.len().max(i + 1), Value::Null);
+                array[i] = value;
+            }
+        }
     }
     prims.push(constraint);
     json!({ "version": 1, "primitives": prims })
@@ -243,6 +253,56 @@ fn acs_constraint_catalog_describes_the_native_vocabulary() {
     // Rows without an Extension variant carry no flag.
     let coincident = rows.iter().find(|r| r["type"] == "coincident").unwrap();
     assert!(coincident.get("extension").is_none());
+}
+
+#[test]
+fn the_native_catalog_lists_midpoint_by_entities_and_marks_the_old_forms_deprecated() {
+    let rows = catalog(&acs_constraint_catalog());
+    let midpoint: Vec<&Value> = rows
+        .iter()
+        .filter(|r| r["type"] == "midpoint" && r.get("deprecated").is_none())
+        .collect();
+    let entities = |first: &str| {
+        json!([
+            { "name": "entities", "index": 0, "kind": first },
+            { "name": "entities", "index": 1, "kind": "line" }
+        ])
+    };
+    assert_eq!(midpoint.len(), 3);
+    assert_eq!(midpoint[0]["fields"], entities("point"));
+    assert!(midpoint[0].get("extension").is_none());
+    assert_eq!(midpoint[1]["fields"], entities("line"));
+    assert_eq!(midpoint[1]["extension"], false);
+    assert_eq!(midpoint[2]["fields"], entities("line"));
+    assert_eq!(midpoint[2]["extension"], true);
+
+    let deprecated: Vec<&Value> = rows
+        .iter()
+        .filter(|r| r.get("deprecated").is_some())
+        .collect();
+    assert_eq!(deprecated.len(), 3);
+    for row in &deprecated {
+        assert_eq!(row["deprecated"], true);
+        assert!(
+            row["type"] == "midpoint" || row["type"] == "midpoint_on",
+            "{row}"
+        );
+    }
+
+    let axis: Vec<&Value> = rows
+        .iter()
+        .filter(|r| r["type"] == "ellipse_axis")
+        .collect();
+    assert_eq!(axis.len(), 2);
+    assert_eq!(
+        axis[1]["fields"],
+        json!([
+            { "name": "ellipse", "kind": "ellipse" },
+            { "name": "a", "kind": "point" },
+            { "name": "b", "kind": "point" },
+            { "name": "which", "kind": "axis" }
+        ])
+    );
 }
 
 #[test]

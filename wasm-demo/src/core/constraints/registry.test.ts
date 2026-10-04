@@ -17,6 +17,7 @@ import {
   constraintToPrimitive,
   defaultParams,
   expandedKinds,
+  fieldPath,
   getConstraintDef,
   matchSelection,
   primitiveToConstraint,
@@ -44,16 +45,25 @@ describe("ConstraintRegistry", () => {
   it("has one entry per row of the solver's native catalog, field for field", () => {
     type Row = {
       type: string;
-      fields: { name: string; kind: string }[];
+      fields: { name: string; index?: number; kind: string }[];
       extension?: boolean;
+      deprecated?: boolean;
     };
-    const catalog = JSON.parse(acs.acsConstraintCatalog()) as Row[];
+    // Deprecated forms are accepted for one more release, never offered.
+    const catalog = (JSON.parse(acs.acsConstraintCatalog()) as Row[]).filter(
+      (r) => r.deprecated !== true,
+    );
     const asRow = (def: ConstraintDef): Row => {
       const kinds = expandedKinds(def);
       const row: Row = {
         type: def.type,
         fields: [
-          ...def.entityFields.map((name, i) => ({ name, kind: kinds[i] })),
+          ...def.entityFields.map((field, i) => {
+            const [name, index] = fieldPath(field);
+            return index === undefined
+              ? { name, kind: kinds[i] }
+              : { name, index, kind: kinds[i] };
+          }),
           ...(def.scalarParams ?? []).map((p) => ({ name: p.key, kind: "scalar" })),
           ...(def.valueFields ?? []).map((name) => ({ name, kind: "value" })),
           ...(def.axisFields ?? []).map((name) => ({ name, kind: "axis" })),
@@ -65,7 +75,7 @@ describe("ConstraintRegistry", () => {
     const key = (r: Row) =>
       JSON.stringify([
         r.type,
-        r.fields.map((f) => `${f.name}:${f.kind}`),
+        r.fields.map((f) => `${f.name}${f.index === undefined ? "" : `[${f.index}]`}:${f.kind}`),
         r.extension ?? null,
       ]);
     expect(CONSTRAINT_DEFS.map(asRow).map(key).sort()).toEqual(
@@ -134,6 +144,7 @@ describe("ConstraintRegistry", () => {
       expect(keys).not.toContain("on_ellipse");
       expect(keys).not.toContain("tangent_line_ellipse");
       expect(keys).not.toContain("ellipse_axis");
+      expect(keys).not.toContain("ellipse_diameter");
     }
     expect(
       primitiveToConstraint(
@@ -194,6 +205,18 @@ describe("ConstraintRegistry", () => {
       point: "p1",
       curve: "l1",
     });
+
+    const midpoint: ConstraintInstance = {
+      id: "k4",
+      def: "midpoint",
+      entities: ["p1", "l1"],
+      params: {},
+    };
+    expect(constraintToPrimitive(midpoint)).toEqual({
+      id: "k4",
+      type: "midpoint",
+      entities: ["p1", "l1"],
+    });
   });
 
   it("throws on unknown defs or wrong entity counts", () => {
@@ -245,6 +268,12 @@ describe("ConstraintRegistry", () => {
     expect(kinds({ type: "horizontal", a: "p1", b: "p2" })?.def).toBe(
       "horizontal_points",
     );
+    expect(kinds({ type: "midpoint", entities: ["p1", "l1"] })).toMatchObject({
+      def: "midpoint",
+      entities: ["p1", "l1"],
+    });
+    expect(kinds({ type: "midpoint", entities: ["l1", "p1"] })).toBeNull();
+    expect(kinds({ type: "midpoint", entities: ["p1", "l1", "p2"] })).toBeNull();
     // no variant takes a point and a missing entity
     expect(kinds({ type: "distance", a: "p1", b: "ghost", value: 1 })).toBeNull();
   });

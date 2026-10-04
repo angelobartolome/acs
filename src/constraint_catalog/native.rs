@@ -11,7 +11,7 @@
 
 use serde_json::Value;
 
-use super::{ConstraintSpec as S, FieldKind, References};
+use super::{ConstraintSpec as S, FieldKind, References, field_path, field_value};
 use crate::ConstraintType;
 
 use FieldKind::{Arc, Axis, Circle, Ellipse, Line, Point, Scalar, Value as Val};
@@ -108,17 +108,38 @@ pub(super) static SPECS: &[S] = &[
         let (center, focus, e) = a.e(0);
         ConstraintType::PointOnEllipse(a.p(0), center, focus, e)
     }),
+    S::new(
+        "midpoint",
+        &[("entities[0]", Point), ("entities[1]", Line)],
+        |a| ConstraintType::Midpoint(a.p(0), a.p(1), a.p(2)),
+    ),
+    S::new(
+        "midpoint",
+        &[("entities[0]", Line), ("entities[1]", Line)],
+        |a| ConstraintType::MidpointOfLineOnLine(a.p(0), a.p(1), a.p(2), a.p(3)),
+    )
+    .segment(),
+    S::new(
+        "midpoint",
+        &[("entities[0]", Line), ("entities[1]", Line)],
+        |a| ConstraintType::MidpointOfLineOnExtension(a.p(0), a.p(1), a.p(2), a.p(3)),
+    )
+    .extension(),
+    // Deprecated in 0.1.6 for `midpoint` with `entities`; removed in 0.1.7.
     S::new("midpoint", &[("point", Point), ("line", Line)], |a| {
         ConstraintType::Midpoint(a.p(0), a.p(1), a.p(2))
-    }),
+    })
+    .deprecated(),
     S::new("midpoint_on", &[("line", Line), ("on", Line)], |a| {
         ConstraintType::MidpointOfLineOnLine(a.p(0), a.p(1), a.p(2), a.p(3))
     })
-    .segment(),
+    .segment()
+    .deprecated(),
     S::new("midpoint_on", &[("line", Line), ("on", Line)], |a| {
         ConstraintType::MidpointOfLineOnExtension(a.p(0), a.p(1), a.p(2), a.p(3))
     })
-    .extension(),
+    .extension()
+    .deprecated(),
     S::new("tangent", &[("a", Line), ("b", Circle)], |a| {
         ConstraintType::TangentLineCircle(a.p(0), a.p(1), a.center(0), a.c(0))
     })
@@ -127,7 +148,9 @@ pub(super) static SPECS: &[S] = &[
         ConstraintType::TangentExtensionCircle(a.p(0), a.p(1), a.center(0), a.c(0))
     })
     .extension(),
-    S::new("tangent", &[("a", Line), ("b", Arc)], |a| a.tangent_line_arc()),
+    S::new("tangent", &[("a", Line), ("b", Arc)], |a| {
+        a.tangent_line_arc()
+    }),
     S::new("tangent", &[("a", Line), ("b", Ellipse)], |a| {
         let (center, focus, e) = a.e(0);
         ConstraintType::TangentLineEllipse(a.p(0), a.p(1), center, focus, e)
@@ -205,6 +228,19 @@ pub(super) static SPECS: &[S] = &[
             ConstraintType::EllipseAxisPoint(a.p(0), center, focus, e, a.axis(0))
         },
     ),
+    S::new(
+        "ellipse_axis",
+        &[
+            ("ellipse", Ellipse),
+            ("a", Point),
+            ("b", Point),
+            ("which", Axis),
+        ],
+        |a| {
+            let (center, focus, e) = a.e(0);
+            ConstraintType::EllipseDiameter(a.p(0), a.p(1), center, focus, e, a.axis(0))
+        },
+    ),
 ];
 
 /// Builds the native constraint `c` of type `json_type`, choosing the row
@@ -263,21 +299,30 @@ fn entity_kind<'r>(refs: &'r References, id: &str) -> Option<&'r str> {
 }
 
 /// Whether every entity field of `spec` references an entity of its kind,
-/// and no number field references an entity.
+/// no number field references an entity, and each array field has exactly
+/// the elements `spec` reads.
 fn matches_kinds(spec: &S, c: &Value, refs: &References) -> bool {
-    spec.fields.iter().all(|&(name, kind)| {
-        let field = c.get(name);
-        if kind.is_entity() {
-            field
-                .and_then(Value::as_str)
-                .and_then(|id| entity_kind(refs, id))
-                == Some(kind.as_str())
-        } else {
-            !field
-                .and_then(Value::as_str)
-                .is_some_and(|s| refs.entity_types.contains_key(s))
+    let array_lengths_match = spec.fields.iter().all(|&(name, _)| match field_path(name) {
+        (_, None) => true,
+        (key, Some(_)) => {
+            let read = spec.fields.iter().filter(|&&(n, _)| field_path(n).0 == key);
+            c.get(key).and_then(Value::as_array).map(Vec::len) == Some(read.count())
         }
-    })
+    });
+    array_lengths_match
+        && spec.fields.iter().all(|&(name, kind)| {
+            let field = field_value(c, name);
+            if kind.is_entity() {
+                field
+                    .and_then(Value::as_str)
+                    .and_then(|id| entity_kind(refs, id))
+                    == Some(kind.as_str())
+            } else {
+                !field
+                    .and_then(Value::as_str)
+                    .is_some_and(|s| refs.entity_types.contains_key(s))
+            }
+        })
 }
 
 /// The error for a combination of kinds no row of `json_type` takes:
@@ -299,7 +344,7 @@ fn unsupported(
     let mut got: Vec<String> = names
         .iter()
         .filter_map(|&name| {
-            let v = c.get(name)?;
+            let v = field_value(c, name)?;
             let kind = match v.as_str() {
                 Some(id) => match entity_kind(refs, id) {
                     Some(kind) => kind.to_string(),

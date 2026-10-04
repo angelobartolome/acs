@@ -74,7 +74,7 @@ export interface Sketch {
 }
 
 /** JSON value used for primitives exchanged with the solver. */
-export type JsonPrimitive = Record<string, string | number | boolean>;
+export type JsonPrimitive = Record<string, string | number | boolean | string[]>;
 
 export function isPoint(e: SketchEntity): e is PointEntity {
   return e.kind === "point";

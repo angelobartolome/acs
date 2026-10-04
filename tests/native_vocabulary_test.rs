@@ -337,14 +337,78 @@ fn offset_x_y_radius() {
 }
 
 #[test]
-fn midpoint_and_midpoint_on() {
+fn midpoint_of_a_line() {
+    let resp = solve(with_fixed_line(json!([
+        { "id": "m", "type": "point", "x": 2.0, "y": 3.0 },
+        { "id": "k", "type": "midpoint", "entities": ["m", "l"] }
+    ])));
+    close(&resp, "m", 5.0, 0.0);
+}
+
+#[test]
+fn midpoint_of_a_line_on_a_line() {
+    // q's midpoint, held at x = 15 past l's end: on l's segment it can't
+    // be, on l's Extension it is.
+    let sketch = |extension: bool| {
+        with_fixed_line(json!([
+            { "id": "q1", "type": "point", "x": 14.0, "y": 2.0, "fixed": true },
+            { "id": "q2", "type": "point", "x": 16.0, "y": 1.0 },
+            { "id": "q", "type": "line", "p1_id": "q1", "p2_id": "q2" },
+            { "id": "k1", "type": "midpoint", "entities": ["q", "l"], "extension": extension },
+            { "id": "k2", "type": "x", "point": "q2", "value": 16.0 }
+        ]))
+    };
+    let resp = solve(sketch(true));
+    close(&resp, "q2", 16.0, -2.0);
+
+    let out = solve_sketch_json(&request(sketch(false))).unwrap();
+    let resp: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(resp["status"], "failed", "{resp}");
+}
+
+#[test]
+fn midpoint_takes_a_point_or_a_line_then_a_line() {
+    let (error, id) = reject(with_fixed_line(json!([
+        { "id": "m", "type": "point", "x": 2.0, "y": 3.0 },
+        { "id": "k", "type": "midpoint", "entities": ["l", "m"] }
+    ])));
+    assert_eq!(id, "k");
+    assert!(
+        error.contains("got entities[0]: line, entities[1]: point"),
+        "{error}"
+    );
+    assert!(
+        error.contains("(entities[0]: point, entities[1]: line)"),
+        "{error}"
+    );
+
+    let (error, _) = reject(with_fixed_line(json!([
+        { "id": "k", "type": "midpoint", "entities": "l" }
+    ])));
+    assert!(
+        error.contains("unsupported combination for 'midpoint'"),
+        "{error}"
+    );
+
+    let (error, _) = reject(with_fixed_line(json!([
+        { "id": "m", "type": "point", "x": 2.0, "y": 3.0 },
+        { "id": "k", "type": "midpoint", "entities": ["m", "l", "m"] }
+    ])));
+    assert!(
+        error.contains("unsupported combination for 'midpoint'"),
+        "{error}"
+    );
+}
+
+/// The 0.1.5 forms, deprecated: `midpoint {point, line}` and `midpoint_on`.
+#[test]
+fn deprecated_midpoint_forms_still_solve() {
     let resp = solve(with_fixed_line(json!([
         { "id": "m", "type": "point", "x": 2.0, "y": 3.0 },
         { "id": "k", "type": "midpoint", "point": "m", "line": "l" }
     ])));
     close(&resp, "m", 5.0, 0.0);
 
-    // The midpoint of q, beyond l's end, lands on l's Extension.
     let resp = solve(with_fixed_line(json!([
         { "id": "q1", "type": "point", "x": 14.0, "y": 2.0, "fixed": true },
         { "id": "q2", "type": "point", "x": 16.0, "y": 1.0 },
@@ -353,6 +417,68 @@ fn midpoint_and_midpoint_on() {
         { "id": "k2", "type": "x", "point": "q2", "value": 16.0 }
     ])));
     close(&resp, "q2", 16.0, -2.0);
+}
+
+/// Solves `native` and `dialect`, which describe the same sketch, and
+/// checks they answer the same, constraints aside.
+fn same_as_dialect(native: Value, dialect: Value) {
+    let solve_in = |solve: fn(&str) -> Result<String, String>, prims: Value| {
+        let out = solve(&request(prims)).unwrap_or_else(|e| panic!("rejected: {e}"));
+        let mut resp: Value = serde_json::from_str(&out).unwrap();
+        let geometry: Vec<Value> = resp["primitives"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| ["point", "line", "ellipse"].contains(&p["type"].as_str().unwrap()))
+            .cloned()
+            .collect();
+        resp["primitives"] = json!(geometry);
+        resp.as_object_mut().unwrap().remove("stats");
+        resp
+    };
+    let native = solve_in(solve_sketch_json, native);
+    assert_eq!(native["status"], "converged", "{native}");
+    assert_eq!(
+        native,
+        solve_in(acs::sketch_solve::solve_planegcs_sketch_json, dialect)
+    );
+}
+
+#[test]
+fn midpoint_solves_as_the_dialect_does() {
+    let geometry = json!([
+        { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
+        { "id": "b", "type": "point", "x": 10.0, "y": 1.0 },
+        { "id": "l", "type": "line", "p1_id": "a", "p2_id": "b" },
+        { "id": "m", "type": "point", "x": 2.0, "y": 3.0 },
+        { "id": "q1", "type": "point", "x": 14.0, "y": 2.0 },
+        { "id": "q2", "type": "point", "x": 16.0, "y": 1.0 },
+        { "id": "q", "type": "line", "p1_id": "q1", "p2_id": "q2" }
+    ]);
+    let with = |constraints: Value| {
+        let mut prims = geometry.clone();
+        prims
+            .as_array_mut()
+            .unwrap()
+            .extend(constraints.as_array().unwrap().clone());
+        prims
+    };
+    same_as_dialect(
+        with(json!([{ "id": "k", "type": "midpoint", "entities": ["m", "l"] }])),
+        with(
+            json!([{ "id": "k", "type": "p2p_symmetric_ppp", "p1_id": "a", "p2_id": "b", "p_id": "m" }]),
+        ),
+    );
+    same_as_dialect(
+        with(json!([{ "id": "k", "type": "midpoint", "entities": ["q", "l"] }])),
+        with(json!([{ "id": "k", "type": "midpoint_on_line_ll", "l1_id": "q", "l2_id": "l" }])),
+    );
+    same_as_dialect(
+        with(json!([{ "id": "k", "type": "midpoint", "entities": ["q", "l"], "extension": true }])),
+        with(
+            json!([{ "id": "k", "type": "midpoint_on_extension_ll", "l1_id": "q", "l2_id": "l" }]),
+        ),
+    );
 }
 
 #[test]
@@ -531,7 +657,10 @@ fn on_an_ellipse() {
         { "id": "k", "type": "on", "point": "p", "curve": "e" }
     ])));
     let (x, y) = xy(&resp, "p");
-    assert!((x * x / 25.0 + y * y / 16.0 - 1.0).abs() < 1e-8, "({x}, {y})");
+    assert!(
+        (x * x / 25.0 + y * y / 16.0 - 1.0).abs() < 1e-8,
+        "({x}, {y})"
+    );
 }
 
 #[test]
@@ -561,7 +690,10 @@ fn tangent_line_ellipse_has_no_extension_variant() {
         { "id": "k", "type": "tangent", "a": "l", "b": "e", "extension": true }
     ])));
     assert_eq!(id, "k");
-    assert!(error.contains("got a: line, b: ellipse, extension"), "{error}");
+    assert!(
+        error.contains("got a: line, b: ellipse, extension"),
+        "{error}"
+    );
     assert!(error.contains("(a: line, b: ellipse)"), "{error}");
 }
 
@@ -581,6 +713,83 @@ fn ellipse_axis_places_points_at_the_ends_of_either_axis() {
 }
 
 #[test]
+fn two_point_ellipse_axis_keeps_its_points_on_opposite_ends() {
+    // Both points start nearer the +major end: one `ellipse_axis` each puts
+    // both there; the two-point form puts one at each end.
+    let points = json!([
+        { "id": "a", "type": "point", "x": 4.5, "y": 0.4 },
+        { "id": "b", "type": "point", "x": 3.9, "y": -0.6 }
+    ]);
+    let with = |constraints: Value| {
+        let mut prims = points.clone();
+        prims
+            .as_array_mut()
+            .unwrap()
+            .extend(constraints.as_array().unwrap().clone());
+        with_fixed_ellipse(prims)
+    };
+    let resp = solve(with(json!([
+        { "id": "k1", "type": "ellipse_axis", "ellipse": "e", "point": "a", "which": "major" },
+        { "id": "k2", "type": "ellipse_axis", "ellipse": "e", "point": "b", "which": "major" }
+    ])));
+    close(&resp, "a", 5.0, 0.0);
+    close(&resp, "b", 5.0, 0.0);
+
+    let resp = solve(with(json!([
+        { "id": "k", "type": "ellipse_axis", "ellipse": "e", "a": "a", "b": "b", "which": "major" }
+    ])));
+    let ((ax, ay), (bx, by)) = (xy(&resp, "a"), xy(&resp, "b"));
+    assert!(
+        (ax + bx).abs() < 1e-8 && (ay + by).abs() < 1e-8,
+        "a = ({ax}, {ay}), b = ({bx}, {by})"
+    );
+    assert!(
+        (ax.abs() - 5.0).abs() < 1e-8 && ay.abs() < 1e-8,
+        "a = ({ax}, {ay})"
+    );
+
+    let resp = solve(with(json!([
+        { "id": "k", "type": "ellipse_axis", "ellipse": "e", "a": "a", "b": "b", "which": "minor" }
+    ])));
+    let ((ax, ay), (bx, by)) = (xy(&resp, "a"), xy(&resp, "b"));
+    assert!(
+        (ax + bx).abs() < 1e-8 && (ay + by).abs() < 1e-8,
+        "a = ({ax}, {ay}), b = ({bx}, {by})"
+    );
+    assert!(
+        ax.abs() < 1e-8 && (ay.abs() - 4.0).abs() < 1e-8,
+        "a = ({ax}, {ay})"
+    );
+}
+
+#[test]
+fn two_point_ellipse_axis_solves_as_the_dialect_does() {
+    for (which, dialect) in [
+        ("major", "internal_alignment_ellipse_major_diameter"),
+        ("minor", "internal_alignment_ellipse_minor_diameter"),
+    ] {
+        let geometry = json!([
+            { "id": "c", "type": "point", "x": 0.0, "y": 0.0 },
+            { "id": "f", "type": "point", "x": 3.0, "y": 0.5 },
+            { "id": "e", "type": "ellipse", "c_id": "c", "focus1_id": "f", "radmin": 4.0 },
+            { "id": "a", "type": "point", "x": 4.5, "y": 0.4 },
+            { "id": "b", "type": "point", "x": -3.9, "y": -0.6 }
+        ]);
+        let with = |constraint: Value| {
+            let mut prims = geometry.clone();
+            prims.as_array_mut().unwrap().push(constraint);
+            prims
+        };
+        same_as_dialect(
+            with(
+                json!({ "id": "k", "type": "ellipse_axis", "ellipse": "e", "a": "a", "b": "b", "which": which }),
+            ),
+            with(json!({ "id": "k", "type": dialect, "e_id": "e", "p1_id": "a", "p2_id": "b" })),
+        );
+    }
+}
+
+#[test]
 fn ellipse_axis_moves_a_free_ellipse() {
     // A free ellipse whose major axis end is pinned at (7, 0): the ellipse
     // grows (its center and minor radius held) until it reaches it.
@@ -595,7 +804,10 @@ fn ellipse_axis_moves_a_free_ellipse() {
     let b = primitive(&resp, "e")["radmin"].as_f64().unwrap();
     let (fx, fy) = xy(&resp, "f");
     assert!((b - 4.0).abs() < 1e-8);
-    assert!((b.hypot(fx.hypot(fy)) - 7.0).abs() < 1e-8, "f = ({fx}, {fy})");
+    assert!(
+        (b.hypot(fx.hypot(fy)) - 7.0).abs() < 1e-8,
+        "f = ({fx}, {fy})"
+    );
     assert!(fy.abs() < 1e-8);
 }
 
@@ -606,13 +818,19 @@ fn ellipse_axis_needs_major_or_minor() {
         { "id": "k", "type": "ellipse_axis", "ellipse": "e", "point": "p", "which": "focal" }
     ])));
     assert_eq!(id, "k");
-    assert_eq!(error, "constraint k: field 'which' is not \"major\" or \"minor\"");
+    assert_eq!(
+        error,
+        "constraint k: field 'which' is not \"major\" or \"minor\""
+    );
 
     let (error, _) = reject(with_fixed_ellipse(json!([
         { "id": "p", "type": "point", "x": 5.0, "y": 0.0 },
         { "id": "k", "type": "ellipse_axis", "ellipse": "p", "point": "p", "which": "major" }
     ])));
-    assert_eq!(error, "constraint k: 'p' is not an ellipse");
+    assert!(
+        error.contains("got ellipse: point, point: point"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -698,8 +916,12 @@ fn dragging_a_slot_endpoint_never_reports_redundancy() {
             12.0 + 5.0 * (step as f64 * 0.9).cos(),
         );
         let mut with_drag = prims.as_array().unwrap().clone();
-        with_drag.push(json!({ "id": "dx", "type": "x", "point": "t2", "value": tx, "temporary": true }));
-        with_drag.push(json!({ "id": "dy", "type": "y", "point": "t2", "value": ty, "temporary": true }));
+        with_drag.push(
+            json!({ "id": "dx", "type": "x", "point": "t2", "value": tx, "temporary": true }),
+        );
+        with_drag.push(
+            json!({ "id": "dy", "type": "y", "point": "t2", "value": ty, "temporary": true }),
+        );
         let resp = solve(Value::Array(with_drag));
         assert_slot_fully_determined(&resp);
         let n = prims.as_array().unwrap().len();

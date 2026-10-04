@@ -101,8 +101,9 @@ Every constraint primitive needs a unique `id` and a `type` string. ACS names co
 | `distance` | `a`: point; `b`: point or line; `value`; `extension?` | Point–point distance; point–segment distance (to the nearest endpoint when past an end); with `extension: true`, perpendicular distance to the line's Extension |
 | `offset` | `point`: point, `line`: line, `value`, `side` | Point is `value` from the line's Extension on `side`: `1` left of `p1 → p2`, `-1` right (any negative number counts as `-1`). Always the Extension (a Linked Offset's endpoints routinely stick out past its source line) |
 | `on` | `point`: point; `curve`: line, circle, arc or ellipse; `extension?` (lines) | Point lies on the segment (closest point clamped to it), on the line's Extension (`extension: true`), on the circle, on the arc's span, or on the ellipse |
-| `midpoint` | `point`: point, `line`: line | Point is the line's midpoint |
-| `midpoint_on` | `line`: line, `on`: line; `extension?` | Midpoint of `line` lies on segment `on` (or its Extension) |
+| `midpoint` | `entities`: [point, line] or [line, line]; `extension?` ([line, line]) | `[point, line]`: the point is the line's midpoint. `[line, line]`: the first line's midpoint lies on the second, on its segment (or its Extension with `extension: true`). The variant is inferred from the first entity's kind; the array must have exactly two ids |
+| `midpoint` (deprecated) | `point`: point, `line`: line | *Deprecated in 0.1.6, removed in 0.1.7*: the 0.1.5 form of `entities: [point, line]` |
+| `midpoint_on` (deprecated) | `line`: line, `on`: line; `extension?` | *Deprecated in 0.1.6, removed in 0.1.7*: use `midpoint` with `entities: [line, on]` |
 | `tangent` | `a`, `b`: line–circle, line–arc, circle–circle or line–ellipse; `extension?` (line–circle) | Line segment tangent to the circle with the tangency point on the segment (`extension: true`: anywhere along the Extension); line segment tangent to the arc, touching both the segment and the arc's span (when the line ends at one of the arc's endpoints, as in a slot, tangency is the angle at that shared point: the line is perpendicular to the radius there); two circles touching externally (centers `r1 + r2` apart); line segment tangent to the ellipse with the tangency point on the segment |
 | `concentric` | `a`, `b`: circle or arc | Share a center |
 | `equal` | `a`, `b`: line–line, circle/arc–circle/arc, or values | Equal length; equal radius; `a = b` (value fields) |
@@ -112,7 +113,8 @@ Every constraint primitive needs a unique `id` and a `type` string. ACS names co
 | `mirror` | `source`, `image`: point; `axis`: line | `image` is `source` mirrored across the axis line's Extension (a mirror axis reflects points beside or beyond its ends too) |
 | `rotation` | `source`, `copy`, `center`: point; `angle` | `copy` is `source` rotated `angle` radians counter-clockwise about `center` (one circular array copy) |
 | `translation` | `source`, `copy`, `from`, `to`: point; `distance`, `count` | `copy` is `source` moved `distance × count` along the unit direction `from → to` (copy `count` of a linear array; swap `from`/`to` to flip it) |
-| `ellipse_axis` | `ellipse`: ellipse, `point`: point, `which`: `"major"` or `"minor"` | Point is an endpoint of the ellipse's major axis (`center ± a·u`, u the unit direction center → focus) or minor axis (`center ± radmin·rot90(u)`): either end, the one it is nearer. Two points on opposite ends of one axis need one `ellipse_axis` each (dialect: one diameter alignment for both) |
+| `ellipse_axis` | `ellipse`: ellipse, `point`: point, `which`: `"major"` or `"minor"` | Point is an endpoint of the ellipse's major axis (`center ± a·u`, u the unit direction center → focus) or minor axis (`center ± radmin·rot90(u)`): either end, the one it is nearer. Two of these on one axis may both settle on the same end |
+| `ellipse_axis` | `ellipse`: ellipse, `a`, `b`: point, `which`: `"major"` or `"minor"` | `a` and `b` are the two opposite ends of the major or minor axis (either way round), as the dialect's diameter alignments |
 
 Notes:
 
@@ -121,7 +123,7 @@ Notes:
 - A combination of kinds no variant takes is rejected naming the constraint, the kinds it got and the ones it accepts, e.g. `constraint k1: unsupported combination for 'distance': got a: point, b: circle; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension)`. So is `extension: true` on a variant that has no Extension form (`on` with a circle, `tangent` with an arc, `coincident`, …).
 - Circle and arc fields resolve their center point from the circle's or arc's `c_id` (and an arc field its endpoints from `start_id`/`end_id`). `on` with a circle puts the point anywhere on the circle; with an arc, only on its span.
 - Ellipse fields resolve the ellipse's center and focus points from its `c_id` and `focus1_id`. Tangency to an ellipse is to a Line's segment, as with a circle: the tangency point (where the line from one focus to the other focus's mirror image in the line crosses it) must lie on the segment. There is no Extension variant for ellipses.
-- The machine-readable list is available from `acsConstraintCatalog()`: JSON `[{ "type", "fields": [{ "name", "kind" }], "extension"? }]`, one row per variant (so `distance` has three rows), kinds `point`/`line`/`circle`/`arc`/`ellipse`/`scalar`/`value`/`axis` (`axis`: the string `"major"` or `"minor"`). `extension` is present on rows that take the flag: `false` on the segment variant, `true` on the Extension variant.
+- The machine-readable list is available from `acsConstraintCatalog()`: JSON `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?, "deprecated"? }]`, one row per variant (so `distance` has three rows), kinds `point`/`line`/`circle`/`arc`/`ellipse`/`scalar`/`value`/`axis` (`axis`: the string `"major"` or `"minor"`). A field with an `index` is that element of the array field `name` (`midpoint`'s `entities`). `extension` is present on rows that take the flag: `false` on the segment variant, `true` on the Extension variant. `deprecated: true` marks a form accepted for one more release (`midpoint {point, line}`, `midpoint_on`).
 - The request is rejected (see *Rejected requests* below) when it has the wrong `version`, no `primitives` array, a primitive without `type` or `id`, an unknown type, a missing field, a constraint that references a missing or wrong-kind entity, or an unsupported combination. Nothing is solved; the error names the problem.
 - Only `point`, `line`, `circle`, `arc` and `ellipse` are geometry, and `param` is a Parameter. Any other `type` is looked up as a constraint.
 
@@ -149,12 +151,12 @@ The dialect names constraints as FreeCAD's GCS names them, one type per combinat
 | `point_on_extension_pl` | `p_id`, `l_id` | `on`, line, `extension: true` |
 | `point_on_circle` | `p_id`, `c_id` | `on`, circle |
 | `point_on_arc` | `p_id`, `a_id` | `on`, arc |
-| `p2p_symmetric_ppp` | `p1_id`, `p2_id`, `p_id` | `midpoint` (`p_id` is the midpoint of `p1_id`, `p2_id`) |
+| `p2p_symmetric_ppp` | `p1_id`, `p2_id`, `p_id` | `midpoint` `[point, line]` on a line from `p1_id` to `p2_id` (`p_id` is the midpoint of `p1_id`, `p2_id`) |
 | `p2p_symmetric_ppl` | `p1_id`, `p2_id`, `l_id` | `mirror` (`p2_id` is `p1_id` mirrored across the line's Extension) |
 | `mirror_point_ppl` | `pA_id`, `pB_id`, `axis_id` | `mirror` |
-| `midpoint_on_line_ll` | `l1_id`, `l2_id` | `midpoint_on` |
-| `midpoint_on_line_pppp` | `l1p1_id`, `l1p2_id`, `l2p1_id`, `l2p2_id` | `midpoint_on` (dialect only) |
-| `midpoint_on_extension_ll` | `l1_id`, `l2_id` | `midpoint_on`, `extension: true` |
+| `midpoint_on_line_ll` | `l1_id`, `l2_id` | `midpoint` `[line, line]` |
+| `midpoint_on_line_pppp` | `l1p1_id`, `l1p2_id`, `l2p1_id`, `l2p2_id` | `midpoint` `[line, line]` (dialect only) |
+| `midpoint_on_extension_ll` | `l1_id`, `l2_id` | `midpoint` `[line, line]`, `extension: true` |
 | `tangent_lc` | `l_id`, `c_id` | `tangent`, line–circle |
 | `tangent_extension_lc` | `l_id`, `c_id` | `tangent`, line–circle, `extension: true` |
 | `tangent_la` | `l_id`, `a_id` | `tangent`, line–arc |
@@ -175,8 +177,8 @@ The dialect names constraints as FreeCAD's GCS names them, one type per combinat
 In the dialect a `param` may come without an `id`, as GCS keys Parameters by `name` (GCS-style clients send `{type: "param", name, value}`): its `name` is then its key, and constraints reference it by that name. Every other primitive needs an `id`.
 | `point_on_ellipse` | `p_id`, `e_id` | `on`, ellipse |
 | `tangent_le` | `l_id`, `e_id` | `tangent`, line–ellipse (tangency point on the segment, like `tangent_lc`) |
-| `internal_alignment_ellipse_major_diameter` | `e_id`, `p1_id`, `p2_id` | `p1_id` and `p2_id` are the two ends of the major axis (one `ellipse_axis` `"major"` for each, and the two on opposite ends) |
-| `internal_alignment_ellipse_minor_diameter` | `e_id`, `p1_id`, `p2_id` | the same for the minor axis |
+| `internal_alignment_ellipse_major_diameter` | `e_id`, `p1_id`, `p2_id` | `ellipse_axis` with `a`, `b`, `"major"`: `p1_id` and `p2_id` are the two ends of the major axis |
+| `internal_alignment_ellipse_minor_diameter` | `e_id`, `p1_id`, `p2_id` | `ellipse_axis` with `a`, `b`, `"minor"` |
 
 The diameter alignments hold the pair symmetric about the center, along the axis, a diameter apart; which point takes which end isn't fixed (GCS assigns the ends once, by which point is nearer when the constraint is added), so each point keeps the end it is nearest. An ellipse tool typically writes the ellipse, a construction focus point, four axis points held by the two diameter alignments, and `p2p_distance`s on the diameters; mirrors and arrays tie a copy's minor radius to the source's with `equal` over `{ "o_id": "e1", "prop": "radmin" }`. Other GCS ellipse types (`internal_alignment_point2ellipse`, the focus alignments, `arc_of_ellipse`, …) are unknown types.
 

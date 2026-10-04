@@ -61,7 +61,11 @@ export interface ConstraintDef {
   description: string;
   /** required selection, in slot order */
   selection: SelectionSlot[];
-  /** JSON field name per selected entity, in slot order */
+  /**
+   * JSON field name per selected entity, in slot order; `name[i]` is element
+   * `i` of the array field `name` (catalog `{ name, index }`), see
+   * {@link fieldPath}
+   */
   entityFields: string[];
   scalarParams?: ScalarParamDef[];
   /**
@@ -420,27 +424,27 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     badge: "M",
     description: "Point is the midpoint of the line",
     selection: [P(1), L(1)],
-    entityFields: ["point", "line"],
+    entityFields: ["entities[0]", "entities[1]"],
   },
   {
     key: "midpoint_on_line",
-    type: "midpoint_on",
+    type: "midpoint",
     extension: false,
     label: "Midpoint on Line",
     badge: "M",
     description: "Midpoint of the first line lies on the second segment",
     selection: [L(2)],
-    entityFields: ["line", "on"],
+    entityFields: ["entities[0]", "entities[1]"],
   },
   {
     key: "midpoint_on_extension",
-    type: "midpoint_on",
+    type: "midpoint",
     extension: true,
     label: "Midpoint on Extension",
     badge: "ME",
     description: "Midpoint of the first line lies on the second line's Extension",
     selection: [L(2)],
-    entityFields: ["line", "on"],
+    entityFields: ["entities[0]", "entities[1]"],
   },
   {
     key: "tangent_line_circle",
@@ -687,6 +691,16 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     entityFields: ["ellipse", "point"],
     axisFields: ["which"],
   },
+  {
+    key: "ellipse_diameter",
+    type: "ellipse_axis",
+    label: "Ellipse Diameter",
+    badge: "⌀",
+    description: "The two points are opposite ends of the ellipse's major or minor axis",
+    selection: [E(1), P(2)],
+    entityFields: ["ellipse", "a", "b"],
+    axisFields: ["which"],
+  },
 ];
 
 const DEF_BY_KEY: ReadonlyMap<string, ConstraintDef> = new Map(
@@ -770,6 +784,41 @@ export function defaultParams(
 // serialization
 // ---------------------------------------------------------------------------
 
+/** Splits an entity field into its JSON key and array index: `entities[1]` → `["entities", 1]`. */
+export function fieldPath(field: string): [string, number | undefined] {
+  const m = /^(.+)\[(\d+)\]$/.exec(field);
+  return m === null ? [field, undefined] : [m[1], Number(m[2])];
+}
+
+function readField(prim: Record<string, unknown>, field: string): unknown {
+  const [key, index] = fieldPath(field);
+  if (index === undefined) return prim[key];
+  const array = prim[key];
+  return Array.isArray(array) ? array[index] : undefined;
+}
+
+function writeField(prim: JsonPrimitive, field: string, value: string): void {
+  const [key, index] = fieldPath(field);
+  if (index === undefined) {
+    prim[key] = value;
+    return;
+  }
+  const existing = prim[key];
+  const array = Array.isArray(existing) ? existing : [];
+  array[index] = value;
+  prim[key] = array;
+}
+
+/** Elements each array field of `def` reads, by key. */
+function arrayLengths(def: ConstraintDef): Map<string, number> {
+  const lengths = new Map<string, number>();
+  for (const field of def.entityFields) {
+    const [key, index] = fieldPath(field);
+    if (index !== undefined) lengths.set(key, (lengths.get(key) ?? 0) + 1);
+  }
+  return lengths;
+}
+
 /** Serialize a constraint instance to its `acsSolveSketch` JSON primitive. */
 export function constraintToPrimitive(c: ConstraintInstance): JsonPrimitive {
   const def = getConstraintDef(c.def);
@@ -784,7 +833,7 @@ export function constraintToPrimitive(c: ConstraintInstance): JsonPrimitive {
   const prim: JsonPrimitive = { id: c.id, type: def.type };
   if (def.extension === true) prim.extension = true;
   def.entityFields.forEach((field, i) => {
-    prim[field] = c.entities[i];
+    writeField(prim, field, c.entities[i]);
   });
   for (const p of def.scalarParams ?? []) {
     prim[p.key] = c.params[p.key] ?? 0;
@@ -803,10 +852,14 @@ function matchPrimitive(
   resolve: EntityResolver,
 ): EntityId[] | null {
   const kinds = expandedKinds(def);
+  for (const [key, length] of arrayLengths(def)) {
+    const array = prim[key];
+    if (!Array.isArray(array) || array.length !== length) return null;
+  }
   const read = (fields: string[]): EntityId[] | null => {
     const ids: EntityId[] = [];
     for (const [i, field] of fields.entries()) {
-      const v = prim[field];
+      const v = readField(prim, field);
       if (typeof v !== "string" || resolve(v)?.kind !== kinds[i]) return null;
       ids.push(v);
     }
