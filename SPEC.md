@@ -595,12 +595,12 @@ R = u·v / (|u|·|v|) = 0      (u·v when |u| or |v| ≈ 0)
 ∂|v|/|v|)`. `p` lies on the line (an endpoint) and on the arc (its implicit
 rules), so no segment or span residual is needed.
 
-**Curve–curve tangency** (`tangent` between circles and arcs; `TangentCirclesInternal(c₁, C₁, c₂, C₂)`, `TangentCircleArc(c₁, C, c₂, arc, internal)`, `TangentArcs(c₁, arc₁, c₂, arc₂, internal)`, all `TangentCurvesConstraint` in `src/constraints/tangent_curves.rs`; external circle–circle stays §4's `Tangent`). With `w = c₂ − c₁`, `d = |w|`, and for inside tangency `s = sign(r₁ − r₂)` (`+1` at equal radii):
+**Curve–curve tangency** (`tangent` between circles and arcs; `TangentCirclesInternal(c₁, C₁, c₂, C₂)`, `TangentCircleArc(c₁, C, c₂, arc, internal)`, `TangentArcs(c₁, arc₁, c₂, arc₂, internal)`, all `TangentCurvesConstraint` in `src/constraints/tangent_curves.rs`; external circle–circle stays §4's `Tangent`). The same kernel with a gap `g` is `distance` circle–arc and arc–arc (`DistanceCircleArc(c₁, C, c₂, arc, g, internal)`, `DistanceArcs(c₁, arc₁, c₂, arc₂, g, internal)`): the curves held `g` apart along the line of centers, outside or inside, with the nearest points on the spans; tangency is `g = 0`, and `g` doesn't enter the Jacobian. With `w = c₂ − c₁`, `d = |w|`, and for inside tangency `s = sign(r₁ − r₂)` (`+1` at equal radii):
 
 | Residual | Value |
 |----------|-------|
-| `R₀` (external) | `d − (r₁ + r₂)` |
-| `R₀` (internal) | `d − s·(r₁ − r₂)` |
+| `R₀` (external) | `d − (r₁ + r₂) − g` |
+| `R₀` (internal) | `d − s·(r₁ − r₂) + g` |
 | `Rₖ`, one per Arc side, `a` then `b` | `rₖ·A(φₖ; αₖ, βₖ)` |
 
 The tangency point is on the line of centers: from `c₁` in direction `+w` and
@@ -733,8 +733,10 @@ does; `wrap` is continuous there and jumps only half a turn from `θ`.
 none. `DistanceLineLine`'s two equations make `b` parallel to `a` (an explicit
 `Parallel` on the pair is redundant). The internal circle–circle gap is
 symmetric in its circles; it is kinked only at `r₁ = r₂` (where the gap is
-`−|c₂ − c₁| ≤ 0`). The new distances take circles only, not arcs (a
-span-clamped residual would be kinked).
+`−|c₂ − c₁| ≤ 0`). Distances to arcs (circle–arc and arc–arc) don't clamp
+the gap to the span (that residual would be kinked); like curve–curve
+tangency (§ above), they keep the gap row smooth and add one span row per
+arc.
 
 ---
 
@@ -807,6 +809,8 @@ pub enum ConstraintType {
     DistanceLineCircle(String, String, String, String, f64), // line_pa, line_pb, circle_center_id, circle_id, gap
     DistanceExtensionCircle(String, String, String, String, f64), // line_pa, line_pb, circle_center_id, circle_id, gap
     DistanceCircleCircle(String, String, String, String, f64, bool), // c1_center_id, c1_id, c2_center_id, c2_id, gap, internal
+    DistanceCircleArc(String, String, String, String, f64, bool), // circle_center_id, circle_id, arc_center_id, arc_id, gap, internal
+    DistanceArcs(String, String, String, String, f64, bool), // arc1_center_id, arc1_id, arc2_center_id, arc2_id, gap, internal
     DistanceLineLine(String, String, String, String, f64),  // a_p1, a_p2, b_p1, b_p2, distance
 }
 ```

@@ -156,6 +156,34 @@ pub(super) static SPECS: &[S] = &[
     .internal(),
     S::new(
         "distance",
+        &[("a", Circle), ("b", Arc), ("value", Scalar)],
+        |a| {
+            ConstraintType::DistanceCircleArc(a.center(0), a.c(0), a.center(1), a.c(1), a.s(0), false)
+        },
+    )
+    .external(),
+    S::new(
+        "distance",
+        &[("a", Circle), ("b", Arc), ("value", Scalar)],
+        |a| {
+            ConstraintType::DistanceCircleArc(a.center(0), a.c(0), a.center(1), a.c(1), a.s(0), true)
+        },
+    )
+    .internal(),
+    S::new(
+        "distance",
+        &[("a", Arc), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistanceArcs(a.center(0), a.c(0), a.center(1), a.c(1), a.s(0), false),
+    )
+    .external(),
+    S::new(
+        "distance",
+        &[("a", Arc), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistanceArcs(a.center(0), a.c(0), a.center(1), a.c(1), a.s(0), true),
+    )
+    .internal(),
+    S::new(
+        "distance",
         &[("a", Line), ("b", Line), ("value", Scalar)],
         |a| ConstraintType::DistanceLineLine(a.p(0), a.p(1), a.p(2), a.p(3), a.s(0)),
     ),

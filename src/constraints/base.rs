@@ -471,6 +471,17 @@ pub enum ConstraintType {
     /// (c1_center_point_id, c1_id, c2_center_point_id, c2_id, distance, internal)
     DistanceCircleCircle(String, String, String, String, f64, bool),
 
+    /// Gap between a circle and an arc, measured as between two circles,
+    /// with the nearest points on the arc's span (`TangentCircleArc` held
+    /// `distance` apart).
+    /// (circle_center_point_id, circle_id, arc_center_point_id, arc_id, distance, internal)
+    DistanceCircleArc(String, String, String, String, f64, bool),
+
+    /// Gap between two arcs, measured as between two circles, with the
+    /// nearest points on both spans (`TangentArcs` held `distance` apart).
+    /// (arc1_center_point_id, arc1_id, arc2_center_point_id, arc2_id, distance, internal)
+    DistanceArcs(String, String, String, String, f64, bool),
+
     /// Both endpoints of line b are `distance` from line a's Extension, on
     /// one side: b is parallel to a, `distance` away.
     /// (a_p1_id, a_p2_id, b_p1_id, b_p2_id, distance)
@@ -692,6 +703,28 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
                 crate::constraints::distance_circle_circle::DistanceCircleCircleConstraint::new(
                     c1_center, c1, c2_center, c2, d, internal,
                 ),
+            ))
+        }
+        ConstraintType::DistanceCircleArc(c_center, c, a_center, a, d, internal) => {
+            use crate::constraints::tangent_curves::{TangentCurve, TangentCurvesConstraint};
+            Ok(Box::new(
+                TangentCurvesConstraint::new(
+                    TangentCurve::circle(c_center, c),
+                    TangentCurve::arc(a_center, a),
+                    internal,
+                )
+                .with_gap(d),
+            ))
+        }
+        ConstraintType::DistanceArcs(a1_center, a1, a2_center, a2, d, internal) => {
+            use crate::constraints::tangent_curves::{TangentCurve, TangentCurvesConstraint};
+            Ok(Box::new(
+                TangentCurvesConstraint::new(
+                    TangentCurve::arc(a1_center, a1),
+                    TangentCurve::arc(a2_center, a2),
+                    internal,
+                )
+                .with_gap(d),
             ))
         }
         ConstraintType::DistanceLineLine(a1, a2, b1, b2, d) => {

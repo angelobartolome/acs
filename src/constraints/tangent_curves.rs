@@ -32,7 +32,10 @@ impl TangentCurve {
 /// Tangency between two circles or arcs (`a` and `b`), touching externally
 /// (distance between centers = r₁ + r₂) or, when `internal`, inside
 /// (= |r₁ − r₂|). The flag is the caller's choice and is never inferred, so
-/// a solve can't turn one into the other.
+/// a solve can't turn one into the other. With a `gap` (`with_gap`), the
+/// curves hold that distance apart instead of touching, measured the same
+/// way (`distance` between a circle and an arc, or two arcs): outside,
+/// d = r₁ + r₂ + gap; inside, d = |r₁ − r₂| − gap. Tangency is a gap of 0.
 ///
 /// Let w = c_b − c_a and d = |w|. The tangency point lies on the line of
 /// centers: from c_a in direction +w, from c_b in direction −w (external);
@@ -40,8 +43,8 @@ impl TangentCurve {
 /// circle's center through the smaller's).
 ///
 /// Residuals:
-///   R₀ = d − (r_a + r_b)                 (external)
-///   R₀ = d − s·(r_a − r_b)               (internal)
+///   R₀ = d − (r_a + r_b) − gap           (external)
+///   R₀ = d − s·(r_a − r_b) + gap         (internal)
 ///   and per Arc side k, in order a then b:
 ///   R  = r_k · overshoot(φ_k, α_k, β_k)  (the tangency point lies on the
 ///                                         arc's span; φ_k is its direction
@@ -52,11 +55,17 @@ pub struct TangentCurvesConstraint {
     pub a: TangentCurve,
     pub b: TangentCurve,
     pub internal: bool,
+    pub gap: f64,
 }
 
 impl TangentCurvesConstraint {
     pub fn new(a: TangentCurve, b: TangentCurve, internal: bool) -> Self {
-        Self { a, b, internal }
+        Self { a, b, internal, gap: 0.0 }
+    }
+
+    /// The curves held `gap` apart instead of touching.
+    pub fn with_gap(self, gap: f64) -> Self {
+        Self { gap, ..self }
     }
 }
 
@@ -79,10 +88,10 @@ impl Constraint for TangentCurvesConstraint {
         // s: which way the tangency point lies from each center along w.
         let (s, (dra, drb)) = if self.internal {
             let s = if ra >= rb { 1.0 } else { -1.0 };
-            r[0] = d - s * (ra - rb);
+            r[0] = d - s * (ra - rb) + self.gap;
             (s, (-s, s))
         } else {
-            r[0] = d - (ra + rb);
+            r[0] = d - (ra + rb) - self.gap;
             (1.0, (-1.0, -1.0))
         };
         j[(0, 2)] = dra;
