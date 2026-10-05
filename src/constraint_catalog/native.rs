@@ -26,7 +26,7 @@ const CA: Fields = &[("a", Circle), ("b", Arc)];
 const AA: Fields = &[("a", Arc), ("b", Arc)];
 
 /// Types whose `a` and `b` fields may be given in either order.
-const COMMUTATIVE: &[&str] = &["distance", "tangent", "concentric", "equal"];
+const COMMUTATIVE: &[&str] = &["distance", "tangent", "concentric", "equal", "collinear"];
 
 pub(super) static SPECS: &[S] = &[
     S::new("coincident", AB_POINTS, |a| {
@@ -49,6 +49,16 @@ pub(super) static SPECS: &[S] = &[
     }),
     S::new("perpendicular", AB_LINES, |a| {
         ConstraintType::Perpendicular(a.p(0), a.p(1), a.p(2), a.p(3))
+    }),
+    S::new("collinear", AB_LINES, |a| {
+        ConstraintType::Collinear(a.p(0), a.p(1), a.p(2), a.p(3))
+    }),
+    // Normal to a curve: the line's Extension passes through its center.
+    S::new("normal", &[("line", Line), ("curve", Circle)], |a| {
+        ConstraintType::PointOnExtension(a.center(0), a.p(0), a.p(1))
+    }),
+    S::new("normal", &[("line", Line), ("curve", Arc)], |a| {
+        ConstraintType::PointOnExtension(a.center(0), a.p(0), a.p(1))
     }),
     S::new(
         "angle",

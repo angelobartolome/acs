@@ -649,6 +649,26 @@ For example `PointOnEllipse`: with `ŵ₁ = (p − f)/|p − f|`,
 length has zero partials, and with `k ≈ 0` (focus on the center, a circle)
 `u` is taken as `+X` with no partials.
 
+### 22  Collinear and Normal
+
+`Collinear(a1, a2, b1, b2)` (native `collinear {a, b}`): both endpoints of
+Line B lie on Line A's Extension. Two residuals, one constraint, so
+diagnosis reports it Redundant or Conflicting as a unit:
+
+`R₀ = S∞(b1; a1, a2)`,  `R₁ = S∞(b2; a1, a2)`
+
+**Jacobian:** `∂S∞` from the shared section, per row: the `(px, py)`
+partials go to that row's endpoint of B, the `(ax, ay, bx, by)` partials to
+`a1`, `a2`. The segments need not overlap. When B shares an endpoint with A
+(same Point), that row is identically 0 with a zero Jacobian row; the other
+row still removes the one degree of freedom, and since diagnosis drops whole
+constraints the zero row is never reported Redundant on its own.
+
+Normal (native `normal {line, curve}`, curve a circle or arc) has no kernel
+of its own: it is `PointOnExtension(center, line_pa, line_pb)`, the line's
+Extension passing through the curve's center. Direction only: neither the
+segment nor an arc's span is checked, so the line need not reach the curve.
+
 ---
 
 ## ConstraintType Enum Summary (updated)
@@ -705,6 +725,9 @@ pub enum ConstraintType {
     TangentLineEllipse(String, String, String, String, String), // line_pa, line_pb, center_id, focus1_id, ellipse_id
     EllipseAxisPoint(String, String, String, String, EllipseAxis), // point_id, center_id, focus1_id, ellipse_id, Major|Minor
     EllipseDiameter(String, String, String, String, String, EllipseAxis), // p1_id, p2_id, center_id, focus1_id, ellipse_id, Major|Minor
+
+    // Collinear (native `normal` is PointOnExtension(center, line_pa, line_pb))
+    Collinear(String, String, String, String),            // a_p1, a_p2, b_p1, b_p2
 }
 ```
 

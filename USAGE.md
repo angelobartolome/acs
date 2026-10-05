@@ -96,6 +96,8 @@ Every constraint primitive needs a unique `id` and a `type` string. ACS names co
 | `horizontal` / `vertical` | `line`: line, or `a`, `b`: point | The line, or the direction `a → b`, is horizontal / vertical |
 | `parallel` | `a`, `b`: line | Two lines are parallel |
 | `perpendicular` | `a`, `b`: line | Two lines are perpendicular |
+| `collinear` | `a`, `b`: line | Both of `b`'s endpoints lie on `a`'s Extension: the lines lie on one infinite line, with or without a gap between the segments. One constraint (Redundant or Conflicting as a unit); `a`, `b` in either order |
+| `normal` | `line`: line; `curve`: circle or arc | The line's Extension passes through the curve's center. Direction only: the line need not reach the curve, nor an arc's span |
 | `angle` | `a`, `b`: line; `value` | Directed angle in radians from `a` to `b` |
 | `direction` | `line`: line, or `a`, `b`: point; `value` | Direction of the line (`p1 → p2`), or of `a → b`, is `value` radians counter-clockwise from +X (not `value + π`) |
 | `distance` | `a`: point; `b`: point or line; `value`; `extension?` | Point–point distance; point–segment distance (to the nearest endpoint when past an end); with `extension: true`, perpendicular distance to the line's Extension |
@@ -410,6 +412,7 @@ ConstraintType::Parallel(l1p1, l1p2, l2p1, l2p2)
 ConstraintType::Perpendicular(l1p1, l1p2, l2p1, l2p2)
 ConstraintType::Angle(l1p1, l1p2, l2p1, l2p2, radians)
 ConstraintType::EqualLength(l1p1, l1p2, l2p1, l2p2)
+ConstraintType::Collinear(a_p1, a_p2, b_p1, b_p2)  // b's endpoints on a's Extension
 
 // Point on geometry
 ConstraintType::PointOnLine(point_id, line_p1_id, line_p2_id)  // point on segment (clamped)
