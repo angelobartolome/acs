@@ -5,9 +5,10 @@
 //! inferred from the kinds of the entities its fields reference (`distance`
 //! with `b` a Point is point–point, with `b` a Line point–segment) and from
 //! two flags: `extension: true`, which selects a variant measured against
-//! the Line's Extension, and `internal: true`, which selects inside tangency
-//! between circles and arcs (`tangent` only; never inferred from the
-//! geometry, and rejected with a Line). Rows are tried in order; for the
+//! the Line's Extension, and `internal: true`, which selects an inside
+//! variant: inside tangency between circles and arcs, or a distance measured
+//! inside a circle (never inferred from the geometry, and rejected where no
+//! circle or arc takes it). Rows are tried in order; for the
 //! [`COMMUTATIVE`] types, `a` and `b` may come in either order. A
 //! combination no row takes is rejected, naming the kinds given and the ones
 //! the type accepts.
@@ -71,6 +72,9 @@ pub(super) static SPECS: &[S] = &[
         &[("a", Line), ("b", Line), ("value", Scalar)],
         |a| ConstraintType::Angle(a.p(0), a.p(1), a.p(2), a.p(3), a.s(0)),
     ),
+    S::new("angle", &[("arc", Arc), ("value", Scalar)], |a| {
+        ConstraintType::ArcSweep(a.c(0), a.s(0))
+    }),
     S::new("direction", &[("line", Line), ("value", Scalar)], |a| {
         ConstraintType::PointPointAngle(a.p(0), a.p(1), a.s(0))
     }),
@@ -96,6 +100,65 @@ pub(super) static SPECS: &[S] = &[
         |a| ConstraintType::DistancePointExtension(a.p(0), a.p(1), a.p(2), a.s(0)),
     )
     .extension(),
+    S::new(
+        "distance",
+        &[("a", Point), ("b", Circle), ("value", Scalar)],
+        |a| ConstraintType::DistancePointCircle(a.p(0), a.center(0), a.c(0), a.s(0), false),
+    )
+    .external(),
+    S::new(
+        "distance",
+        &[("a", Point), ("b", Circle), ("value", Scalar)],
+        |a| ConstraintType::DistancePointCircle(a.p(0), a.center(0), a.c(0), a.s(0), true),
+    )
+    .internal(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Circle), ("value", Scalar)],
+        |a| ConstraintType::DistanceLineCircle(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
+    )
+    .segment(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Circle), ("value", Scalar)],
+        |a| ConstraintType::DistanceExtensionCircle(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
+    )
+    .extension(),
+    S::new(
+        "distance",
+        &[("a", Circle), ("b", Circle), ("value", Scalar)],
+        |a| {
+            ConstraintType::DistanceCircleCircle(
+                a.center(0),
+                a.c(0),
+                a.center(1),
+                a.c(1),
+                a.s(0),
+                false,
+            )
+        },
+    )
+    .external(),
+    S::new(
+        "distance",
+        &[("a", Circle), ("b", Circle), ("value", Scalar)],
+        |a| {
+            ConstraintType::DistanceCircleCircle(
+                a.center(0),
+                a.c(0),
+                a.center(1),
+                a.c(1),
+                a.s(0),
+                true,
+            )
+        },
+    )
+    .internal(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Line), ("value", Scalar)],
+        |a| ConstraintType::DistanceLineLine(a.p(0), a.p(1), a.p(2), a.p(3), a.s(0)),
+    ),
     S::new(
         "offset",
         &[
@@ -213,6 +276,18 @@ pub(super) static SPECS: &[S] = &[
     S::new("radius", &[("curve", Arc), ("value", Scalar)], |a| {
         ConstraintType::FixedRadius(a.c(0), a.s(0))
     }),
+    S::new("diameter", &[("curve", Circle), ("value", Scalar)], |a| {
+        ConstraintType::Diameter(a.c(0), a.s(0))
+    }),
+    S::new("diameter", &[("curve", Arc), ("value", Scalar)], |a| {
+        ConstraintType::Diameter(a.c(0), a.s(0))
+    }),
+    S::new("length", &[("curve", Line), ("value", Scalar)], |a| {
+        ConstraintType::DistancePointPoint(a.p(0), a.p(1), a.s(0))
+    }),
+    S::new("length", &[("curve", Arc), ("value", Scalar)], |a| {
+        ConstraintType::ArcLength(a.c(0), a.s(0))
+    }),
     S::new(
         "difference",
         &[("a", Val), ("b", Val), ("value", Val)],
@@ -310,7 +385,7 @@ pub(super) fn parse(
     {
         return only.parse(c, refs);
     }
-    // `internal` on a tangency whose entities' row has no inside (a Line).
+    // `internal` on entities whose row has no inside variant (a Line).
     if internal
         && variants.iter().any(|s| s.internal == InternalFlag::Internal)
         && variants.iter().any(|s| {
@@ -320,7 +395,7 @@ pub(super) fn parse(
         })
     {
         return Err(format!(
-            "field 'internal' applies only to tangency between circles and arcs; got {}",
+            "field 'internal' applies only between a circle or arc and a point, circle or arc; got {}",
             got_kinds(&variants, c, refs, false, false)
         ));
     }

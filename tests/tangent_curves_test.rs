@@ -339,7 +339,7 @@ fn internal_with_a_line_is_rejected() {
         ]));
         assert_eq!(id, "k");
         assert!(
-            error.contains("'internal' applies only to tangency between circles and arcs"),
+            error.contains("'internal' applies only between a circle or arc and a point, circle or arc"),
             "{error}"
         );
     }

@@ -236,13 +236,19 @@ fn acs_constraint_catalog_describes_the_native_vocabulary() {
         "rotation",
         "translation",
         "ellipse_axis",
+        "diameter",
+        "length",
     ] {
         assert!(types.contains(t), "{t} missing from the native catalog");
     }
     // `distance` from a point to a Line: a segment row and an Extension row.
     let point_line: Vec<&Value> = rows
         .iter()
-        .filter(|r| r["type"] == "distance" && r["fields"][1]["kind"] == "line")
+        .filter(|r| {
+            r["type"] == "distance"
+                && r["fields"][0]["kind"] == "point"
+                && r["fields"][1]["kind"] == "line"
+        })
         .collect();
     assert_eq!(point_line.len(), 2);
     assert_eq!(point_line[0]["extension"], false);
@@ -258,6 +264,19 @@ fn acs_constraint_catalog_describes_the_native_vocabulary() {
     // Rows without an Extension variant carry no flag.
     let coincident = rows.iter().find(|r| r["type"] == "coincident").unwrap();
     assert!(coincident.get("extension").is_none());
+    // Point–circle and circle–circle distance have an outside row
+    // (`internal: false`) and an inside one (`internal: true`).
+    let distance_internal: Vec<&Value> = rows
+        .iter()
+        .filter(|r| r["type"] == "distance" && r.get("internal").is_some())
+        .collect();
+    assert_eq!(distance_internal.len(), 4);
+    for pair in distance_internal.chunks(2) {
+        assert_eq!(pair[0]["internal"], false);
+        assert_eq!(pair[1]["internal"], true);
+        assert_eq!(pair[0]["fields"], pair[1]["fields"]);
+        assert_eq!(pair[0]["fields"][1]["kind"], "circle");
+    }
 }
 
 #[test]

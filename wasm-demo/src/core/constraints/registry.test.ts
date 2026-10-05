@@ -319,6 +319,27 @@ describe("ConstraintRegistry", () => {
       withCurves({ type: "tangent", a: "c1", b: "a1", internal: true })?.def,
     ).toBe("tangent_circle_arc_internal");
     expect(withCurves({ type: "tangent", a: "l1", b: "a1", internal: true })).toBeNull();
+    // `internal: true` selects the inside variant
+    const C1 = { kind: "circle" as const, id: "c1", center: "p2", radius: 1, fixed: false };
+    const withCircle = (id: string) => (id === "c1" ? C1 : resolve(id));
+    expect(
+      primitiveToConstraint({ type: "distance", a: "c1", b: "p1", value: 1 }, "f", withCircle),
+    ).toMatchObject({ def: "distance_point_circle", entities: ["p1", "c1"] });
+    expect(
+      primitiveToConstraint(
+        { type: "distance", a: "p1", b: "c1", value: 1, internal: true },
+        "f",
+        withCircle,
+      ),
+    ).toMatchObject({ def: "distance_point_circle_internal" });
+    expect(
+      constraintToPrimitive({
+        id: "k",
+        def: "distance_point_circle_internal",
+        entities: ["p1", "c1"],
+        params: { value: 1 },
+      }),
+    ).toEqual({ id: "k", type: "distance", internal: true, a: "p1", b: "c1", value: 1 });
     // no variant takes a point and a missing entity
     expect(kinds({ type: "distance", a: "p1", b: "ghost", value: 1 })).toBeNull();
   });

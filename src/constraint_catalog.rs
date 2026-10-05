@@ -6,7 +6,7 @@
 //!   (`distance`, `on`, `tangent`, …) with role-named fields. A type may have
 //!   several rows (variants); the one used is inferred from the kinds of the
 //!   entities its fields reference, `extension: true` selects an
-//!   Extension variant and `internal: true` an inside-tangency variant.
+//!   Extension variant and `internal: true` an inside variant.
 //! - **PlaneGCS dialect** ([`planegcs`]): the GCS types, unchanged
 //!   (`p2p_distance`, `horizontal_l`, …), one row each.
 //!
@@ -86,7 +86,7 @@ impl Vocabulary {
     /// "internal"?, "deprecated"? }]`. A native type with several variants
     /// has several rows; `extension` is present on rows that take the flag
     /// (`false`: the segment variant, `true`: the Extension variant), and
-    /// `internal` likewise (`false`: external tangency, `true`: inside). A
+    /// `internal` likewise (`false`: outside, `true`: the inside variant). A
     /// field with an
     /// `index` is that element of the array field `name`. `deprecated: true`
     /// marks a form still accepted for one more release.
@@ -382,9 +382,10 @@ impl ExtensionFlag {
 pub enum InternalFlag {
     /// The row has no inside variant; `internal: true` doesn't select it.
     NotAccepted,
-    /// External tangency: `internal` absent or `false`.
+    /// The outside variant (external tangency, a gap outside the circle):
+    /// `internal` absent or `false`.
     External,
-    /// Inside tangency: `internal: true`.
+    /// The inside variant: `internal: true`.
     Internal,
 }
 

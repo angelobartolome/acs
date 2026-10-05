@@ -88,7 +88,7 @@ A **Parameter** is a named value constraints share by id, such as a Linked Offse
 
 #### Constraint primitives (native vocabulary)
 
-Every constraint primitive needs a unique `id` and a `type` string. ACS names constraints by relationship, with role-named fields; one type covers every combination of entities it makes sense for, and the **variant is inferred from the kinds of the entities the fields reference**. For example `distance` with `b` a point is a point–point distance, with `b` a line a point–segment distance. `extension: true` selects a variant measured against the line's Extension (the infinite line through its endpoints) instead of the segment.
+Every constraint primitive needs a unique `id` and a `type` string. ACS names constraints by relationship, with role-named fields; one type covers every combination of entities it makes sense for, and the **variant is inferred from the kinds of the entities the fields reference**. For example `distance` with `b` a point is a point–point distance, with `b` a line a point–segment distance. `extension: true` selects a variant measured against the line's Extension (the infinite line through its endpoints) instead of the segment, and `internal: true` the inside variant of a distance to a circle.
 
 | Type | Fields (kinds) | Meaning |
 |---|---|---|
@@ -99,8 +99,12 @@ Every constraint primitive needs a unique `id` and a `type` string. ACS names co
 | `collinear` | `a`, `b`: line | Both of `b`'s endpoints lie on `a`'s Extension: the lines lie on one infinite line, with or without a gap between the segments. One constraint (Redundant or Conflicting as a unit); `a`, `b` in either order |
 | `normal` | `line`: line; `curve`: circle or arc | The line's Extension passes through the curve's center. Direction only: the line need not reach the curve, nor an arc's span |
 | `angle` | `a`, `b`: line; `value` | Directed angle in radians from `a` to `b` |
+| `angle` | `arc`: arc; `value` | The arc's sweep (counter-clockwise from its start angle to its end angle) in radians. Only `0 < value < 2π` is accepted; anything else is rejected (`constraint k1: arc sweep 7 is not between 0 and 2π`). The residual is the sweep unwrapped near `value`, so the end angle may cross the start (the 0/2π seam) without a jump |
 | `direction` | `line`: line, or `a`, `b`: point; `value` | Direction of the line (`p1 → p2`), or of `a → b`, is `value` radians counter-clockwise from +X (not `value + π`) |
 | `distance` | `a`: point; `b`: point or line; `value`; `extension?` | Point–point distance; point–segment distance (to the nearest endpoint when past an end); with `extension: true`, perpendicular distance to the line's Extension |
+| `distance` | `a`: point or line, `b`: circle; `value`; `internal?` (point), `extension?` (line) | Gap to the circle, signed: point–circle `\|p − c\| − r` (negative inside); with `internal: true`, `r − \|p − c\|` (negative outside). Line–circle: distance from the center to the segment minus `r` (`extension: true`: to the Extension) |
+| `distance` | `a`, `b`: circle; `value`; `internal?` | Gap between the circles, signed: `\|c1 − c2\| − r1 − r2` (negative when they overlap); with `internal: true`, the inside gap `\|r1 − r2\| − \|c1 − c2\|` between the smaller circle and the inside of the larger (either may be `a`). Arcs aren't accepted |
+| `distance` | `a`, `b`: line; `value` | Both of `b`'s endpoints are `value` from `a`'s Extension, on one side (the side `b`'s midpoint is on): `b` is parallel to `a`, `value` away. An explicit `parallel` on the pair is then `redundant` |
 | `offset` | `point`: point, `line`: line, `value`, `side` | Point is `value` from the line's Extension on `side`: `1` left of `p1 → p2`, `-1` right (any negative number counts as `-1`). Always the Extension (a Linked Offset's endpoints routinely stick out past its source line) |
 | `on` | `point`: point; `curve`: line, circle, arc or ellipse; `extension?` (lines) | Point lies on the segment (closest point clamped to it), on the line's Extension (`extension: true`), on the circle, on the arc's span, or on the ellipse |
 | `midpoint` | `entities`: [point, line] or [line, line]; `extension?` ([line, line]) | `[point, line]`: the point is the line's midpoint. `[line, line]`: the first line's midpoint lies on the second, on its segment (or its Extension with `extension: true`). The variant is inferred from the first entity's kind; the array must have exactly two ids |
@@ -110,6 +114,8 @@ Every constraint primitive needs a unique `id` and a `type` string. ACS names co
 | `concentric` | `a`, `b`: circle or arc | Share a center |
 | `equal` | `a`, `b`: line–line, circle/arc–circle/arc, or values | Equal length; equal radius; `a = b` (value fields) |
 | `radius` | `curve`: circle or arc; `value` | Fixed radius |
+| `diameter` | `curve`: circle or arc; `value` | Fixed diameter, `2r = value` (the constraint keeps the number given) |
+| `length` | `curve`: line or arc; `value` | A line's length; an arc's length `r · sweep`, sweep `(end_angle − start_angle) mod 2π` (a full turn when 0) |
 | `difference` | `a`, `b`, `value` (value fields) | `b − a = value`, e.g. two radii a Parameter apart |
 | `x` / `y` | `point`: point; `value` | Point pinned to an x / y coordinate |
 | `mirror` | `source`, `image`: point; `axis`: line | `image` is `source` mirrored across the axis line's Extension (a mirror axis reflects points beside or beyond its ends too) |
@@ -122,11 +128,11 @@ Notes:
 
 - For `distance`, `tangent`, `concentric` and `equal`, `a` and `b` may come in either order (`distance` from a line to a point is the same constraint).
 - `mirror`'s `axis`, `rotation`'s `center` and `translation`'s `from`/`to` (dialect: `mirror_point_ppl`'s axis, `circular_instance`'s `center_id`, `linear_instance`'s `dirP1_id`/`dirP2_id`) are Guides. Dragging the source or the copy moves the other and leaves the Guide where it is; moving the Guide (a drag, or other constraints on it) carries the copy along. Other real constraints on the copies move a free Guide as they need: Horizontal on one side of a patterned polygon turns it about a center that moves with it, and a mirror whose source and image are both fixed turns a free axis onto their perpendicular bisector. A free axis/center/direction keeps its own degrees of freedom in `dof`, and its copies aren't `fullyConstrained`.
-- A combination of kinds no variant takes is rejected naming the constraint, the kinds it got and the ones it accepts, e.g. `constraint k1: unsupported combination for 'distance': got a: point, b: circle; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension)`. So is `extension: true` on a variant that has no Extension form (`on` with a circle, `tangent` with an arc, `coincident`, …), and `internal: true` on any type but `tangent`.
-- `internal` (`tangent` between circles and arcs only) is never inferred: the solver keeps whichever side the constraint names, so a drag can't turn a fillet inside out. An editor sets it when the constraint is created, from the geometry (`internal: true` when one curve lies inside the other). `internal: true` with a line is rejected: `constraint k: field 'internal' applies only to tangency between circles and arcs; got a: line, b: arc`. `extension` and `internal` must be `true` or `false` when present.
+- A combination of kinds no variant takes is rejected naming the constraint, the kinds it got and the ones it accepts, e.g. `constraint k1: unsupported combination for 'distance': got a: point, b: arc; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension) or (a: point, b: circle) or (a: point, b: circle, internal) or (a: line, b: circle) or (a: line, b: circle, extension) or (a: circle, b: circle) or (a: circle, b: circle, internal) or (a: line, b: line)`. So is `extension: true` on a variant that has no Extension form (`on` with a circle, `tangent` with an arc, `coincident`, …), and `internal: true` on one without an inside form (anything but `distance` point–circle and circle–circle).
+- `internal` (tangency between circles and arcs; point–circle and circle–circle `distance`) is never inferred: the solver keeps whichever side the constraint names, so a drag can't turn a fillet inside out or pull a point out through its circle. An editor sets it when the constraint is created, from the geometry (`internal: true` when one curve lies inside the other). `internal: true` with a line is rejected: `constraint k: field 'internal' applies only between a circle or arc and a point, circle or arc; got a: line, b: arc`. `extension` and `internal` must be `true` or `false` when present.
 - Circle and arc fields resolve their center point from the circle's or arc's `c_id` (and an arc field its endpoints from `start_id`/`end_id`). `on` with a circle puts the point anywhere on the circle; with an arc, only on its span.
 - Ellipse fields resolve the ellipse's center and focus points from its `c_id` and `focus1_id`. Tangency to an ellipse is to a Line's segment, as with a circle: the tangency point (where the line from one focus to the other focus's mirror image in the line crosses it) must lie on the segment. There is no Extension variant for ellipses.
-- The machine-readable list is available from `acsConstraintCatalog()`: JSON `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?, "internal"?, "deprecated"? }]`, one row per variant (so `distance` has three rows), kinds `point`/`line`/`circle`/`arc`/`ellipse`/`scalar`/`value`/`axis` (`axis`: the string `"major"` or `"minor"`). A field with an `index` is that element of the array field `name` (`midpoint`'s `entities`). `extension` is present on rows that take the flag: `false` on the segment variant, `true` on the Extension variant. `internal` likewise: `false` on external tangency, `true` on inside tangency (circle–circle, circle–arc and arc–arc each have both rows). `deprecated: true` marks a form accepted for one more release (`midpoint {point, line}`, `midpoint_on`).
+- The machine-readable list is available from `acsConstraintCatalog()`: JSON `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?, "internal"?, "deprecated"? }]`, one row per variant (so `distance` has twelve rows), kinds `point`/`line`/`circle`/`arc`/`ellipse`/`scalar`/`value`/`axis` (`axis`: the string `"major"` or `"minor"`). A field with an `index` is that element of the array field `name` (`midpoint`'s `entities`). `extension` is present on rows that take the flag: `false` on the segment variant, `true` on the Extension variant. `internal` likewise: `false` on the outside variant, `true` on the inside one (tangency circle–circle, circle–arc and arc–arc; `distance` point–circle and circle–circle). `deprecated: true` marks a form accepted for one more release (`midpoint {point, line}`, `midpoint_on`).
 - The request is rejected (see *Rejected requests* below) when it has the wrong `version`, no `primitives` array, a primitive without `type` or `id`, an unknown type, a missing field, a constraint that references a missing or wrong-kind entity, or an unsupported combination. Nothing is solved; the error names the problem.
 - Only `point`, `line`, `circle`, `arc` and `ellipse` are geometry, and `param` is a Parameter. Any other `type` is looked up as a constraint.
 
@@ -231,7 +237,7 @@ A failed solve is a normal response, not an error.
 
 ### Rejected requests
 
-A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..." }` and nothing is solved. When the problem is a constraint, the response also has `constraintId`, and the error reads like `constraint k1: missing field 'value'`, `constraint k1: unknown type 'made_up'`, `constraint k1: 'ghost' is not a point` or (native) `constraint k1: unsupported combination for 'distance': got a: point, b: circle; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension)`. Other rejections include a wrong `version` or `maxIterations`, a duplicate id, geometry referencing a missing point (`line l1: 'p9' is not a point`), a Parameter without a numeric `value` (`param d: missing field 'value'`), an unknown Parameter id (`constraint k1: field 'distance': unknown Parameter 'd9'`), and a bad property reference (`constraint k1: field 'a': circle 'c1' has no property 'diameter'`, `... 'ghost' is not an entity`).
+A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..." }` and nothing is solved. When the problem is a constraint, the response also has `constraintId`, and the error reads like `constraint k1: missing field 'value'`, `constraint k1: unknown type 'made_up'`, `constraint k1: 'ghost' is not a point` or (native) `constraint k1: unsupported combination for 'distance': got a: point, b: arc; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension) or (a: point, b: circle) or (a: point, b: circle, internal) or (a: line, b: circle) or (a: line, b: circle, extension) or (a: circle, b: circle) or (a: circle, b: circle, internal) or (a: line, b: line)`. Other rejections include a wrong `version` or `maxIterations`, a duplicate id, geometry referencing a missing point (`line l1: 'p9' is not a point`), a Parameter without a numeric `value` (`param d: missing field 'value'`), an unknown Parameter id (`constraint k1: field 'distance': unknown Parameter 'd9'`), and a bad property reference (`constraint k1: field 'a': circle 'c1' has no property 'diameter'`, `... 'ghost' is not an entity`).
 
 ### C ABI
 
@@ -425,6 +431,10 @@ ConstraintType::EqualRadius(circle1_id, circle2_id)
 ConstraintType::Concentric(center1_point_id, center2_point_id)
 ConstraintType::TangentLineCircle(line_p1_id, line_p2_id, circle_center_id, circle_id)
 ConstraintType::Tangent(c1_center_id, c1_id, c2_center_id, c2_id)  // circle-circle
+ConstraintType::Diameter(circle_or_arc_id, diameter)
+ConstraintType::DistancePointCircle(point_id, circle_center_id, circle_id, gap, internal)
+ConstraintType::DistanceLineCircle(line_p1_id, line_p2_id, circle_center_id, circle_id, gap)
+ConstraintType::DistanceCircleCircle(c1_center_id, c1_id, c2_center_id, c2_id, gap, internal)
 
 // Arcs (Arc::new(id, center_id, start_id, end_id, radius, start_angle, end_angle, fixed))
 ConstraintType::ArcRules(center_id, start_id, end_id, arc_id)  // implied for an arc's own points: a no-op
@@ -435,6 +445,8 @@ ConstraintType::TangentCirclesInternal(c1_center_id, c1_id, c2_center_id, c2_id)
 ConstraintType::TangentCircleArc(circle_center_id, circle_id, arc_center_id, arc_id, internal)
 ConstraintType::TangentArcs(arc1_center_id, arc1_id, arc2_center_id, arc2_id, internal)
 ConstraintType::TangentArcsAtPoint(shared_point_id, arc1_center_id, arc2_center_id, internal)  // arcs sharing an endpoint
+ConstraintType::ArcLength(arc_id, length)  // radius × sweep
+ConstraintType::ArcSweep(arc_id, sweep)    // 0 < sweep < 2π, else add_constraint fails
 
 // Midpoints
 ConstraintType::Midpoint(midpoint_id, endpoint_a_id, endpoint_b_id)
@@ -446,6 +458,8 @@ ConstraintType::DistancePointExtension(point_id, line_p1_id, line_p2_id, distanc
 ConstraintType::TangentExtensionCircle(line_p1_id, line_p2_id, circle_center_id, circle_id)
 ConstraintType::MidpointOfLineOnExtension(l1p1, l1p2, l2p1, l2p2)
 ConstraintType::SignedDistancePointExtension(point_id, line_p1_id, line_p2_id, distance, side)
+ConstraintType::DistanceExtensionCircle(line_p1_id, line_p2_id, circle_center_id, circle_id, gap)
+ConstraintType::DistanceLineLine(a_p1_id, a_p2_id, b_p1_id, b_p2_id, distance)  // b's ends from a's Extension
 
 // Relations between scalars: each Operand is Operand::Const(f64) or an entity
 // property the solver may move: Operand::X(point_id), Operand::Y(point_id),
