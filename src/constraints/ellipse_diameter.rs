@@ -4,8 +4,7 @@ use crate::constraints::ellipse::{D, EllipseFrame, V2};
 use crate::constraints::{Constraint, EllipseAxis, Var, xy};
 
 /// Constrains two points to be the two endpoints of an ellipse's major or
-/// minor axis: PlaneGCS's `internal_alignment_ellipse_major_diameter` /
-/// `_minor_diameter`, which an ellipse tool adds.
+/// minor axis: native two-point `ellipse_axis`, which an ellipse tool adds.
 ///
 /// Entities:
 ///   - `p1_id`, `p2_id` – the two points

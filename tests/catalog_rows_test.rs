@@ -1,15 +1,10 @@
-//! Every row of both constraint catalogs solves through every entry point
-//! that speaks its vocabulary: the native one through `solve_sketch_json`
-//! and `acsSolveSketch`, the PlaneGCS dialect through
-//! `solve_planegcs_sketch_json`, `acsSolveSketchPlaneGcs` and (with the
-//! `c-abi` feature) `P3DSketch_Solve`.
+//! Every row of the constraint catalog solves through every entry point:
+//! `solve_sketch_json`, `acsSolveSketch` and (with the `c-abi` feature)
+//! `P3DSketch_Solve`.
 
-use acs::bindings::sketch_solve::{
-    acs_constraint_catalog, acs_planegcs_constraint_catalog, acs_solve_sketch,
-    acs_solve_sketch_planegcs,
-};
-use acs::constraint_catalog::{ConstraintSpec, ExtensionFlag, FieldKind, Vocabulary, field_path};
-use acs::sketch_solve::{solve_planegcs_sketch_json, solve_sketch_json};
+use acs::bindings::sketch_solve::{acs_constraint_catalog, acs_solve_sketch};
+use acs::constraint_catalog::{ConstraintSpec, ExtensionFlag, FieldKind, InternalFlag, field_path, specs};
+use acs::sketch_solve::solve_sketch_json;
 use serde_json::{Value, json};
 
 /// A sketch holding one constraint of `spec`'s row, with fresh geometry for
@@ -17,7 +12,7 @@ use serde_json::{Value, json};
 /// (with their endpoints on them), 2.5 × 2 ellipses, scalars suited to the
 /// field, the major axis, and value fields referencing a fresh Circle's
 /// radius.
-fn sketch_for(spec: &ConstraintSpec, vocabulary: Vocabulary) -> Value {
+fn sketch_for(spec: &ConstraintSpec) -> Value {
     let mut prims: Vec<Value> = Vec::new();
     let mut n = 0;
     let mut point = |prims: &mut Vec<Value>| {
@@ -39,10 +34,9 @@ fn sketch_for(spec: &ConstraintSpec, vocabulary: Vocabulary) -> Value {
     if spec.extension == ExtensionFlag::Extension {
         constraint["extension"] = json!(true);
     }
-    let (entity_key, property_key) = match vocabulary {
-        Vocabulary::Native => ("entity", "property"),
-        Vocabulary::PlaneGcs => ("o_id", "prop"),
-    };
+    if spec.internal == InternalFlag::Internal {
+        constraint["internal"] = json!(true);
+    }
     for (i, &(name, kind)) in spec.fields.iter().enumerate() {
         let id = format!("{name}_{i}");
         let value = match kind {
@@ -86,13 +80,13 @@ fn sketch_for(spec: &ConstraintSpec, vocabulary: Vocabulary) -> Value {
             }
             FieldKind::Axis => json!("major"),
             FieldKind::Scalar => match name {
-                "side" | "N" | "count" => json!(1),
+                "side" | "count" => json!(1),
                 "angle" => json!(0.5),
                 _ => json!(1.5),
             },
             FieldKind::Value => {
                 circle(&mut prims, id.clone(), &mut point);
-                json!({ entity_key: id, property_key: "radius" })
+                json!({ "entity": id, "property": "radius" })
             }
         };
         match field_path(name) {
@@ -117,34 +111,16 @@ fn assert_converged(response: &str, what: &str) {
 }
 
 #[test]
-fn every_native_row_solves_through_the_native_entry_points() {
-    for spec in Vocabulary::Native.specs() {
-        let request = sketch_for(spec, Vocabulary::Native).to_string();
-        let what = format!("native {} {:?}", spec.json_type, spec.fields);
+fn every_row_solves_through_every_entry_point() {
+    for spec in specs() {
+        let request = sketch_for(spec).to_string();
+        let what = format!("{} {:?}", spec.json_type, spec.fields);
         let response = solve_sketch_json(&request).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert_converged(&response, &what);
         assert_eq!(acs_solve_sketch(&request), response, "{what}");
         #[cfg(feature = "c-abi")]
         assert_eq!(
-            c_abi_solve(acs::c_abi::P3D_SKETCH_VOCABULARY_NATIVE, &request),
-            (0, response),
-            "{what}"
-        );
-    }
-}
-
-#[test]
-fn every_dialect_row_solves_through_the_dialect_entry_points() {
-    for spec in Vocabulary::PlaneGcs.specs() {
-        let request = sketch_for(spec, Vocabulary::PlaneGcs).to_string();
-        let what = format!("dialect {}", spec.json_type);
-        let response =
-            solve_planegcs_sketch_json(&request).unwrap_or_else(|e| panic!("{what}: {e}"));
-        assert_converged(&response, &what);
-        assert_eq!(acs_solve_sketch_planegcs(&request), response, "{what}");
-        #[cfg(feature = "c-abi")]
-        assert_eq!(
-            c_abi_solve(acs::c_abi::P3D_SKETCH_VOCABULARY_PLANEGCS, &request),
+            c_abi_solve(&request),
             (0, response),
             "{what}"
         );
@@ -152,45 +128,18 @@ fn every_dialect_row_solves_through_the_dialect_entry_points() {
 }
 
 #[cfg(feature = "c-abi")]
-fn c_abi_solve(vocabulary: i32, request: &str) -> (i32, String) {
+fn c_abi_solve(request: &str) -> (i32, String) {
     use acs::c_abi::{P3DSketch_Free, P3DSketch_Solve};
     use std::ffi::{CStr, CString, c_char};
     let request = CString::new(request).unwrap();
     let mut response: *mut c_char = std::ptr::null_mut();
-    let code = unsafe { P3DSketch_Solve(request.as_ptr(), vocabulary, &mut response) };
+    let code = unsafe { P3DSketch_Solve(request.as_ptr(), &mut response) };
     let text = unsafe { CStr::from_ptr(response) }
         .to_str()
         .unwrap()
         .to_string();
     unsafe { P3DSketch_Free(response) };
     (code, text)
-}
-
-/// Each vocabulary is read only by its own entry points.
-#[test]
-fn a_vocabulary_does_not_accept_the_other_ones_types() {
-    let request = |constraint: Value| {
-        json!({ "version": 1, "primitives": [
-            { "id": "p1", "type": "point", "x": 0.0, "y": 0.0 },
-            { "id": "p2", "type": "point", "x": 1.0, "y": 0.0 },
-            constraint
-        ]})
-        .to_string()
-    };
-    let gcs = request(json!({ "id": "k", "type": "p2p_coincident", "p1_id": "p1", "p2_id": "p2" }));
-    let native = request(json!({ "id": "k", "type": "coincident", "a": "p1", "b": "p2" }));
-    assert!(solve_planegcs_sketch_json(&gcs).is_ok());
-    assert!(solve_sketch_json(&native).is_ok());
-    assert!(
-        solve_sketch_json(&gcs)
-            .unwrap_err()
-            .contains("unknown type 'p2p_coincident'")
-    );
-    assert!(
-        solve_planegcs_sketch_json(&native)
-            .unwrap_err()
-            .contains("unknown type 'coincident'")
-    );
 }
 
 fn catalog(json: &str) -> Vec<Value> {
@@ -202,9 +151,9 @@ fn catalog(json: &str) -> Vec<Value> {
 }
 
 #[test]
-fn acs_constraint_catalog_describes_the_native_vocabulary() {
+fn acs_constraint_catalog_describes_every_row() {
     let rows = catalog(&acs_constraint_catalog());
-    assert_eq!(rows.len(), Vocabulary::Native.specs().len());
+    assert_eq!(rows.len(), specs().len());
     let types: std::collections::BTreeSet<&str> =
         rows.iter().map(|r| r["type"].as_str().unwrap()).collect();
     for t in [
@@ -219,7 +168,6 @@ fn acs_constraint_catalog_describes_the_native_vocabulary() {
         "offset",
         "on",
         "midpoint",
-        "midpoint_on",
         "tangent",
         "concentric",
         "equal",
@@ -231,13 +179,19 @@ fn acs_constraint_catalog_describes_the_native_vocabulary() {
         "rotation",
         "translation",
         "ellipse_axis",
+        "diameter",
+        "length",
     ] {
-        assert!(types.contains(t), "{t} missing from the native catalog");
+        assert!(types.contains(t), "{t} missing from the catalog");
     }
     // `distance` from a point to a Line: a segment row and an Extension row.
     let point_line: Vec<&Value> = rows
         .iter()
-        .filter(|r| r["type"] == "distance" && r["fields"][1]["kind"] == "line")
+        .filter(|r| {
+            r["type"] == "distance"
+                && r["fields"][0]["kind"] == "point"
+                && r["fields"][1]["kind"] == "line"
+        })
         .collect();
     assert_eq!(point_line.len(), 2);
     assert_eq!(point_line[0]["extension"], false);
@@ -253,15 +207,25 @@ fn acs_constraint_catalog_describes_the_native_vocabulary() {
     // Rows without an Extension variant carry no flag.
     let coincident = rows.iter().find(|r| r["type"] == "coincident").unwrap();
     assert!(coincident.get("extension").is_none());
+    // Point–circle and circle–circle distance have an outside row
+    // (`internal: false`) and an inside one (`internal: true`).
+    let distance_internal: Vec<&Value> = rows
+        .iter()
+        .filter(|r| r["type"] == "distance" && r.get("internal").is_some())
+        .collect();
+    assert_eq!(distance_internal.len(), 4);
+    for pair in distance_internal.chunks(2) {
+        assert_eq!(pair[0]["internal"], false);
+        assert_eq!(pair[1]["internal"], true);
+        assert_eq!(pair[0]["fields"], pair[1]["fields"]);
+        assert_eq!(pair[0]["fields"][1]["kind"], "circle");
+    }
 }
 
 #[test]
-fn the_native_catalog_lists_midpoint_by_entities_and_marks_the_old_forms_deprecated() {
+fn the_catalog_lists_midpoint_by_entities() {
     let rows = catalog(&acs_constraint_catalog());
-    let midpoint: Vec<&Value> = rows
-        .iter()
-        .filter(|r| r["type"] == "midpoint" && r.get("deprecated").is_none())
-        .collect();
+    let midpoint: Vec<&Value> = rows.iter().filter(|r| r["type"] == "midpoint").collect();
     let entities = |first: &str| {
         json!([
             { "name": "entities", "index": 0, "kind": first },
@@ -276,18 +240,8 @@ fn the_native_catalog_lists_midpoint_by_entities_and_marks_the_old_forms_depreca
     assert_eq!(midpoint[2]["fields"], entities("line"));
     assert_eq!(midpoint[2]["extension"], true);
 
-    let deprecated: Vec<&Value> = rows
-        .iter()
-        .filter(|r| r.get("deprecated").is_some())
-        .collect();
-    assert_eq!(deprecated.len(), 3);
-    for row in &deprecated {
-        assert_eq!(row["deprecated"], true);
-        assert!(
-            row["type"] == "midpoint" || row["type"] == "midpoint_on",
-            "{row}"
-        );
-    }
+    assert!(!types_of(&rows).contains("midpoint_on"));
+    assert!(rows.iter().all(|r| r.get("deprecated").is_none()));
 
     let axis: Vec<&Value> = rows
         .iter()
@@ -305,17 +259,36 @@ fn the_native_catalog_lists_midpoint_by_entities_and_marks_the_old_forms_depreca
     );
 }
 
+/// `tangent` between circles and arcs has an external row (`internal:
+/// false`) and an inside one (`internal: true`) per pair of kinds; rows with
+/// a Line carry no flag.
 #[test]
-fn the_planegcs_catalog_lists_the_dialect_types() {
-    let rows = catalog(&acs_planegcs_constraint_catalog());
-    assert_eq!(rows.len(), Vocabulary::PlaneGcs.specs().len());
-    let p2p = rows.iter().find(|r| r["type"] == "p2p_distance").unwrap();
-    assert_eq!(
-        p2p,
-        &json!({ "type": "p2p_distance", "fields": [
-            { "name": "p1_id", "kind": "point" },
-            { "name": "p2_id", "kind": "point" },
-            { "name": "distance", "kind": "scalar" }
-        ]})
-    );
+fn the_native_catalog_marks_external_and_inside_tangency() {
+    let rows = catalog(&acs_constraint_catalog());
+    let tangent: Vec<&Value> = rows.iter().filter(|r| r["type"] == "tangent").collect();
+    let kinds = |r: &Value| -> Vec<String> {
+        r["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["kind"].as_str().unwrap().to_string())
+            .collect()
+    };
+    for pair in [["circle", "circle"], ["circle", "arc"], ["arc", "arc"]] {
+        let flags: Vec<&Value> = tangent
+            .iter()
+            .filter(|r| kinds(r) == pair)
+            .map(|r| &r["internal"])
+            .collect();
+        assert_eq!(flags, [&json!(false), &json!(true)], "{pair:?}");
+    }
+    for row in tangent.iter().filter(|r| kinds(r).contains(&"line".to_string())) {
+        assert!(row.get("internal").is_none(), "{row}");
+    }
+    let coincident = rows.iter().find(|r| r["type"] == "coincident").unwrap();
+    assert!(coincident.get("internal").is_none());
+}
+
+fn types_of(rows: &[Value]) -> std::collections::BTreeSet<&str> {
+    rows.iter().map(|r| r["type"].as_str().unwrap()).collect()
 }

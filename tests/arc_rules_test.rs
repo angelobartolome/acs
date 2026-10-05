@@ -1,10 +1,13 @@
-use acs::{Arc, ConstraintSolver, ConstraintType, Point, SolverResult};
+//! An Arc's implicit rules (`ArcRulesConstraint`, added for every arc) move
+//! its endpoints onto it, or the arc to its endpoints.
+
+use acs::{Arc, ConstraintSolver, Point, SolverResult};
 use std::f64::consts::FRAC_PI_2;
 
-/// A quarter arc whose endpoints start off it: `arc_rules` moves them onto
-/// the arc at its start and end angles (or moves the arc to them).
+/// A fixed quarter arc whose endpoints start off it: its rules move them
+/// onto the arc at its start and end angles.
 #[test]
-fn arc_rules_puts_the_endpoints_on_the_arc() {
+fn the_arc_rules_put_the_endpoints_on_the_arc() {
     let mut solver = ConstraintSolver::new();
     solver.add_point(Point::new("c".into(), 0.0, 0.0, true));
     solver.add_point(Point::new("s".into(), 4.0, 1.0, false));
@@ -19,14 +22,6 @@ fn arc_rules_puts_the_endpoints_on_the_arc() {
         FRAC_PI_2,
         true,
     ));
-    solver
-        .add_constraint(ConstraintType::ArcRules(
-            "c".into(),
-            "s".into(),
-            "e".into(),
-            "a".into(),
-        ))
-        .unwrap();
 
     let result = solver.solve().unwrap();
     assert!(matches!(result, SolverResult::Converged { .. }), "{result:?}");
@@ -38,7 +33,7 @@ fn arc_rules_puts_the_endpoints_on_the_arc() {
 
 /// With fixed endpoints, the arc's radius and angles move to meet them.
 #[test]
-fn arc_rules_moves_radius_and_angles_to_fixed_endpoints() {
+fn the_arc_rules_move_radius_and_angles_to_fixed_endpoints() {
     let mut solver = ConstraintSolver::new();
     solver.add_point(Point::new("c".into(), 0.0, 0.0, true));
     solver.add_point(Point::new("s".into(), 0.0, 3.0, true));
@@ -53,14 +48,6 @@ fn arc_rules_moves_radius_and_angles_to_fixed_endpoints() {
         3.0,
         false,
     ));
-    solver
-        .add_constraint(ConstraintType::ArcRules(
-            "c".into(),
-            "s".into(),
-            "e".into(),
-            "a".into(),
-        ))
-        .unwrap();
 
     let result = solver.solve().unwrap();
     assert!(matches!(result, SolverResult::Converged { .. }), "{result:?}");
@@ -68,20 +55,4 @@ fn arc_rules_moves_radius_and_angles_to_fixed_endpoints() {
     assert!((a.radius - 3.0).abs() < 1e-8, "{a:?}");
     assert!((a.start_angle - FRAC_PI_2).abs() < 1e-8, "{a:?}");
     assert!((a.end_angle - std::f64::consts::PI).abs() < 1e-8, "{a:?}");
-}
-
-#[test]
-fn arc_rules_rejects_a_circle() {
-    let mut solver = ConstraintSolver::new();
-    solver.add_point(Point::new("c".into(), 0.0, 0.0, true));
-    solver.add_circle(acs::Circle::new("k".into(), "c".into(), 1.0, false));
-    let err = solver
-        .add_constraint(ConstraintType::ArcRules(
-            "c".into(),
-            "c".into(),
-            "c".into(),
-            "k".into(),
-        ))
-        .unwrap_err();
-    assert_eq!(err, "'k' is not an arc");
 }

@@ -53,7 +53,7 @@ A bounded segment between two endpoint Points; it has no position of its own. Co
 _Avoid_: Segment, edge, infinite line
 
 **Extension**:
-The infinite line through a Line's endpoints. Only constraints named for it (Extension constraints) measure against it; they exist so sketches authored under infinite-line semantics, such as PlaneGCS's, keep their meaning.
+The infinite line through a Line's endpoints. Only constraints named for it (Extension constraints) measure against it; they exist so sketches authored under infinite-line semantics keep their meaning.
 _Avoid_: Infinite line, supporting line
 
 **Arc**:

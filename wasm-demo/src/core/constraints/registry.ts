@@ -4,7 +4,7 @@
  * `acsConstraintCatalog` lists it.
  *
  * A native type (`distance`, `on`, `tangent`, …) has one variant per
- * combination of entity kinds (and `extension` flag); the solver infers the
+ * combination of entity kinds (and `extension` and `internal` flags); the solver infers the
  * variant from the entities a constraint references. The demo keeps one entry
  * per variant, under its own `key`, so each can be offered for the selection
  * it fits. UI buttons, selection validation, default scalar values and
@@ -55,6 +55,12 @@ export interface ConstraintDef {
    * variant, `false` for its segment sibling, absent when the type has none
    */
   extension?: boolean;
+  /**
+   * the JSON `internal` flag this variant sends: `true` for an inside
+   * variant (inside tangency, a distance measured inside a circle), `false`
+   * for its outside sibling, absent when the type has none
+   */
+  internal?: boolean;
   label: string;
   /** short text drawn on the canvas next to the constrained entities */
   badge: string;
@@ -147,6 +153,18 @@ function currentRadius(e: SketchEntity | undefined): number {
   return 1;
 }
 
+function centerXY(e: SketchEntity | undefined, resolve: EntityResolver): XY {
+  if (e !== undefined && (isCircle(e) || isArc(e))) return pointXY(resolve(e.center));
+  return { x: 0, y: 0 };
+}
+
+/** Counter-clockwise sweep of an arc in (0, 2π]; 0 is a full turn. */
+function arcSweep(e: SketchEntity | undefined): number {
+  if (e === undefined || !isArc(e)) return Math.PI / 2;
+  const s = (((e.endAngle - e.startAngle) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  return s === 0 ? 2 * Math.PI : s;
+}
+
 // ---------------------------------------------------------------------------
 // registry entries — one per row (variant) of acsConstraintCatalog
 // ---------------------------------------------------------------------------
@@ -189,6 +207,26 @@ const pointExtensionDistanceParam: ScalarParamDef = {
     return pointExtensionDistance(pointXY(ents[0]), a, b);
   },
 };
+
+const lengthParam = (
+  label: string,
+  measure: (ents: SketchEntity[], resolve: EntityResolver) => number,
+): ScalarParamDef => ({ key: "value", label, unit: "length", defaultFrom: measure });
+
+/** Gap from a point (slot 0) to a circle (slot 1): outside, or `inside`. */
+const pointCircleGap = (inside: boolean) =>
+  lengthParam("Distance", (ents, resolve) => {
+    const gap = distance(pointXY(ents[0]), centerXY(ents[1], resolve)) - currentRadius(ents[1]);
+    return inside ? -gap : gap;
+  });
+
+/** Gap between two circles: outside, or the smaller inside the larger. */
+const circleCircleGap = (inside: boolean) =>
+  lengthParam("Distance", (ents, resolve) => {
+    const d = distance(centerXY(ents[0], resolve), centerXY(ents[1], resolve));
+    const [r1, r2] = [currentRadius(ents[0]), currentRadius(ents[1])];
+    return inside ? Math.abs(r1 - r2) - d : d - r1 - r2;
+  });
 
 const radiusParam: ScalarParamDef = {
   key: "value",
@@ -262,6 +300,33 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     entityFields: ["a", "b"],
   },
   {
+    key: "collinear",
+    type: "collinear",
+    label: "Collinear",
+    badge: "⋯",
+    description: "Both lines lie on one infinite line (they need not overlap)",
+    selection: [L(2)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "normal_circle",
+    type: "normal",
+    label: "Normal",
+    badge: "⊥O",
+    description: "The line's Extension passes through the circle's center",
+    selection: [L(1), C(1)],
+    entityFields: ["line", "curve"],
+  },
+  {
+    key: "normal_arc",
+    type: "normal",
+    label: "Normal",
+    badge: "⊥A",
+    description: "The line's Extension passes through the arc's center",
+    selection: [L(1), A(1)],
+    entityFields: ["line", "curve"],
+  },
+  {
     key: "angle",
     type: "angle",
     label: "Angle",
@@ -271,6 +336,18 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     entityFields: ["a", "b"],
     scalarParams: [
       { key: "value", label: "Angle", unit: "angle", defaultFrom: lineAngle },
+    ],
+  },
+  {
+    key: "angle_arc",
+    type: "angle",
+    label: "Arc Angle",
+    badge: "∠",
+    description: "Sweep of the arc, between 0° and 360°",
+    selection: [A(1)],
+    entityFields: ["arc"],
+    scalarParams: [
+      { key: "value", label: "Angle", unit: "angle", defaultFrom: (ents) => arcSweep(ents[0]) },
     ],
   },
   {
@@ -348,6 +425,98 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     selection: [P(1), L(1)],
     entityFields: ["a", "b"],
     scalarParams: [pointExtensionDistanceParam],
+  },
+  {
+    key: "distance_point_circle",
+    type: "distance",
+    internal: false,
+    label: "Distance",
+    badge: "↔",
+    description: "Gap between a point and a circle, outside it",
+    selection: [P(1), C(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [pointCircleGap(false)],
+  },
+  {
+    key: "distance_point_circle_internal",
+    type: "distance",
+    internal: true,
+    label: "Distance Inside",
+    badge: "↔i",
+    description: "Gap between a point and a circle, inside it",
+    selection: [P(1), C(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [pointCircleGap(true)],
+  },
+  {
+    key: "distance_line_circle",
+    type: "distance",
+    extension: false,
+    label: "Distance",
+    badge: "↔",
+    description: "Gap between a line segment and a circle",
+    selection: [L(1), C(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      lengthParam("Distance", (ents, resolve) => {
+        const [a, b] = lineEndpoints(ents[0], resolve);
+        return pointLineDistance(centerXY(ents[1], resolve), a, b) - currentRadius(ents[1]);
+      }),
+    ],
+  },
+  {
+    key: "distance_extension_circle",
+    type: "distance",
+    extension: true,
+    label: "Distance to Extension",
+    badge: "↔E",
+    description: "Gap between the line's Extension and a circle",
+    selection: [L(1), C(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      lengthParam("Distance", (ents, resolve) => {
+        const [a, b] = lineEndpoints(ents[0], resolve);
+        return pointExtensionDistance(centerXY(ents[1], resolve), a, b) - currentRadius(ents[1]);
+      }),
+    ],
+  },
+  {
+    key: "distance_circles",
+    type: "distance",
+    internal: false,
+    label: "Distance",
+    badge: "↔",
+    description: "Gap between two circles, outside each other",
+    selection: [C(2)],
+    entityFields: ["a", "b"],
+    scalarParams: [circleCircleGap(false)],
+  },
+  {
+    key: "distance_circles_internal",
+    type: "distance",
+    internal: true,
+    label: "Distance Inside",
+    badge: "↔i",
+    description: "Gap between the smaller circle and the inside of the larger",
+    selection: [C(2)],
+    entityFields: ["a", "b"],
+    scalarParams: [circleCircleGap(true)],
+  },
+  {
+    key: "distance_lines",
+    type: "distance",
+    label: "Distance",
+    badge: "↔",
+    description: "Second line is parallel to the first, this far from its Extension",
+    selection: [L(2)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      lengthParam("Distance", (ents, resolve) => {
+        const [a, b] = lineEndpoints(ents[0], resolve);
+        const [c, d] = lineEndpoints(ents[1], resolve);
+        return (pointExtensionDistance(c, a, b) + pointExtensionDistance(d, a, b)) / 2;
+      }),
+    ],
   },
   {
     key: "offset",
@@ -487,10 +656,61 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
   {
     key: "tangent_circles",
     type: "tangent",
+    internal: false,
     label: "Tangent Circles",
     badge: "tan",
     description: "Two circles touch externally",
     selection: [C(2)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_circles_internal",
+    type: "tangent",
+    internal: true,
+    label: "Tangent Inside",
+    badge: "tanI",
+    description: "Two circles touch, one inside the other",
+    selection: [C(2)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_circle_arc",
+    type: "tangent",
+    internal: false,
+    label: "Tangent",
+    badge: "tan",
+    description: "A circle and an arc touch externally, within the arc",
+    selection: [C(1), A(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_circle_arc_internal",
+    type: "tangent",
+    internal: true,
+    label: "Tangent Inside",
+    badge: "tanI",
+    description: "A circle and an arc touch, one inside the other, within the arc",
+    selection: [C(1), A(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_arcs",
+    type: "tangent",
+    internal: false,
+    label: "Tangent",
+    badge: "tan",
+    description: "Two arcs touch externally, within both arcs (or at an endpoint they share)",
+    selection: [A(2)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_arcs_internal",
+    type: "tangent",
+    internal: true,
+    label: "Tangent Inside",
+    badge: "tanI",
+    description: "Two arcs touch, one inside the other, within both arcs (or at an endpoint they share)",
+    selection: [A(2)],
     entityFields: ["a", "b"],
   },
   {
@@ -585,6 +805,53 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     selection: [A(1)],
     entityFields: ["curve"],
     scalarParams: [radiusParam],
+  },
+  {
+    key: "diameter_circle",
+    type: "diameter",
+    label: "Diameter",
+    badge: "⌀",
+    description: "Fix the circle diameter",
+    selection: [C(1)],
+    entityFields: ["curve"],
+    scalarParams: [lengthParam("Diameter", (ents) => 2 * currentRadius(ents[0]))],
+  },
+  {
+    key: "diameter_arc",
+    type: "diameter",
+    label: "Diameter",
+    badge: "⌀",
+    description: "Fix the arc diameter",
+    selection: [A(1)],
+    entityFields: ["curve"],
+    scalarParams: [lengthParam("Diameter", (ents) => 2 * currentRadius(ents[0]))],
+  },
+  {
+    key: "length_line",
+    type: "length",
+    label: "Length",
+    badge: "L",
+    description: "Fix the line length",
+    selection: [L(1)],
+    entityFields: ["curve"],
+    scalarParams: [
+      lengthParam("Length", (ents, resolve) => {
+        const [a, b] = lineEndpoints(ents[0], resolve);
+        return distance(a, b);
+      }),
+    ],
+  },
+  {
+    key: "length_arc",
+    type: "length",
+    label: "Length",
+    badge: "L",
+    description: "Fix the arc length (radius × sweep)",
+    selection: [A(1)],
+    entityFields: ["curve"],
+    scalarParams: [
+      lengthParam("Length", (ents) => currentRadius(ents[0]) * arcSweep(ents[0])),
+    ],
   },
   {
     key: "difference",
@@ -832,6 +1099,7 @@ export function constraintToPrimitive(c: ConstraintInstance): JsonPrimitive {
   }
   const prim: JsonPrimitive = { id: c.id, type: def.type };
   if (def.extension === true) prim.extension = true;
+  if (def.internal === true) prim.internal = true;
   def.entityFields.forEach((field, i) => {
     writeField(prim, field, c.entities[i]);
   });
@@ -874,7 +1142,8 @@ function matchPrimitive(
 /**
  * Parse a native JSON constraint primitive back into a ConstraintInstance
  * (used by import / raw JSON apply), choosing the variant whose entity kinds
- * (looked up with `resolve`) and `extension` flag match, as the solver does.
+ * (looked up with `resolve`) and `extension` and `internal` flags match, as
+ * the solver does.
  * Returns null for unknown types, unsupported combinations and constraints
  * over values, which the demo doesn't edit.
  */
@@ -885,10 +1154,12 @@ export function primitiveToConstraint(
 ): ConstraintInstance | null {
   const type = typeof prim.type === "string" ? prim.type : "";
   const extension = prim.extension === true;
+  const internal = prim.internal === true;
   for (const def of CONSTRAINT_DEFS) {
     if (def.type !== type || (def.valueFields ?? []).length > 0) continue;
     if ((def.axisFields ?? []).length > 0) continue;
     if ((def.extension === true) !== extension) continue;
+    if ((def.internal === true) !== internal) continue;
     const entities = matchPrimitive(def, prim, resolve);
     if (entities === null) continue;
 

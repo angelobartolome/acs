@@ -1,24 +1,25 @@
-//! The PlaneGCS dialect (the GCS constraint types) through the
-//! JSON solve contract shared with the `P3DSketch_Solve` C ABI. Every
-//! request also goes through the dialect's WASM function,
-//! `acsSolveSketchPlaneGcs`, which must answer identically.
+//! The JSON solve contract (shared with the `P3DSketch_Solve` C ABI) and
+//! the solver's behaviour through it: the envelope, rejected requests,
+//! diagnosis, soft goals, drags, Parameters, arcs, Reference Geometry,
+//! mirrors, arrays and ellipses. Every request also goes through
+//! `acsSolveSketch`, which must answer identically.
 
-use acs::bindings::sketch_solve::acs_solve_sketch_planegcs;
-use acs::sketch_solve::solve_planegcs_sketch_json;
+use acs::bindings::sketch_solve::acs_solve_sketch;
+use acs::sketch_solve::solve_sketch_json;
 use serde_json::{Value, json};
 
 /// Solves a request that must be understood, returning the parsed response.
 fn solve(request: Value) -> Value {
     let request = request.to_string();
-    let out = solve_planegcs_sketch_json(&request).expect("request should be understood");
-    assert_eq!(acs_solve_sketch_planegcs(&request), out);
+    let out = solve_sketch_json(&request).expect("request should be understood");
+    assert_eq!(acs_solve_sketch(&request), out);
     serde_json::from_str(&out).expect("response should be valid JSON")
 }
 
 /// Solves a request that must be rejected, returning the parsed error response.
 fn reject(request: &str) -> Value {
-    let out = solve_planegcs_sketch_json(request).expect_err("request should be rejected");
-    assert_eq!(acs_solve_sketch_planegcs(request), out);
+    let out = solve_sketch_json(request).expect_err("request should be rejected");
+    assert_eq!(acs_solve_sketch(request), out);
     let resp: Value = serde_json::from_str(&out).expect("error response should be valid JSON");
     assert_eq!(resp["version"], 1);
     assert_eq!(resp["status"], "invalid");
@@ -46,7 +47,7 @@ fn converged_response_has_the_contract_envelope() {
     let resp = solve(request(json!([
         { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "p2", "type": "point", "x": 3.0, "y": 4.0, "fixed": false },
-        { "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 10.0 }
+        { "id": "k1", "type": "distance", "a": "p1", "b": "p2", "value": 10.0 }
     ])));
 
     assert_eq!(resp["version"], 1);
@@ -86,11 +87,11 @@ fn editor_sketch_with_existing_constraints_solves() {
         { "id": "l1", "type": "line", "p1_id": "a", "p2_id": "b", "isConstruction": false },
         { "id": "c", "type": "point", "x": 20.0, "y": 0.0, "fixed": false },
         { "id": "circle1", "type": "circle", "c_id": "c", "radius": 2.0, "group": "g1" },
-        { "id": "k1", "type": "p2p_coincident", "p1_id": "a", "p2_id": "origin" },
-        { "id": "k2", "type": "horizontal_l", "l_id": "l1" },
-        { "id": "k3", "type": "p2p_distance", "p1_id": "a", "p2_id": "b", "distance": 10.0 },
-        { "id": "k4", "type": "circle_radius", "c_id": "circle1", "radius": 4.0 },
-        { "id": "k5", "type": "coordinate_x", "p_id": "c", "x": 25.0, "temporary": true }
+        { "id": "k1", "type": "coincident", "a": "a", "b": "origin" },
+        { "id": "k2", "type": "horizontal", "line": "l1" },
+        { "id": "k3", "type": "distance", "a": "a", "b": "b", "value": 10.0 },
+        { "id": "k4", "type": "radius", "curve": "circle1", "value": 4.0 },
+        { "id": "k5", "type": "x", "point": "c", "value": 25.0, "temporary": true }
     ])));
 
     assert_eq!(resp["status"], "converged", "{resp}");
@@ -115,8 +116,8 @@ fn failed_solve_is_a_response_not_an_error() {
     let resp = solve(request(json!([
         { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "p2", "type": "point", "x": 3.0, "y": 4.0 },
-        { "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 5.0 },
-        { "id": "k2", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 10.0 }
+        { "id": "k1", "type": "distance", "a": "p1", "b": "p2", "value": 5.0 },
+        { "id": "k2", "type": "distance", "a": "p1", "b": "p2", "value": 10.0 }
     ])));
 
     assert_eq!(resp["status"], "failed");
@@ -132,7 +133,7 @@ fn max_iterations_is_honoured() {
     let mut req = request(json!([
         { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "p2", "type": "point", "x": 3.0, "y": 4.0 },
-        { "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 10.0 }
+        { "id": "k1", "type": "distance", "a": "p1", "b": "p2", "value": 10.0 }
     ]));
     req["maxIterations"] = json!(1);
     let resp = solve(req.clone());
@@ -155,7 +156,7 @@ fn dof_counts_what_the_constraints_leave_free() {
     assert_eq!(
         solve(request(json!([
             free_point,
-            { "id": "k1", "type": "coordinate_x", "p_id": "p", "x": 3.0 }
+            { "id": "k1", "type": "x", "point": "p", "value": 3.0 }
         ])))["dof"],
         1
     );
@@ -169,12 +170,12 @@ fn dof_counts_what_the_constraints_leave_free() {
         { "id": "bc", "type": "line", "p1_id": "b", "p2_id": "c" },
         { "id": "cd", "type": "line", "p1_id": "c", "p2_id": "d" },
         { "id": "da", "type": "line", "p1_id": "d", "p2_id": "a" },
-        { "id": "k1", "type": "horizontal_l", "l_id": "ab" },
-        { "id": "k2", "type": "horizontal_l", "l_id": "cd" },
-        { "id": "k3", "type": "vertical_l", "l_id": "bc" },
-        { "id": "k4", "type": "vertical_l", "l_id": "da" },
-        { "id": "k5", "type": "p2p_distance", "p1_id": "a", "p2_id": "b", "distance": 4.0 },
-        { "id": "k6", "type": "p2p_distance", "p1_id": "b", "p2_id": "c", "distance": 3.0 }
+        { "id": "k1", "type": "horizontal", "line": "ab" },
+        { "id": "k2", "type": "horizontal", "line": "cd" },
+        { "id": "k3", "type": "vertical", "line": "bc" },
+        { "id": "k4", "type": "vertical", "line": "da" },
+        { "id": "k5", "type": "distance", "a": "a", "b": "b", "value": 4.0 },
+        { "id": "k6", "type": "distance", "a": "b", "b": "c", "value": 3.0 }
     ])));
     assert_eq!(rect["status"], "converged");
     assert_eq!(rect["dof"], 0);
@@ -187,8 +188,8 @@ fn fully_constrained_extension_includes_lines() {
         { "id": "p2", "type": "point", "x": 3.0, "y": 1.0 },
         { "id": "p3", "type": "point", "x": 5.0, "y": 5.0 },
         { "id": "line1", "type": "line", "p1_id": "p1", "p2_id": "p2" },
-        { "id": "c1", "type": "horizontal_pp", "p1_id": "p1", "p2_id": "p2" },
-        { "id": "c2", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 5.0 }
+        { "id": "c1", "type": "horizontal", "a": "p1", "b": "p2" },
+        { "id": "c2", "type": "distance", "a": "p1", "b": "p2", "value": 5.0 }
     ])));
 
     let ids: Vec<&str> = resp["fullyConstrained"]
@@ -241,12 +242,12 @@ fn constraint_missing_a_field_is_rejected_naming_it() {
         &request(json!([
             { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
             { "id": "p2", "type": "point", "x": 3.0, "y": 4.0 },
-            { "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2" }
+            { "id": "k1", "type": "distance", "a": "p1", "b": "p2" }
         ]))
         .to_string(),
     );
     let error = resp["error"].as_str().unwrap();
-    assert!(error.contains("distance") && error.contains("k1"), "{error}");
+    assert!(error.contains("'value'") && error.contains("k1"), "{error}");
 }
 
 #[test]
@@ -261,7 +262,7 @@ fn constraint_on_a_missing_entity_is_rejected() {
     let resp = reject(
         &request(json!([
             { "id": "p1", "type": "point", "x": 0.0, "y": 0.0 },
-            { "id": "k1", "type": "horizontal_pp", "p1_id": "p1", "p2_id": "ghost" }
+            { "id": "k1", "type": "coincident", "a": "p1", "b": "ghost" }
         ]))
         .to_string(),
     );
@@ -280,8 +281,8 @@ fn tangent_and_concentric_circles() {
         { "id": "c1", "type": "circle", "c_id": "o1", "radius": 3.0, "fixed": true },
         { "id": "c2", "type": "circle", "c_id": "o2", "radius": 2.0, "fixed": true },
         { "id": "c3", "type": "circle", "c_id": "o3", "radius": 1.0 },
-        { "id": "k1", "type": "tangent_cc", "c1_id": "c1", "c2_id": "c2" },
-        { "id": "k2", "type": "concentric_cc", "c1_id": "c1", "c2_id": "c3" }
+        { "id": "k1", "type": "tangent", "a": "c1", "b": "c2" },
+        { "id": "k2", "type": "concentric", "a": "c1", "b": "c3" }
     ])));
 
     assert_eq!(resp["status"], "converged", "{resp}");
@@ -301,7 +302,7 @@ fn point_on_arc_resolves_center() {
         { "id": "a1", "type": "arc", "c_id": "o", "start_id": "s", "end_id": "e", "radius": 5.0,
           "start_angle": 0.0, "end_angle": 1.5, "fixed": true },
         { "id": "p", "type": "point", "x": 1.0, "y": 1.0 },
-        { "id": "k1", "type": "point_on_circle", "p_id": "p", "c_id": "a1" }
+        { "id": "k1", "type": "on", "point": "p", "curve": "a1" }
     ])));
 
     assert_eq!(resp["status"], "converged", "{resp}");
@@ -313,7 +314,7 @@ fn point_on_arc_resolves_center() {
 fn scalars_may_be_numeric_strings() {
     let resp = solve(request(json!([
         { "id": "p", "type": "point", "x": 1.0, "y": 2.0 },
-        { "id": "k1", "type": "coordinate_x", "p_id": "p", "x": "7.5" }
+        { "id": "k1", "type": "x", "point": "p", "value": "7.5" }
     ])));
     assert!((point(&resp, "p").0 - 7.5).abs() < 1e-8);
 }
@@ -404,14 +405,14 @@ fn with_fixed_line(rest: Value) -> Value {
 
 #[test]
 fn point_on_extension_holds_beyond_the_segment() {
-    let sketch = |kind: &str| {
+    let sketch = |extension: bool| {
         with_fixed_line(json!([
             { "id": "p", "type": "point", "x": 15.0, "y": 2.0 },
-            { "id": "k", "type": kind, "p_id": "p", "l_id": "l" }
+            { "id": "k", "type": "on", "point": "p", "curve": "l", "extension": extension }
         ]))
     };
 
-    let resp = solve(sketch("point_on_line_pl"));
+    let resp = solve(sketch(false));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "p");
     assert!(
@@ -419,7 +420,7 @@ fn point_on_extension_holds_beyond_the_segment() {
         "pulled onto the segment: ({x}, {y})"
     );
 
-    let resp = solve(sketch("point_on_extension_pl"));
+    let resp = solve(sketch(true));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "p");
     assert!(y.abs() < 1e-8, "on the Extension, got y = {y}");
@@ -428,15 +429,16 @@ fn point_on_extension_holds_beyond_the_segment() {
 
 #[test]
 fn distance_to_extension_holds_beyond_the_segment() {
-    let sketch = |kind: &str, d: f64| {
+    let sketch = |extension: bool, d: f64| {
         with_fixed_line(json!([
             { "id": "p", "type": "point", "x": 15.0, "y": 3.0 },
-            { "id": "k", "type": kind, "p_id": "p", "l_id": "l", "distance": d }
+            { "id": "k", "type": "distance", "a": "p", "b": "l", "value": d,
+              "extension": extension }
         ]))
     };
 
     // Plain: 1 from the segment means 1 from its endpoint b out here.
-    let resp = solve(sketch("p2l_distance", 1.0));
+    let resp = solve(sketch(false, 1.0));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "p");
     assert!(
@@ -445,14 +447,14 @@ fn distance_to_extension_holds_beyond_the_segment() {
     );
 
     // Extension: 1 from the infinite line, where it started along it.
-    let resp = solve(sketch("p2l_extension_distance", 1.0));
+    let resp = solve(sketch(true, 1.0));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "p");
     assert!((y - 1.0).abs() < 1e-8, "1 above the Extension, got y = {y}");
     assert!(x > 14.0, "stays beyond the segment, got x = {x}");
 
     // Distance 0 puts the point on the Extension.
-    let resp = solve(sketch("p2l_extension_distance", 0.0));
+    let resp = solve(sketch(true, 0.0));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "p");
     assert!(y.abs() < 1e-8 && x > 14.0, "({x}, {y})");
@@ -460,15 +462,15 @@ fn distance_to_extension_holds_beyond_the_segment() {
 
 #[test]
 fn tangent_to_extension_holds_beyond_the_segment() {
-    let sketch = |kind: &str| {
+    let sketch = |extension: bool| {
         with_fixed_line(json!([
             { "id": "o", "type": "point", "x": 15.0, "y": 3.0 },
             { "id": "c", "type": "circle", "c_id": "o", "radius": 2.0, "fixed": true },
-            { "id": "k", "type": kind, "l_id": "l", "c_id": "c" }
+            { "id": "k", "type": "tangent", "a": "l", "b": "c", "extension": extension }
         ]))
     };
 
-    let resp = solve(sketch("tangent_lc"));
+    let resp = solve(sketch(false));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "o");
     assert!(
@@ -476,7 +478,7 @@ fn tangent_to_extension_holds_beyond_the_segment() {
         "pulled over the segment: ({x}, {y})"
     );
 
-    let resp = solve(sketch("tangent_extension_lc"));
+    let resp = solve(sketch(true));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "o");
     assert!(
@@ -491,12 +493,12 @@ fn tangent_to_extension_holds_beyond_the_segment() {
 
 #[test]
 fn midpoint_on_extension_holds_beyond_the_segment() {
-    let sketch = |kind: &str| {
+    let sketch = |extension: bool| {
         with_fixed_line(json!([
             { "id": "m1", "type": "point", "x": 14.0, "y": 1.0 },
             { "id": "m2", "type": "point", "x": 16.0, "y": 3.0 },
             { "id": "l2", "type": "line", "p1_id": "m1", "p2_id": "m2" },
-            { "id": "k", "type": kind, "l1_id": "l2", "l2_id": "l" }
+            { "id": "k", "type": "midpoint", "entities": ["l2", "l"], "extension": extension }
         ]))
     };
     let midpoint = |resp: &Value| {
@@ -505,7 +507,7 @@ fn midpoint_on_extension_holds_beyond_the_segment() {
         ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
     };
 
-    let resp = solve(sketch("midpoint_on_line_ll"));
+    let resp = solve(sketch(false));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = midpoint(&resp);
     assert!(
@@ -513,7 +515,7 @@ fn midpoint_on_extension_holds_beyond_the_segment() {
         "pulled onto the segment: ({x}, {y})"
     );
 
-    let resp = solve(sketch("midpoint_on_extension_ll"));
+    let resp = solve(sketch(true));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = midpoint(&resp);
     assert!(y.abs() < 1e-8, "midpoint on the Extension, got y = {y}");
@@ -537,12 +539,12 @@ fn rectangle() -> Vec<Value> {
         { "id": "bc", "type": "line", "p1_id": "b", "p2_id": "c" },
         { "id": "cd", "type": "line", "p1_id": "c", "p2_id": "d" },
         { "id": "da", "type": "line", "p1_id": "d", "p2_id": "a" },
-        { "id": "k1", "type": "horizontal_l", "l_id": "ab" },
-        { "id": "k2", "type": "horizontal_l", "l_id": "cd" },
-        { "id": "k3", "type": "vertical_l", "l_id": "bc" },
-        { "id": "k4", "type": "vertical_l", "l_id": "da" },
-        { "id": "k5", "type": "p2p_distance", "p1_id": "a", "p2_id": "b", "distance": 4.0 },
-        { "id": "k6", "type": "p2p_distance", "p1_id": "b", "p2_id": "c", "distance": 3.0 }
+        { "id": "k1", "type": "horizontal", "line": "ab" },
+        { "id": "k2", "type": "horizontal", "line": "cd" },
+        { "id": "k3", "type": "vertical", "line": "bc" },
+        { "id": "k4", "type": "vertical", "line": "da" },
+        { "id": "k5", "type": "distance", "a": "a", "b": "b", "value": 4.0 },
+        { "id": "k6", "type": "distance", "a": "b", "b": "c", "value": 3.0 }
     ])
     .as_array()
     .unwrap()
@@ -561,9 +563,9 @@ fn incompatible_distances_are_both_conflicting() {
         { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "p2", "type": "point", "x": 3.0, "y": 4.0 },
         { "id": "p3", "type": "point", "x": 9.0, "y": 9.0 },
-        { "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 5.0 },
-        { "id": "k2", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 10.0 },
-        { "id": "k3", "type": "coordinate_x", "p_id": "p3", "x": 1.0 }
+        { "id": "k1", "type": "distance", "a": "p1", "b": "p2", "value": 5.0 },
+        { "id": "k2", "type": "distance", "a": "p1", "b": "p2", "value": 10.0 },
+        { "id": "k3", "type": "x", "point": "p3", "value": 1.0 }
     ])));
 
     assert_eq!(resp["status"], "failed");
@@ -576,7 +578,7 @@ fn constraint_between_fixed_points_that_does_not_hold_is_conflicting() {
     let resp = solve(request(json!([
         { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "p2", "type": "point", "x": 3.0, "y": 4.0, "fixed": true },
-        { "id": "k1", "type": "p2p_distance", "p1_id": "p1", "p2_id": "p2", "distance": 7.0 }
+        { "id": "k1", "type": "distance", "a": "p1", "b": "p2", "value": 7.0 }
     ])));
     assert_eq!(resp["status"], "failed");
     assert_eq!(ids(&resp["conflicting"]), ["k1"]);
@@ -593,7 +595,7 @@ fn a_well_constrained_sketch_has_nothing_to_report() {
 #[test]
 fn opposite_side_of_a_constrained_rectangle_is_redundant() {
     let resp = solve(rectangle_with(json!([
-        { "id": "k7", "type": "p2p_distance", "p1_id": "c", "p2_id": "d", "distance": 4.0 }
+        { "id": "k7", "type": "distance", "a": "c", "b": "d", "value": 4.0 }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert_eq!(ids(&resp["redundant"]), ["k7"]);
@@ -604,7 +606,7 @@ fn opposite_side_of_a_constrained_rectangle_is_redundant() {
 #[test]
 fn incompatible_opposite_side_of_a_rectangle_conflicts_with_what_implies_it() {
     let resp = solve(rectangle_with(json!([
-        { "id": "k7", "type": "p2p_distance", "p1_id": "c", "p2_id": "d", "distance": 6.0 }
+        { "id": "k7", "type": "distance", "a": "c", "b": "d", "value": 6.0 }
     ])));
     assert_eq!(resp["status"], "failed");
     let conflicting = ids(&resp["conflicting"]);
@@ -619,8 +621,8 @@ fn duplicated_horizontal_reports_the_later_one_as_redundant() {
         { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
         { "id": "b", "type": "point", "x": 4.0, "y": 1.0 },
         { "id": "l", "type": "line", "p1_id": "a", "p2_id": "b" },
-        { "id": "h1", "type": "horizontal_l", "l_id": "l" },
-        { "id": "h2", "type": "horizontal_pp", "p1_id": "a", "p2_id": "b" }
+        { "id": "h1", "type": "horizontal", "line": "l" },
+        { "id": "h2", "type": "horizontal", "a": "a", "b": "b" }
     ])));
     assert_eq!(resp["status"], "converged");
     assert_eq!(ids(&resp["redundant"]), ["h2"]);
@@ -636,9 +638,9 @@ fn diagnosis_happens_at_the_solved_position() {
     let mut req = request(json!([
         { "id": "o", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "p", "type": "point", "x": 1.0, "y": 1.0 },
-        { "id": "k1", "type": "coordinate_x", "p_id": "p", "x": 3.0 },
-        { "id": "k2", "type": "coordinate_y", "p_id": "p", "y": 4.0 },
-        { "id": "k3", "type": "p2p_distance", "p1_id": "o", "p2_id": "p", "distance": 5.0 }
+        { "id": "k1", "type": "x", "point": "p", "value": 3.0 },
+        { "id": "k2", "type": "y", "point": "p", "value": 4.0 },
+        { "id": "k3", "type": "distance", "a": "o", "b": "p", "value": 5.0 }
     ]));
 
     let solved = solve(req.clone());
@@ -658,8 +660,8 @@ fn temporary_constraints_are_never_reported() {
     let resp = solve(request(json!([
         { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
         { "id": "b", "type": "point", "x": 4.0, "y": 1.0 },
-        { "id": "h1", "type": "horizontal_pp", "p1_id": "a", "p2_id": "b" },
-        { "id": "t1", "type": "horizontal_pp", "p1_id": "a", "p2_id": "b", "temporary": true }
+        { "id": "h1", "type": "horizontal", "a": "a", "b": "b" },
+        { "id": "t1", "type": "horizontal", "a": "a", "b": "b", "temporary": true }
     ])));
     assert_eq!(resp["status"], "converged");
     assert_eq!(resp["redundant"], json!([]));
@@ -667,8 +669,8 @@ fn temporary_constraints_are_never_reported() {
     // …and a drag that can't be honoured is a soft goal: the rectangle (0
     // DOF) solves and stays put, and nothing is blamed.
     let resp = solve(rectangle_with(json!([
-        { "id": "t1", "type": "coordinate_x", "p_id": "c", "x": 9.0, "temporary": true },
-        { "id": "t2", "type": "coordinate_y", "p_id": "c", "y": 9.0, "temporary": true }
+        { "id": "t1", "type": "x", "point": "c", "value": 9.0, "temporary": true },
+        { "id": "t2", "type": "y", "point": "c", "value": 9.0, "temporary": true }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "c");
@@ -686,9 +688,9 @@ fn temporary_constraints_are_soft_goals_within_the_real_ones() {
         { "id": "b", "type": "point", "x": 10.0, "y": 0.0, "fixed": true },
         { "id": "l", "type": "line", "p1_id": "a", "p2_id": "b" },
         { "id": "p", "type": "point", "x": 2.0, "y": 0.0 },
-        { "id": "k", "type": "point_on_line_pl", "p_id": "p", "l_id": "l" },
-        { "id": "t1", "type": "coordinate_x", "p_id": "p", "x": 6.0, "temporary": true },
-        { "id": "t2", "type": "coordinate_y", "p_id": "p", "y": 4.0, "temporary": true }
+        { "id": "k", "type": "on", "point": "p", "curve": "l" },
+        { "id": "t1", "type": "x", "point": "p", "value": 6.0, "temporary": true },
+        { "id": "t2", "type": "y", "point": "p", "value": 4.0, "temporary": true }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "p");
@@ -702,8 +704,8 @@ fn temporary_constraints_are_soft_goals_within_the_real_ones() {
 fn temporary_constraints_do_not_count_toward_dof() {
     let resp = solve(request(json!([
         { "id": "p", "type": "point", "x": 1.0, "y": 2.0 },
-        { "id": "t1", "type": "coordinate_x", "p_id": "p", "x": 3.0, "temporary": true },
-        { "id": "t2", "type": "coordinate_y", "p_id": "p", "y": 5.0, "temporary": true }
+        { "id": "t1", "type": "x", "point": "p", "value": 3.0, "temporary": true },
+        { "id": "t2", "type": "y", "point": "p", "value": 5.0, "temporary": true }
     ])));
     assert_eq!(resp["status"], "converged");
     let (x, y) = point(&resp, "p");
@@ -741,15 +743,16 @@ fn fold_request(at: &[(&str, (f64, f64))], goal: (f64, f64)) -> Value {
         json!({ "type": "line", "id": "ab", "p1_id": "a", "p2_id": "b" }),
         json!({ "type": "line", "id": "cd", "p1_id": "c", "p2_id": "d" }),
         json!({ "type": "line", "id": "da", "p1_id": "d", "p2_id": "a" }),
-        json!({ "type": "horizontal_l", "id": "h", "l_id": "ab" }),
-        json!({ "type": "vertical_l", "id": "v", "l_id": "da" }),
-        json!({ "type": "p2p_symmetric_ppp", "id": "s", "p1_id": "a", "p2_id": "c", "p_id": "o" }),
-        json!({ "type": "p2p_distance", "id": "w", "p1_id": "c", "p2_id": "d", "distance": 80 }),
+        json!({ "type": "horizontal", "id": "h", "line": "ab" }),
+        json!({ "type": "vertical", "id": "v", "line": "da" }),
+        json!({ "type": "line", "id": "diag", "p1_id": "a", "p2_id": "c" }),
+        json!({ "type": "midpoint", "id": "s", "entities": ["o", "diag"] }),
+        json!({ "type": "distance", "id": "w", "a": "c", "b": "d", "value": 80 }),
         json!({ "type": "arc", "id": "arc", "c_id": "ac", "start_id": "as", "end_id": "ae",
                 "radius": 15, "start_angle": 0, "end_angle": std::f64::consts::FRAC_PI_2 }),
-        json!({ "type": "point_on_line_pl", "id": "on", "p_id": "ae", "l_id": "cd" }),
-        json!({ "type": "coordinate_x", "id": "gx", "p_id": "a", "x": goal.0, "temporary": true }),
-        json!({ "type": "coordinate_y", "id": "gy", "p_id": "a", "y": goal.1, "temporary": true }),
+        json!({ "type": "on", "id": "on", "point": "ae", "curve": "cd" }),
+        json!({ "type": "x", "id": "gx", "point": "a", "value": goal.0, "temporary": true }),
+        json!({ "type": "y", "id": "gy", "point": "a", "value": goal.1, "temporary": true }),
     ]);
     request(Value::Array(primitives))
 }
@@ -854,10 +857,10 @@ fn parameter_sketch(offset: f64) -> Value {
         { "id": "p", "type": "point", "x": 3.0, "y": 1.0 },
         { "id": "q", "type": "point", "x": 5.0, "y": -1.0 },
         { "id": "r", "type": "point", "x": 6.0, "y": 4.0 },
-        { "id": "k1", "type": "p2l_signed_distance", "p_id": "p", "l_id": "l",
-          "distance": "offset", "side": 1 },
-        { "id": "k2", "type": "p2l_distance", "p_id": "q", "l_id": "l", "distance": "offset" },
-        { "id": "k3", "type": "p2p_distance", "p1_id": "p", "p2_id": "r", "distance": "offset" }
+        { "id": "k1", "type": "offset", "point": "p", "line": "l",
+          "value": "offset", "side": 1 },
+        { "id": "k2", "type": "distance", "a": "q", "b": "l", "value": "offset" },
+        { "id": "k3", "type": "distance", "a": "p", "b": "r", "value": "offset" }
     ]))
 }
 
@@ -896,8 +899,8 @@ fn signed_distance_holds_the_point_on_its_side_of_the_extension() {
     let sketch = |side: i32| {
         with_fixed_line(json!([
             { "id": "p", "type": "point", "x": 15.0, "y": -1.0 },
-            { "id": "k", "type": "p2l_signed_distance", "p_id": "p", "l_id": "l",
-              "distance": 2.0, "side": side }
+            { "id": "k", "type": "offset", "point": "p", "line": "l",
+              "value": 2.0, "side": side }
         ]))
     };
 
@@ -916,7 +919,7 @@ fn signed_distance_holds_the_point_on_its_side_of_the_extension() {
 }
 
 /// A Linked Offset of a circle: the offset's radius is the fixed source's
-/// minus the Parameter (param2 − param1 = difference).
+/// minus the Parameter (b − a = value).
 #[test]
 fn difference_over_radius_references_solves() {
     let sketch = |offset: f64| {
@@ -926,9 +929,9 @@ fn difference_over_radius_references_solves() {
             { "id": "off", "type": "circle", "c_id": "o", "radius": 10.0 },
             { "id": "d", "type": "param", "name": "Offset1", "value": offset },
             { "id": "k", "type": "difference",
-              "param1": { "o_id": "off", "prop": "radius" },
-              "param2": { "o_id": "src", "prop": "radius" },
-              "difference": "d" }
+              "a": { "entity": "off", "property": "radius" },
+              "b": { "entity": "src", "property": "radius" },
+              "value": "d" }
         ]))
     };
     for offset in [2.0, 4.0] {
@@ -948,23 +951,23 @@ fn equal_over_radius_references_solves() {
         { "id": "c1", "type": "circle", "c_id": "o1", "radius": 3.0 },
         { "id": "c2", "type": "circle", "c_id": "o2", "radius": 1.0 },
         { "id": "k1", "type": "equal",
-          "param1": { "o_id": "c1", "prop": "radius" },
-          "param2": { "o_id": "c2", "prop": "radius" } },
-        { "id": "k2", "type": "equal", "param1": { "o_id": "c2", "prop": "radius" }, "param2": 2.5 }
+          "a": { "entity": "c1", "property": "radius" },
+          "b": { "entity": "c2", "property": "radius" } },
+        { "id": "k2", "type": "equal", "a": { "entity": "c2", "property": "radius" }, "b": 2.5 }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert!((radius(&resp, "c1") - 2.5).abs() < 1e-8, "{resp}");
     assert!((radius(&resp, "c2") - 2.5).abs() < 1e-8, "{resp}");
 }
 
-/// Points expose `x` and `y`, as in PlaneGCS.
+/// Points expose `x` and `y`.
 #[test]
 fn equal_over_point_coordinates_solves() {
     let resp = solve(request(json!([
         { "id": "p", "type": "point", "x": 1.0, "y": 2.0 },
         { "id": "q", "type": "point", "x": 4.0, "y": 6.0, "fixed": true },
-        { "id": "k1", "type": "equal", "param1": { "o_id": "p", "prop": "x" }, "param2": { "o_id": "q", "prop": "y" } },
-        { "id": "k2", "type": "equal", "param1": { "o_id": "p", "prop": "y" }, "param2": -3 }
+        { "id": "k1", "type": "equal", "a": { "entity": "p", "property": "x" }, "b": { "entity": "q", "property": "y" } },
+        { "id": "k2", "type": "equal", "a": { "entity": "p", "property": "y" }, "b": -3 }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "p");
@@ -981,9 +984,9 @@ fn unknown_parameter_id_is_rejected() {
     let (error, id) = rejected_constraint(json!([
         { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
         { "id": "b", "type": "point", "x": 1.0, "y": 0.0 },
-        { "id": "k", "type": "p2p_distance", "p1_id": "a", "p2_id": "b", "distance": "nope" }
+        { "id": "k", "type": "distance", "a": "a", "b": "b", "value": "nope" }
     ]));
-    assert_eq!(error, "constraint k: field 'distance': unknown Parameter 'nope'");
+    assert_eq!(error, "constraint k: field 'value': unknown Parameter 'nope'");
     assert_eq!(id, "k");
 }
 
@@ -996,29 +999,29 @@ fn bad_property_references_are_rejected() {
             { "id": "d", "type": "param", "value": 1.0 }
         ])
     };
-    let with = |param1: Value| {
+    let with = |a: Value| {
         let mut prims = base();
         prims.as_array_mut().unwrap().push(json!(
-            { "id": "k", "type": "equal", "param1": param1, "param2": 2.0 }
+            { "id": "k", "type": "equal", "a": a, "b": 2.0 }
         ));
         rejected_constraint(prims)
     };
 
-    let (error, id) = with(json!({ "o_id": "c", "prop": "diameter" }));
-    assert_eq!(error, "constraint k: field 'param1': circle 'c' has no property 'diameter'");
+    let (error, id) = with(json!({ "entity": "c", "property": "diameter" }));
+    assert_eq!(error, "constraint k: field 'a': circle 'c' has no property 'diameter'");
     assert_eq!(id, "k");
 
-    let (error, _) = with(json!({ "o_id": "ghost", "prop": "radius" }));
-    assert_eq!(error, "constraint k: field 'param1': 'ghost' is not an entity");
+    let (error, _) = with(json!({ "entity": "ghost", "property": "radius" }));
+    assert_eq!(error, "constraint k: field 'a': 'ghost' is not an entity");
 
-    let (error, _) = with(json!({ "o_id": "d", "prop": "value" }));
-    assert_eq!(error, "constraint k: field 'param1': 'd' is not an entity");
+    let (error, _) = with(json!({ "entity": "d", "property": "value" }));
+    assert_eq!(error, "constraint k: field 'a': 'd' is not an entity");
 
-    let (error, _) = with(json!({ "o_id": "c" }));
-    assert_eq!(error, "constraint k: field 'param1': property reference has no 'prop'");
+    let (error, _) = with(json!({ "entity": "c" }));
+    assert_eq!(error, "constraint k: field 'a': property reference has no 'property'");
 
     let (error, _) = with(json!("missing"));
-    assert_eq!(error, "constraint k: field 'param1': unknown Parameter 'missing'");
+    assert_eq!(error, "constraint k: field 'a': unknown Parameter 'missing'");
 }
 
 /// Property references are for `difference` and `equal`; other scalar fields
@@ -1028,9 +1031,9 @@ fn property_reference_in_a_scalar_field_is_rejected() {
     let (error, _) = rejected_constraint(json!([
         { "id": "o", "type": "point", "x": 0.0, "y": 0.0 },
         { "id": "c", "type": "circle", "c_id": "o", "radius": 1.0 },
-        { "id": "k", "type": "circle_radius", "c_id": "c", "radius": { "o_id": "c", "prop": "radius" } }
+        { "id": "k", "type": "radius", "curve": "c", "value": { "entity": "c", "property": "radius" } }
     ]));
-    assert_eq!(error, "constraint k: field 'radius' is not a number or a Parameter id");
+    assert_eq!(error, "constraint k: field 'value' is not a number or a Parameter id");
 }
 
 #[test]
@@ -1045,7 +1048,7 @@ fn relation_between_constants_holds_or_conflicts() {
     let sketch = |value: f64| {
         request(json!([
             { "id": "d", "type": "param", "value": value },
-            { "id": "k", "type": "equal", "param1": "d", "param2": 2.0 }
+            { "id": "k", "type": "equal", "a": "d", "b": 2.0 }
         ]))
     };
     let resp = solve(sketch(2.0));
@@ -1060,7 +1063,7 @@ fn relation_between_constants_holds_or_conflicts() {
 // ── Arcs ───────────────────────────────────────────────────────────────────
 //
 // An arc references its center, start and end Points, and its endpoints
-// always lie on it (an `arc_rules` adds nothing). Arcs sweep counter-clockwise
+// always lie on it. Arcs sweep counter-clockwise
 // from `start_angle` to `end_angle`.
 
 use std::f64::consts::{FRAC_PI_2, PI};
@@ -1078,7 +1081,7 @@ fn with(mut primitives: Value, rest: Value) -> Value {
     request(primitives)
 }
 
-/// Asserts `arc_rules` holds for arc `id` in a response: its start and end
+/// Asserts arc `id`'s rules hold in a response: its start and end
 /// Points sit at its radius from its center, at its start and end angles.
 fn assert_arc_rules_hold(resp: &Value, id: &str) {
     let a = primitive(resp, id);
@@ -1109,7 +1112,7 @@ fn off_span(resp: &Value, arc: &str, (px, py): (f64, f64)) -> f64 {
     if u <= sweep { 0.0 } else { (u - sweep).min(2.0 * PI - u) }
 }
 
-/// A free quarter arc around `o` from (10, 0) to (0, 10), with (no-op) rules.
+/// A free quarter arc around `o` from (10, 0) to (0, 10).
 fn quarter_arc(rest: Value) -> Value {
     with(
         json!([
@@ -1117,8 +1120,7 @@ fn quarter_arc(rest: Value) -> Value {
             { "id": "s", "type": "point", "x": 10.0, "y": 0.0 },
             { "id": "e", "type": "point", "x": 0.0, "y": 10.0 },
             { "id": "a", "type": "arc", "c_id": "o", "start_id": "s", "end_id": "e",
-              "radius": 10.0, "start_angle": 0.0, "end_angle": FRAC_PI_2 },
-            { "id": "rules", "type": "arc_rules", "a_id": "a" }
+              "radius": 10.0, "start_angle": 0.0, "end_angle": FRAC_PI_2 }
         ]),
         rest,
     )
@@ -1129,9 +1131,9 @@ fn line_sharing_an_arc_endpoint_stays_attached_as_radius_and_center_change() {
     let resp = solve(quarter_arc(json!([
         { "id": "q", "type": "point", "x": -10.0, "y": 10.0, "fixed": true },
         { "id": "l", "type": "line", "p1_id": "e", "p2_id": "q" },
-        { "id": "k1", "type": "arc_radius", "a_id": "a", "radius": 15.0 },
-        { "id": "k2", "type": "coordinate_x", "p_id": "o", "x": 2.0 },
-        { "id": "k3", "type": "coordinate_y", "p_id": "o", "y": -3.0 }
+        { "id": "k1", "type": "radius", "curve": "a", "value": 15.0 },
+        { "id": "k2", "type": "x", "point": "o", "value": 2.0 },
+        { "id": "k3", "type": "y", "point": "o", "value": -3.0 }
     ])));
 
     assert_eq!(resp["status"], "converged", "{resp}");
@@ -1147,8 +1149,8 @@ fn line_sharing_an_arc_endpoint_stays_attached_as_radius_and_center_change() {
 #[test]
 fn dragging_an_arc_endpoint_moves_the_arc_with_it() {
     let resp = solve(quarter_arc(json!([
-        { "id": "t1", "type": "coordinate_x", "p_id": "e", "x": 1.0, "temporary": true },
-        { "id": "t2", "type": "coordinate_y", "p_id": "e", "y": 12.0, "temporary": true }
+        { "id": "t1", "type": "x", "point": "e", "value": 1.0, "temporary": true },
+        { "id": "t2", "type": "y", "point": "e", "value": 12.0, "temporary": true }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (ex, ey) = point(&resp, "e");
@@ -1157,14 +1159,14 @@ fn dragging_an_arc_endpoint_moves_the_arc_with_it() {
 }
 
 #[test]
-fn a_free_arc_with_its_rules_has_five_degrees_of_freedom() {
+fn a_free_arc_has_five_degrees_of_freedom() {
     // Center (2), radius and two angles; the endpoints follow.
     let resp = solve(quarter_arc(json!([])));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert_eq!(resp["dof"], 5);
 }
 
-/// The quarter arc's primitives without `arc_rules`, its endpoints off it.
+/// The quarter arc's primitives, its endpoints off it.
 fn quarter_arc_off_its_endpoints() -> Value {
     json!([
         { "id": "o", "type": "point", "x": 0.0, "y": 0.0 },
@@ -1176,32 +1178,12 @@ fn quarter_arc_off_its_endpoints() -> Value {
 }
 
 #[test]
-fn an_arc_keeps_its_endpoints_on_itself_without_arc_rules() {
+fn an_arc_keeps_its_endpoints_on_itself() {
     let resp = solve(request(quarter_arc_off_its_endpoints()));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert_arc_rules_hold(&resp, "a");
     assert_eq!(resp["dof"], 5);
     assert_eq!(resp["redundant"], json!([]));
-}
-
-#[test]
-fn arc_rules_are_accepted_and_add_nothing() {
-    let without = solve(request(quarter_arc_off_its_endpoints()));
-    let with_rules = solve(with(
-        quarter_arc_off_its_endpoints(),
-        json!([
-            { "id": "rules", "type": "arc_rules", "a_id": "a" },
-            { "id": "again", "type": "arc_rules", "a_id": "a" }
-        ]),
-    ));
-    assert_eq!(with_rules["status"], "converged", "{with_rules}");
-    assert_eq!(with_rules["redundant"], json!([]));
-    assert_eq!(with_rules["conflicting"], json!([]));
-    assert_eq!(with_rules["dof"], without["dof"]);
-    for id in ["o", "s", "e"] {
-        assert_eq!(point(&with_rules, id), point(&without, id), "{id}");
-    }
-    assert_eq!(primitive(&with_rules, "a"), primitive(&without, "a"));
 }
 
 #[test]
@@ -1214,9 +1196,9 @@ fn a_reference_arc_and_its_endpoints_never_move() {
           "radius": 5.0, "start_angle": 0.0, "end_angle": FRAC_PI_2, "isReference": true },
         { "id": "q", "type": "point", "x": 3.0, "y": 7.0 },
         { "id": "l", "type": "line", "p1_id": "e", "p2_id": "q" },
-        { "id": "k", "type": "p2p_distance", "p1_id": "e", "p2_id": "q", "distance": 8.0 },
-        { "id": "t1", "type": "coordinate_x", "p_id": "s", "x": 9.0, "temporary": true },
-        { "id": "t2", "type": "coordinate_y", "p_id": "s", "y": 9.0, "temporary": true }
+        { "id": "k", "type": "distance", "a": "e", "b": "q", "value": 8.0 },
+        { "id": "t1", "type": "x", "point": "s", "value": 9.0, "temporary": true },
+        { "id": "t2", "type": "y", "point": "s", "value": 9.0, "temporary": true }
     ]);
     let resp = solve(request(reference.clone()));
     assert_eq!(resp["status"], "converged", "{resp}");
@@ -1269,7 +1251,7 @@ fn point_on_arc_lands_on_the_arcs_span() {
     for (x, y) in [(-3.0, -4.0), (-7.0, 1.0), (8.0, -3.0), (2.0, 2.0)] {
         let resp = solve(fixed_quarter_arc(json!([
             { "id": "p", "type": "point", "x": x, "y": y },
-            { "id": "k", "type": "point_on_arc", "p_id": "p", "a_id": "a" }
+            { "id": "k", "type": "on", "point": "p", "curve": "a" }
         ])));
         assert_eq!(resp["status"], "converged", "{resp}");
         let p = point(&resp, "p");
@@ -1282,7 +1264,7 @@ fn point_on_arc_lands_on_the_arcs_span() {
 fn point_on_arc_extends_a_free_arc_to_reach_a_fixed_point() {
     let resp = solve(quarter_arc(json!([
         { "id": "p", "type": "point", "x": -10.0, "y": 0.5, "fixed": true },
-        { "id": "k", "type": "point_on_arc", "p_id": "p", "a_id": "a" }
+        { "id": "k", "type": "on", "point": "p", "curve": "a" }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert_arc_rules_hold(&resp, "a");
@@ -1301,7 +1283,7 @@ fn foot(resp: &Value, l: &str, (cx, cy): (f64, f64)) -> ((f64, f64), f64) {
 }
 
 #[test]
-fn tangent_la_touches_the_arc_on_its_span_and_the_segment() {
+fn tangent_line_arc_touches_the_arc_on_its_span_and_the_segment() {
     // From a line crossing the arc, from one tangent to the arc's circle at
     // (0, -5), off the arc's span, and from one whose segment stops short.
     for ((x1, y1), (x2, y2)) in [
@@ -1313,7 +1295,7 @@ fn tangent_la_touches_the_arc_on_its_span_and_the_segment() {
             { "id": "p1", "type": "point", "x": x1, "y": y1 },
             { "id": "p2", "type": "point", "x": x2, "y": y2 },
             { "id": "l", "type": "line", "p1_id": "p1", "p2_id": "p2" },
-            { "id": "k", "type": "tangent_la", "l_id": "l", "a_id": "a" }
+            { "id": "k", "type": "tangent", "a": "l", "b": "a" }
         ])));
         assert_eq!(resp["status"], "converged", "{resp}");
         let (f, t) = foot(&resp, "l", (0.0, 0.0));
@@ -1338,16 +1320,14 @@ fn slot_of_two_arcs_and_two_tangent_lines_solves() {
           "radius": 5.2, "start_angle": -FRAC_PI_2, "end_angle": FRAC_PI_2 },
         { "id": "top", "type": "line", "p1_id": "e2", "p2_id": "s1" },
         { "id": "bottom", "type": "line", "p1_id": "e1", "p2_id": "s2" },
-        { "id": "r1", "type": "arc_rules", "a_id": "a1" },
-        { "id": "r2", "type": "arc_rules", "a_id": "a2" },
-        { "id": "k1", "type": "tangent_la", "l_id": "top", "a_id": "a1" },
-        { "id": "k2", "type": "tangent_la", "l_id": "top", "a_id": "a2" },
-        { "id": "k3", "type": "tangent_la", "l_id": "bottom", "a_id": "a1" },
-        { "id": "k4", "type": "tangent_la", "l_id": "bottom", "a_id": "a2" },
-        { "id": "k5", "type": "arc_radius", "a_id": "a1", "radius": 5.0 },
-        { "id": "k6", "type": "horizontal_l", "l_id": "top" },
-        { "id": "k7", "type": "p2p_distance", "p1_id": "c1", "p2_id": "c2", "distance": 20.0 },
-        { "id": "k8", "type": "equal_radius_aa", "a1_id": "a1", "a2_id": "a2" }
+        { "id": "k1", "type": "tangent", "a": "top", "b": "a1" },
+        { "id": "k2", "type": "tangent", "a": "top", "b": "a2" },
+        { "id": "k3", "type": "tangent", "a": "bottom", "b": "a1" },
+        { "id": "k4", "type": "tangent", "a": "bottom", "b": "a2" },
+        { "id": "k5", "type": "radius", "curve": "a1", "value": 5.0 },
+        { "id": "k6", "type": "horizontal", "line": "top" },
+        { "id": "k7", "type": "distance", "a": "c1", "b": "c2", "value": 20.0 },
+        { "id": "k8", "type": "equal", "a": "a1", "b": "a2" }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert_arc_rules_hold(&resp, "a1");
@@ -1364,9 +1344,9 @@ fn every_arc_constraint_holds_with_shared_points() {
     let resp = solve(quarter_arc(json!([
         { "id": "q", "type": "point", "x": -6.0, "y": 9.0 },
         { "id": "l", "type": "line", "p1_id": "e", "p2_id": "q" },
-        { "id": "k1", "type": "tangent_la", "l_id": "l", "a_id": "a" },
-        { "id": "k2", "type": "coordinate_x", "p_id": "o", "x": 0.0 },
-        { "id": "k3", "type": "coordinate_y", "p_id": "o", "y": 0.0 }
+        { "id": "k1", "type": "tangent", "a": "l", "b": "a" },
+        { "id": "k2", "type": "x", "point": "o", "value": 0.0 },
+        { "id": "k3", "type": "y", "point": "o", "value": 0.0 }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert_arc_rules_hold(&resp, "a");
@@ -1408,11 +1388,11 @@ fn reference_geometry_holds_while_free_geometry_follows_it() {
             { "id": "q2", "type": "point", "x": 1.0, "y": 9.0 },
             { "id": "l", "type": "line", "p1_id": "q", "p2_id": "q2" },
             { "id": "p", "type": "point", "x": -2.0, "y": -7.0 },
-            { "id": "k1", "type": "equal_radius_cc", "c1_id": "rc", "c2_id": "kc" },
-            { "id": "k2", "type": "tangent_cc", "c1_id": "rc", "c2_id": "kc" },
-            { "id": "k3", "type": "point_on_arc", "p_id": "p", "a_id": "ra" },
-            { "id": "k4", "type": "tangent_la", "l_id": "l", "a_id": "ra" },
-            { "id": "k5", "type": "equal_radius_aa", "a1_id": "ra", "a2_id": "ra" }
+            { "id": "k1", "type": "equal", "a": "rc", "b": "kc" },
+            { "id": "k2", "type": "tangent", "a": "rc", "b": "kc" },
+            { "id": "k3", "type": "on", "point": "p", "curve": "ra" },
+            { "id": "k4", "type": "tangent", "a": "l", "b": "ra" },
+            { "id": "k5", "type": "equal", "a": "ra", "b": "ra" }
         ]),
     ));
 
@@ -1426,10 +1406,9 @@ fn reference_geometry_holds_even_when_constrained_against_it() {
     let resp = solve(with(
         reference_geometry(),
         json!([
-            { "id": "k1", "type": "circle_radius", "c_id": "rc", "radius": 4.0 },
-            { "id": "k2", "type": "arc_radius", "a_id": "ra", "radius": 6.0 },
-            { "id": "k3", "type": "coordinate_x", "p_id": "rs", "x": 9.0 },
-            { "id": "k4", "type": "arc_rules", "a_id": "ra" }
+            { "id": "k1", "type": "radius", "curve": "rc", "value": 4.0 },
+            { "id": "k2", "type": "radius", "curve": "ra", "value": 6.0 },
+            { "id": "k3", "type": "x", "point": "rs", "value": 9.0 }
         ]),
     ));
 
@@ -1440,7 +1419,7 @@ fn reference_geometry_holds_even_when_constrained_against_it() {
     assert_eq!(conflicting, ["k1", "k2", "k3"]);
 }
 
-// ── p2p_angle, mirror and arrays (array and mirror tools) ──────────────────
+// ── Direction, mirror and arrays ───────────────────────────────────────────
 
 fn close(resp: &Value, id: &str, x: f64, y: f64) {
     let (px, py) = point(resp, id);
@@ -1454,21 +1433,21 @@ fn close(resp: &Value, id: &str, x: f64, y: f64) {
 /// way an editor drags a point.
 fn drag(mut req: Value, id: &str, x: f64, y: f64) -> Value {
     let prims = req["primitives"].as_array_mut().unwrap();
-    prims.push(json!({ "id": "drag_x", "type": "coordinate_x", "p_id": id, "x": x,
+    prims.push(json!({ "id": "drag_x", "type": "x", "point": id, "value": x,
                        "temporary": true }));
-    prims.push(json!({ "id": "drag_y", "type": "coordinate_y", "p_id": id, "y": y,
+    prims.push(json!({ "id": "drag_y", "type": "y", "point": id, "value": y,
                        "temporary": true }));
     req
 }
 
 #[test]
-fn p2p_angle_solves_to_the_requested_direction() {
+fn direction_solves_to_the_requested_angle() {
     for angle in [0.4, 2.5, -2.0, std::f64::consts::PI] {
         let resp = solve(request(json!([
             { "id": "c", "type": "point", "x": 1.0, "y": 1.0, "fixed": true },
             { "id": "p", "type": "point", "x": 4.0, "y": 1.5 },
-            { "id": "k", "type": "p2p_angle", "p1_id": "c", "p2_id": "p", "angle": angle },
-            { "id": "d", "type": "p2p_distance", "p1_id": "c", "p2_id": "p", "distance": 2.0 }
+            { "id": "k", "type": "direction", "a": "c", "b": "p", "value": angle },
+            { "id": "d", "type": "distance", "a": "c", "b": "p", "value": 2.0 }
         ])));
         assert_eq!(resp["status"], "converged", "{angle}: {resp}");
         close(&resp, "p", 1.0 + 2.0 * angle.cos(), 1.0 + 2.0 * angle.sin());
@@ -1476,13 +1455,13 @@ fn p2p_angle_solves_to_the_requested_direction() {
 }
 
 #[test]
-fn p2p_angle_takes_a_parameter() {
+fn direction_takes_a_parameter() {
     let resp = solve(request(json!([
         { "id": "a", "type": "param", "value": 1.0 },
         { "id": "c", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "p", "type": "point", "x": 3.0, "y": 0.0 },
-        { "id": "k", "type": "p2p_angle", "p1_id": "c", "p2_id": "p", "angle": "a" },
-        { "id": "d", "type": "p2p_distance", "p1_id": "c", "p2_id": "p", "distance": 3.0 }
+        { "id": "k", "type": "direction", "a": "c", "b": "p", "value": "a" },
+        { "id": "d", "type": "distance", "a": "c", "b": "p", "value": 3.0 }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     close(&resp, "p", 3.0 * 1f64.cos(), 3.0 * 1f64.sin());
@@ -1494,10 +1473,10 @@ fn rotate(x: f64, y: f64, cx: f64, cy: f64, a: f64) -> (f64, f64) {
     (cx + c * (x - cx) - s * (y - cy), cy + s * (x - cx) + c * (y - cy))
 }
 
-/// What a circular array tool emits for a line and a circle with 3
-/// copies about a fixed center: per copy, a rotated point per source point
-/// with a `circular_instance` (angle 2π/(n+1)·k), the copied line, and an
-/// `equal_radius_cc` for the copied circle. Like the tool, copies are
+/// A circular array of a line and a circle with 3 copies about a fixed
+/// center: per copy, a rotated point per source point with a `rotation`
+/// (angle 2π/(n+1)·k), the copied line, and an `equal` for the copied
+/// circle. Like an array tool, copies are
 /// placed where they belong.
 fn circular_array_sketch() -> Value {
     let sources = [("a", 5.0, 2.0), ("b", 7.0, 3.0), ("cc", 4.0, 5.0)];
@@ -1515,16 +1494,16 @@ fn circular_array_sketch() -> Value {
         for (src, x, y) in sources {
             let (x, y) = rotate(x, y, 1.0, 2.0, angle);
             prims.push(json!({ "id": format!("{src}{k}"), "type": "point", "x": x, "y": y }));
-            prims.push(json!({ "id": format!("ci_{src}{k}"), "type": "circular_instance",
-                               "p0_id": src, "pk_id": format!("{src}{k}"),
-                               "center_id": "o", "angle": angle }));
+            prims.push(json!({ "id": format!("ci_{src}{k}"), "type": "rotation",
+                               "source": src, "copy": format!("{src}{k}"),
+                               "center": "o", "angle": angle }));
         }
         prims.push(json!({ "id": format!("l{k}"), "type": "line",
                            "p1_id": format!("a{k}"), "p2_id": format!("b{k}") }));
         prims.push(json!({ "id": format!("c{k}"), "type": "circle",
                            "c_id": format!("cc{k}"), "radius": 0.5 }));
-        prims.push(json!({ "id": format!("er{k}"), "type": "equal_radius_cc",
-                           "c1_id": "c", "c2_id": format!("c{k}") }));
+        prims.push(json!({ "id": format!("er{k}"), "type": "equal",
+                           "a": "c", "b": format!("c{k}") }));
     }
     request(Value::Array(prims))
 }
@@ -1557,10 +1536,10 @@ fn circular_array_solves_and_follows_its_source() {
     close(&resp, "a1", 4.0, 4.0);
 }
 
-/// What a linear array tool emits for a line along a fixed axis line
-/// (direction ax1 → ax2, or ax2 → ax1 with `flip`): per copy and source
-/// point a `linear_instance` with `base_distance` and `N` = copy index.
-/// Like the tool, copies are placed where they belong.
+/// A linear array of a line along a fixed axis line (direction ax1 → ax2,
+/// or ax2 → ax1 with `flip`): per copy and source point a `translation`
+/// with `distance` and `count` = copy index. Like an array tool, copies
+/// are placed where they belong.
 fn linear_array_sketch(flip: bool) -> Value {
     let sign = if flip { -1.0 } else { 1.0 };
     let sources = [("a", 5.0, 0.0), ("b", 6.0, 1.0)];
@@ -1578,10 +1557,10 @@ fn linear_array_sketch(flip: bool) -> Value {
             let d = sign * 2.5 * k as f64;
             prims.push(json!({ "id": format!("{src}{k}"), "type": "point",
                                "x": x + 0.6 * d, "y": y + 0.8 * d }));
-            prims.push(json!({ "id": format!("li_{src}{k}"), "type": "linear_instance",
-                               "p0_id": src, "pk_id": format!("{src}{k}"),
-                               "dirP1_id": d1, "dirP2_id": d2,
-                               "base_distance": 2.5, "N": k }));
+            prims.push(json!({ "id": format!("li_{src}{k}"), "type": "translation",
+                               "source": src, "copy": format!("{src}{k}"),
+                               "from": d1, "to": d2,
+                               "distance": 2.5, "count": k }));
         }
         prims.push(json!({ "id": format!("l{k}"), "type": "line",
                            "p1_id": format!("a{k}"), "p2_id": format!("b{k}") }));
@@ -1617,22 +1596,22 @@ fn linear_array_solves_and_follows_its_source() {
 }
 
 #[test]
-fn linear_instance_spacing_takes_a_parameter() {
+fn translation_spacing_takes_a_parameter() {
     let resp = solve(request(json!([
         { "id": "gap", "type": "param", "value": 4.0 },
         { "id": "ax1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "ax2", "type": "point", "x": 1.0, "y": 0.0, "fixed": true },
         { "id": "p", "type": "point", "x": 2.0, "y": 3.0, "fixed": true },
         { "id": "q", "type": "point", "x": 0.0, "y": 0.0 },
-        { "id": "k", "type": "linear_instance", "p0_id": "p", "pk_id": "q",
-          "dirP1_id": "ax1", "dirP2_id": "ax2", "base_distance": "gap", "N": 3 }
+        { "id": "k", "type": "translation", "source": "p", "copy": "q",
+          "from": "ax1", "to": "ax2", "distance": "gap", "count": 3 }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     close(&resp, "q", 14.0, 3.0);
 }
 
-/// What a mirror tool emits for a line: mirrored endpoints, each tied
-/// to its source by `mirror_point_ppl` across the axis line, and the copied
+/// A mirrored line: mirrored endpoints, each tied to its source by
+/// `mirror` across the axis line, and the copied
 /// line. Point `b` lies beyond the axis segment's end: the mirror axis is the
 /// axis line's Extension, so it still gets its true image.
 fn mirror_sketch() -> Value {
@@ -1646,8 +1625,8 @@ fn mirror_sketch() -> Value {
         { "id": "a2", "type": "point", "x": -2.0, "y": 1.0 },
         { "id": "b2", "type": "point", "x": -3.0, "y": 6.0 },
         { "id": "l2", "type": "line", "p1_id": "a2", "p2_id": "b2" },
-        { "id": "k1", "type": "mirror_point_ppl", "pA_id": "a", "pB_id": "a2", "axis_id": "axis" },
-        { "id": "k2", "type": "mirror_point_ppl", "pA_id": "b", "pB_id": "b2", "axis_id": "axis" }
+        { "id": "k1", "type": "mirror", "source": "a", "image": "a2", "axis": "axis" },
+        { "id": "k2", "type": "mirror", "source": "b", "image": "b2", "axis": "axis" }
     ]))
 }
 
@@ -1676,14 +1655,14 @@ fn mirror_across_a_slanted_axis() {
         { "id": "axis", "type": "line", "p1_id": "m1", "p2_id": "m2" },
         { "id": "a", "type": "point", "x": 3.0, "y": 1.0, "fixed": true },
         { "id": "b", "type": "point", "x": 0.0, "y": 0.0 },
-        { "id": "k", "type": "mirror_point_ppl", "pA_id": "a", "pB_id": "b", "axis_id": "axis" }
+        { "id": "k", "type": "mirror", "source": "a", "image": "b", "axis": "axis" }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     close(&resp, "b", 1.0, 3.0);
 }
 
 #[test]
-fn p2p_symmetric_ppl_mirrors_across_the_line_extension() {
+fn mirror_across_a_short_axis_uses_its_extension() {
     // Axis x = 0 from (0,0) to (0,1); the source sits beyond the axis
     // segment's end, so only a mirror across the Extension puts its image
     // at (-3, 5).
@@ -1693,22 +1672,10 @@ fn p2p_symmetric_ppl_mirrors_across_the_line_extension() {
         { "id": "axis", "type": "line", "p1_id": "m1", "p2_id": "m2" },
         { "id": "a", "type": "point", "x": 3.0, "y": 5.0, "fixed": true },
         { "id": "b", "type": "point", "x": -1.0, "y": 2.0 },
-        { "id": "k", "type": "p2p_symmetric_ppl", "p1_id": "a", "p2_id": "b", "l_id": "axis" }
+        { "id": "k", "type": "mirror", "source": "a", "image": "b", "axis": "axis" }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     close(&resp, "b", -3.0, 5.0);
-}
-
-#[test]
-fn p2p_symmetric_ppp_makes_the_third_point_the_midpoint() {
-    let resp = solve(request(json!([
-        { "id": "a", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
-        { "id": "b", "type": "point", "x": 4.0, "y": 2.0, "fixed": true },
-        { "id": "m", "type": "point", "x": 5.0, "y": -1.0 },
-        { "id": "k", "type": "p2p_symmetric_ppp", "p1_id": "a", "p2_id": "b", "p_id": "m" }
-    ])));
-    assert_eq!(resp["status"], "converged", "{resp}");
-    close(&resp, "m", 2.0, 1.0);
 }
 
 // ── Ellipses ───────────────────────────────────────────────────────────────
@@ -1716,10 +1683,10 @@ fn p2p_symmetric_ppp_makes_the_third_point_the_midpoint() {
 // The ellipse: `{ type: "ellipse", c_id, focus1_id, radmin }`, a center
 // Point, a focus Point (on the major axis) and the minor radius.
 
-/// The sketch an ellipse tool writes
-/// for a 5 × 3 ellipse at (2, 1) with a horizontal major axis: center, a
-/// construction focus, the ellipse, its four axis points held by the major
-/// and minor diameter alignments, and p2p distances on the two diameters.
+/// The sketch an ellipse tool writes for a 5 × 3 ellipse at (2, 1) with a
+/// horizontal major axis: center, a construction focus, the ellipse, its
+/// four axis points held by two-point `ellipse_axis` constraints, and
+/// distances on the two diameters.
 /// `major` is the major diameter the distance asks for.
 fn ellipse_tool_sketch(major: f64) -> Vec<Value> {
     vec![
@@ -1730,12 +1697,12 @@ fn ellipse_tool_sketch(major: f64) -> Vec<Value> {
         json!({ "id": "maj2", "type": "point", "x": -3.0, "y": 1.0, "fixed": false }),
         json!({ "id": "min1", "type": "point", "x": 2.0, "y": 4.0, "fixed": false }),
         json!({ "id": "min2", "type": "point", "x": 2.0, "y": -2.0, "fixed": false }),
-        json!({ "id": "ia1", "type": "internal_alignment_ellipse_major_diameter",
-                "e_id": "e", "p1_id": "maj1", "p2_id": "maj2" }),
-        json!({ "id": "ia2", "type": "internal_alignment_ellipse_minor_diameter",
-                "e_id": "e", "p1_id": "min1", "p2_id": "min2" }),
-        json!({ "id": "d1", "type": "p2p_distance", "p1_id": "maj1", "p2_id": "maj2", "distance": major }),
-        json!({ "id": "d2", "type": "p2p_distance", "p1_id": "min1", "p2_id": "min2", "distance": 6.0 }),
+        json!({ "id": "ia1", "type": "ellipse_axis", "which": "major",
+                "ellipse": "e", "a": "maj1", "b": "maj2" }),
+        json!({ "id": "ia2", "type": "ellipse_axis", "which": "minor",
+                "ellipse": "e", "a": "min1", "b": "min2" }),
+        json!({ "id": "d1", "type": "distance", "a": "maj1", "b": "maj2", "value": major }),
+        json!({ "id": "d2", "type": "distance", "a": "min1", "b": "min2", "value": 6.0 }),
     ]
 }
 
@@ -1779,9 +1746,9 @@ fn an_ellipse_tool_sketch_solves_with_its_axis_points() {
 fn a_fully_dimensioned_ellipse_is_fully_constrained() {
     let mut prims = ellipse_tool_sketch(10.0);
     prims.extend([
-        json!({ "id": "x", "type": "coordinate_x", "p_id": "c", "x": 2.0 }),
-        json!({ "id": "y", "type": "coordinate_y", "p_id": "c", "y": 1.0 }),
-        json!({ "id": "h", "type": "horizontal_pp", "p1_id": "c", "p2_id": "f" }),
+        json!({ "id": "x", "type": "x", "point": "c", "value": 2.0 }),
+        json!({ "id": "y", "type": "y", "point": "c", "value": 1.0 }),
+        json!({ "id": "h", "type": "horizontal", "a": "c", "b": "f" }),
     ]);
     let resp = solve(request(json!(prims)));
     assert_eq!(resp["status"], "converged", "{resp}");
@@ -1815,7 +1782,7 @@ fn fixed_ellipse(rest: Value) -> Value {
 fn point_on_ellipse_solves() {
     let resp = solve(fixed_ellipse(json!([
         { "id": "p", "type": "point", "x": 2.0, "y": 5.0 },
-        { "id": "k", "type": "point_on_ellipse", "p_id": "p", "e_id": "e" }
+        { "id": "k", "type": "on", "point": "p", "curve": "e" }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (x, y) = point(&resp, "p");
@@ -1823,16 +1790,16 @@ fn point_on_ellipse_solves() {
 }
 
 #[test]
-fn tangent_le_solves_and_touches_on_the_segment() {
+fn tangent_line_ellipse_solves_and_touches_on_the_segment() {
     // A Line of fixed length 1, upright, beside the ellipse's right vertex
     // (5, 0) but above it: it slides over until it touches at the vertex.
     let resp = solve(fixed_ellipse(json!([
         { "id": "a", "type": "point", "x": 6.0, "y": 2.0 },
         { "id": "b", "type": "point", "x": 6.0, "y": 3.0 },
         { "id": "l", "type": "line", "p1_id": "a", "p2_id": "b" },
-        { "id": "v", "type": "vertical_l", "l_id": "l" },
-        { "id": "len", "type": "p2p_distance", "p1_id": "a", "p2_id": "b", "distance": 1.0 },
-        { "id": "k", "type": "tangent_le", "l_id": "l", "e_id": "e" }
+        { "id": "v", "type": "vertical", "line": "l" },
+        { "id": "len", "type": "distance", "a": "a", "b": "b", "value": 1.0 },
+        { "id": "k", "type": "tangent", "a": "l", "b": "e" }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     let (a, b) = (point(&resp, "a"), point(&resp, "b"));
@@ -1841,7 +1808,7 @@ fn tangent_le_solves_and_touches_on_the_segment() {
 }
 
 /// Mirror and array tools tie a copy's minor radius to the
-/// source's with `equal` over `{ o_id, prop: "radmin" }`.
+/// source's with `equal` over `{ entity, property: "radmin" }`.
 #[test]
 fn equal_over_radmin_references_solves() {
     let resp = solve(fixed_ellipse(json!([
@@ -1849,7 +1816,7 @@ fn equal_over_radmin_references_solves() {
         { "id": "f2", "type": "point", "x": 23.0, "y": 0.0 },
         { "id": "e2", "type": "ellipse", "c_id": "c2", "focus1_id": "f2", "radmin": 2.0 },
         { "id": "k", "type": "equal",
-          "param1": { "o_id": "e", "prop": "radmin" }, "param2": { "o_id": "e2", "prop": "radmin" } }
+          "a": { "entity": "e", "property": "radmin" }, "b": { "entity": "e2", "property": "radmin" } }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert!((num(&resp, "e2", "radmin") - 4.0).abs() < 1e-8);
@@ -1858,13 +1825,13 @@ fn equal_over_radmin_references_solves() {
     let resp = reject(
         &fixed_ellipse(json!([
             { "id": "k", "type": "equal",
-              "param1": { "o_id": "e", "prop": "radius" }, "param2": 1.0 }
+              "a": { "entity": "e", "property": "radius" }, "b": 1.0 }
         ]))
         .to_string(),
     );
     assert_eq!(
         resp["error"],
-        "constraint k: field 'param1': ellipse 'e' has no property 'radius'"
+        "constraint k: field 'a': ellipse 'e' has no property 'radius'"
     );
     assert_eq!(resp["constraintId"], "k");
 }
@@ -1879,12 +1846,12 @@ fn a_reference_ellipse_never_moves() {
         { "id": "e", "type": "ellipse", "c_id": "c", "focus1_id": "f", "radmin": 3.0, "isReference": true },
         { "id": "maj1", "type": "point", "x": 7.0, "y": 1.0 },
         { "id": "maj2", "type": "point", "x": -3.0, "y": 1.0 },
-        { "id": "ia", "type": "internal_alignment_ellipse_major_diameter",
-          "e_id": "e", "p1_id": "maj1", "p2_id": "maj2" },
+        { "id": "ia", "type": "ellipse_axis", "which": "major",
+          "ellipse": "e", "a": "maj1", "b": "maj2" },
         { "id": "p", "type": "point", "x": 2.0, "y": 4.0 },
-        { "id": "on", "type": "point_on_ellipse", "p_id": "p", "e_id": "e" },
-        { "id": "t1", "type": "coordinate_x", "p_id": "maj1", "x": 12.0, "temporary": true },
-        { "id": "t2", "type": "coordinate_y", "p_id": "p", "y": 9.0, "temporary": true }
+        { "id": "on", "type": "on", "point": "p", "curve": "e" },
+        { "id": "t1", "type": "x", "point": "maj1", "value": 12.0, "temporary": true },
+        { "id": "t2", "type": "y", "point": "p", "value": 9.0, "temporary": true }
     ]);
     let resp = solve(request(reference.clone()));
     assert_eq!(resp["status"], "converged", "{resp}");
@@ -1897,7 +1864,7 @@ fn a_reference_ellipse_never_moves() {
 
     // A constraint the reference ellipse can't meet fails; it still doesn't move.
     let mut conflicting = reference.as_array().unwrap().clone();
-    conflicting.push(json!({ "id": "d", "type": "p2p_distance", "p1_id": "maj1", "p2_id": "maj2", "distance": 4.0 }));
+    conflicting.push(json!({ "id": "d", "type": "distance", "a": "maj1", "b": "maj2", "value": 4.0 }));
     let resp = solve(request(json!(conflicting)));
     assert_eq!(resp["status"], "failed", "{resp}");
     for id in ["c", "f", "e"] {
@@ -1905,10 +1872,10 @@ fn a_reference_ellipse_never_moves() {
     }
 }
 
-/// `tangent_la` at an arc's own endpoint (a slot) uses the
+/// Line–arc `tangent` at an arc's own endpoint (a slot) uses the
 /// angle-at-point form: no spurious Redundant, and the slot's `dof` is 0.
 #[test]
-fn tangent_la_at_shared_endpoints_is_fully_determined() {
+fn tangent_line_arc_at_shared_endpoints_is_fully_determined() {
     let resp = solve(request(json!([
         { "id": "c1", "type": "point", "x": -25.0, "y": 0.0, "fixed": true },
         { "id": "c2", "type": "point", "x": 25.0, "y": 0.0, "fixed": true },
@@ -1922,14 +1889,12 @@ fn tangent_la_at_shared_endpoints_is_fully_determined() {
           "start_angle": -std::f64::consts::FRAC_PI_2, "end_angle": std::f64::consts::FRAC_PI_2 },
         { "id": "lt", "type": "line", "p1_id": "t1", "p2_id": "t2" },
         { "id": "lb", "type": "line", "p1_id": "b1", "p2_id": "b2" },
-        { "id": "r1", "type": "arc_rules", "a_id": "a1" },
-        { "id": "r2", "type": "arc_rules", "a_id": "a2" },
-        { "id": "k1", "type": "arc_radius", "a_id": "a1", "radius": 15.0 },
-        { "id": "k2", "type": "equal_radius_aa", "a1_id": "a1", "a2_id": "a2" },
-        { "id": "k3", "type": "tangent_la", "l_id": "lt", "a_id": "a1" },
-        { "id": "k4", "type": "tangent_la", "l_id": "lt", "a_id": "a2" },
-        { "id": "k5", "type": "tangent_la", "l_id": "lb", "a_id": "a1" },
-        { "id": "k6", "type": "tangent_la", "l_id": "lb", "a_id": "a2" }
+        { "id": "k1", "type": "radius", "curve": "a1", "value": 15.0 },
+        { "id": "k2", "type": "equal", "a": "a1", "b": "a2" },
+        { "id": "k3", "type": "tangent", "a": "lt", "b": "a1" },
+        { "id": "k4", "type": "tangent", "a": "lt", "b": "a2" },
+        { "id": "k5", "type": "tangent", "a": "lb", "b": "a1" },
+        { "id": "k6", "type": "tangent", "a": "lb", "b": "a2" }
     ])));
     assert_eq!(resp["status"], "converged", "{resp}");
     assert_eq!(resp["redundant"], json!([]));
@@ -1938,26 +1903,9 @@ fn tangent_la_at_shared_endpoints_is_fully_determined() {
     assert!((y - 15.0).abs() < 1e-8, "top line at y = 15, got {y}");
 }
 
-/// GCS-style clients send a Parameter as `{type: "param", name, value}` with
-/// no `id`, as GCS keys Parameters by `name`: the dialect does the same, and
-/// constraints reference it by that name.
+/// Every primitive needs an id.
 #[test]
-fn a_parameter_without_an_id_is_keyed_by_its_name() {
-    let resp = solve(request(json!([
-        { "id": "a", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
-        { "id": "b", "type": "point", "x": 3.0, "y": 4.0 },
-        { "type": "param", "name": "d1", "value": 10.0 },
-        { "id": "k", "type": "p2p_distance", "p1_id": "a", "p2_id": "b", "distance": "d1" }
-    ])));
-    assert_eq!(resp["status"], "converged", "{resp}");
-    let (x, y) = point(&resp, "b");
-    assert!(((x * x + y * y).sqrt() - 10.0).abs() < 1e-8);
-    assert_eq!(resp["primitives"][2], json!({ "type": "param", "name": "d1", "value": 10.0 }));
-}
-
-/// Only Parameters may go without an id.
-#[test]
-fn other_primitives_still_need_an_id() {
+fn primitives_need_an_id() {
     let resp = reject(
         &request(json!([{ "type": "point", "name": "p", "x": 0.0, "y": 0.0 }])).to_string(),
     );
@@ -1979,7 +1927,7 @@ fn fixed_values_come_back_bit_for_bit() {
         {"type":"arc","id":"arc","c_id":"c","start_id":"s","end_id":"e","radius":64.326080862224131,
          "start_angle":-1.4773857794649061,"end_angle":1.5707963267948966,"isReference":true}
     ]}"#;
-    let out = solve_planegcs_sketch_json(request).expect("request should be understood");
+    let out = solve_sketch_json(request).expect("request should be understood");
     for literal in [
         "-13.194212831353965",
         "-7.6999999999999975",

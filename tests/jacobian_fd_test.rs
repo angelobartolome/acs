@@ -6,7 +6,7 @@
 //! occurrence of each variable, and a variable it doesn't read must have a
 //! zero column.
 
-use acs::constraint_catalog::{Args, ConstraintSpec, EllipseRef, FieldKind, Vocabulary};
+use acs::constraint_catalog::{Args, ConstraintSpec, EllipseRef, FieldKind, specs};
 use acs::constraints::{
     Constraint, ConstraintType, EllipseAxis, Operand, create_constraint, reads,
 };
@@ -114,15 +114,14 @@ const ARCS: [(&str, &str, &str, &str); 2] = [
 ];
 
 /// One constraint per internal `ConstraintType` variant, built from the
-/// first catalog row that reaches it in either vocabulary (native first),
+/// first catalog row that reaches it,
 /// with fields filled from the entities in `build_pm`: distinct points, the
 /// two circles, the two arcs and a generic scalar. Value fields take, in
 /// turn, a radius, a point coordinate and a constant.
 fn all_constraints() -> Vec<ConstraintType> {
     let mut seen = std::collections::HashSet::new();
-    [Vocabulary::Native, Vocabulary::PlaneGcs]
-        .into_iter()
-        .flat_map(Vocabulary::specs)
+    specs()
+        .iter()
         .flat_map(build_from_spec)
         .filter(|ct| seen.insert(variant_name(ct)))
         .collect()
@@ -182,8 +181,10 @@ fn args_for(spec: &ConstraintSpec) -> Args {
 }
 
 /// Builds `spec` with distinct entities, plus, for a row relating a Line
-/// to an Arc, again with the line starting at the arc's start point: a
-/// shared point is what selects the angle-at-point form of tangency.
+/// to an Arc, again with the line starting at the arc's start point, and
+/// for a row relating two Arcs, again with the second starting where the
+/// first starts: a shared point is what selects the angle-at-point form of
+/// tangency.
 fn build_from_spec(spec: &ConstraintSpec) -> Vec<ConstraintType> {
     let args = args_for(spec);
     let mut out = vec![spec.build(&args)];
@@ -193,12 +194,17 @@ fn build_from_spec(spec: &ConstraintSpec) -> Vec<ConstraintType> {
         shared.points[0] = shared.arc_ends[0].0.clone();
         out.push(spec.build(&shared));
     }
+    if kinds.iter().filter(|&&k| k == FieldKind::Arc).count() == 2 {
+        let mut shared = args.clone();
+        shared.arc_ends[1].0 = shared.arc_ends[0].0.clone();
+        out.push(spec.build(&shared));
+    }
     out
 }
 
 /// Exhaustive on purpose: a new `ConstraintType` variant fails to compile
 /// here until it is listed, and the test below then requires a catalog row
-/// (native or PlaneGCS dialect) that reaches it.
+/// that reaches it.
 fn variant_name(ct: &ConstraintType) -> &'static str {
     use ConstraintType::*;
     match ct {
@@ -229,7 +235,6 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         SignedDistancePointExtension(..) => "SignedDistancePointExtension",
         Difference(..) => "Difference",
         Equal(..) => "Equal",
-        ArcRules(..) => "ArcRules",
         PointOnArc(..) => "PointOnArc",
         TangentLineArc(..) => "TangentLineArc",
         TangentAtPoint(..) => "TangentAtPoint",
@@ -241,9 +246,22 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         TangentLineEllipse(..) => "TangentLineEllipse",
         EllipseAxisPoint(..) => "EllipseAxisPoint",
         EllipseDiameter(..) => "EllipseDiameter",
+        TangentCirclesInternal(..) => "TangentCirclesInternal",
+        TangentCircleArc(..) => "TangentCircleArc",
+        TangentArcs(..) => "TangentArcs",
+        TangentArcsAtPoint(..) => "TangentArcsAtPoint",
+        Collinear(..) => "Collinear",
+        Diameter(..) => "Diameter",
+        ArcLength(..) => "ArcLength",
+        ArcSweep(..) => "ArcSweep",
+        DistancePointCircle(..) => "DistancePointCircle",
+        DistanceLineCircle(..) => "DistanceLineCircle",
+        DistanceExtensionCircle(..) => "DistanceExtensionCircle",
+        DistanceCircleCircle(..) => "DistanceCircleCircle",
+        DistanceLineLine(..) => "DistanceLineLine",
     }
 }
-const ALL_VARIANTS: [&str; 39] = [
+const ALL_VARIANTS: [&str; 51] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -271,7 +289,6 @@ const ALL_VARIANTS: [&str; 39] = [
     "SignedDistancePointExtension",
     "Difference",
     "Equal",
-    "ArcRules",
     "PointOnArc",
     "TangentLineArc",
     "TangentAtPoint",
@@ -283,16 +300,29 @@ const ALL_VARIANTS: [&str; 39] = [
     "TangentLineEllipse",
     "EllipseAxisPoint",
     "EllipseDiameter",
+    "TangentCirclesInternal",
+    "TangentCircleArc",
+    "TangentArcs",
+    "TangentArcsAtPoint",
+    "Collinear",
+    "Diameter",
+    "ArcLength",
+    "ArcSweep",
+    "DistancePointCircle",
+    "DistanceLineCircle",
+    "DistanceExtensionCircle",
+    "DistanceCircleCircle",
+    "DistanceLineLine",
 ];
 
 #[test]
-fn every_constraint_variant_is_reached_by_a_vocabulary() {
+fn every_constraint_variant_is_reached_by_a_catalog_row() {
     let covered: std::collections::HashSet<&str> =
         all_constraints().iter().map(variant_name).collect();
     for v in ALL_VARIANTS {
         assert!(
             covered.contains(v),
-            "no native or PlaneGCS catalog row builds {v}"
+            "no catalog row builds {v}"
         );
     }
 }
@@ -310,10 +340,14 @@ fn local_residual(c: &dyn Constraint, x: &[f64]) -> Vec<f64> {
 /// included: an ordinary solve moves them), or an empty list if all agree. A
 /// column of a variable it doesn't read must be zero.
 fn fd_mismatches(ct: &ConstraintType, seed: u64) -> Vec<String> {
+    fd_mismatches_of(create_constraint(ct.clone()).unwrap().as_ref(), &format!("{ct:?}"), seed)
+}
+
+/// [`fd_mismatches`] for any constraint `c`, described by `what`.
+fn fd_mismatches_of(c: &dyn Constraint, what: &str, seed: u64) -> Vec<String> {
     let pm = build_pm(seed);
-    let c = create_constraint(ct.clone()).unwrap();
     let jac = c.jacobian(&pm);
-    let cols: Vec<usize> = reads(c.as_ref())
+    let cols: Vec<usize> = reads(c)
         .iter()
         .map(|v| v.column(&pm).unwrap())
         .collect();
@@ -322,8 +356,8 @@ fn fd_mismatches(ct: &ConstraintType, seed: u64) -> Vec<String> {
     let mut out = Vec::new();
 
     let residual = c.residual(&pm);
-    for (r, v) in local_residual(c.as_ref(), &x0).into_iter().enumerate() {
-        assert_eq!(residual[r], v, "{ct:?}: residual() disagrees with eval()");
+    for (r, v) in local_residual(c, &x0).into_iter().enumerate() {
+        assert_eq!(residual[r], v, "{what}: residual() disagrees with eval()");
     }
 
     for i in 0..pm.num_vars() {
@@ -332,7 +366,7 @@ fn fd_mismatches(ct: &ConstraintType, seed: u64) -> Vec<String> {
             for k in (0..cols.len()).filter(|&k| cols[k] == i) {
                 x[k] += dh;
             }
-            local_residual(c.as_ref(), &x)
+            local_residual(c, &x)
         };
         let (plus, minus) = (shifted(h), shifted(-h));
         let is_read = cols.contains(&i);
@@ -410,6 +444,9 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::DistancePointExtension(s("p0"), s("p1"), s("p0"), 1.0),
         ConstraintType::DistancePointExtension(s("p0"), s("p1"), s("p0"), 0.0),
         ConstraintType::PointOnExtension(s("p2"), s("p1"), s("p2")),
+        ConstraintType::Collinear(s("p0"), s("p1"), s("p1"), s("p2")),
+        ConstraintType::Collinear(s("p0"), s("p1"), s("p2"), s("p0")),
+        ConstraintType::PointOnExtension(s("c1_center"), s("c1_center"), s("p1")),
         ConstraintType::TangentExtensionCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1")),
         ConstraintType::Midpoint(s("p0"), s("p0"), s("p1")),
         ConstraintType::TangentLineCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1")),
@@ -434,8 +471,6 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ),
         ConstraintType::Equal(Operand::Radius(s("c1")), Operand::Radius(s("c1"))),
         ConstraintType::Equal(Operand::Const(1.5), Operand::Y(s("p0"))),
-        ConstraintType::ArcRules(s("a1_center"), s("a1_start"), s("a1_start"), s("a1")),
-        ConstraintType::ArcRules(s("a1_start"), s("a1_start"), s("a1_end"), s("a1")),
         ConstraintType::PointOnArc(s("a1_start"), s("a1_center"), s("a1")),
         ConstraintType::PointOnArc(s("p0"), s("a1_center"), s("a1")),
         ConstraintType::TangentLineArc(s("a1_center"), s("p1"), s("a1_center"), s("a1")),
@@ -444,6 +479,17 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::TangentAtPoint(s("a1_start"), s("p1"), s("a1_center")),
         ConstraintType::TangentAtPoint(s("p0"), s("p0"), s("a1_center")),
         ConstraintType::TangentAtPoint(s("p0"), s("p1"), s("p0")),
+        // Curve–curve tangency: inside as well as external (the catalog
+        // reaches each variant first with `internal: false`), a circle and
+        // an arc on one center, and joined arcs sharing a center.
+        ConstraintType::TangentCircleArc(s("c1_center"), s("c1"), s("a1_center"), s("a1"), true),
+        ConstraintType::TangentCircleArc(s("a1_center"), s("c1"), s("a1_center"), s("a1"), false),
+        ConstraintType::TangentArcs(s("a1_center"), s("a1"), s("a2_center"), s("a2"), true),
+        ConstraintType::TangentArcs(s("a2_center"), s("a1"), s("a1_center"), s("a2"), false),
+        ConstraintType::TangentArcsAtPoint(s("a1_start"), s("a1_center"), s("a2_center"), true),
+        ConstraintType::TangentArcsAtPoint(s("a1_end"), s("a1_center"), s("a2_center"), false),
+        ConstraintType::TangentArcsAtPoint(s("p0"), s("p0"), s("a2_center"), false),
+        ConstraintType::TangentArcsAtPoint(s("p0"), s("a1_center"), s("a1_center"), true),
         ConstraintType::PointPointAngle(s("p0"), s("p0"), 0.7),
         ConstraintType::PointPointAngle(s("p0"), s("p1"), -2.5),
         ConstraintType::MirrorPointExtension(s("p0"), s("p0"), s("p1"), s("p2")),
@@ -472,6 +518,20 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::EllipseDiameter(s("e1_focus"), s("p1"), s("e1_center"), s("e1_focus"), s("e1"), EllipseAxis::Major),
         ConstraintType::EllipseDiameter(s("p0"), s("e2_center"), s("e2_center"), s("e2_focus"), s("e2"), EllipseAxis::Minor),
         ConstraintType::Equal(Operand::MinorRadius(s("e1")), Operand::MinorRadius(s("e2"))),
+        // Dimensions and distances: the internal variants (the catalog
+        // builds the outside ones first), shared points and both circles.
+        ConstraintType::DistancePointCircle(s("p0"), s("c1_center"), s("c1"), 0.5, true),
+        ConstraintType::DistancePointCircle(s("c2_center"), s("c1_center"), s("c1"), 0.5, false),
+        ConstraintType::DistanceCircleCircle(s("c1_center"), s("c1"), s("c2_center"), s("c2"), 0.5, true),
+        ConstraintType::DistanceCircleCircle(s("c2_center"), s("c2"), s("c1_center"), s("c1"), 0.5, true),
+        ConstraintType::DistanceCircleCircle(s("c1_center"), s("c1"), s("c1_center"), s("c2"), 0.5, false),
+        ConstraintType::DistanceLineCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1"), 1.0),
+        ConstraintType::DistanceLineCircle(s("p0"), s("p1"), s("c1_center"), s("c1"), 1.0),
+        ConstraintType::DistanceExtensionCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1"), 1.0),
+        ConstraintType::DistanceLineLine(s("p0"), s("p1"), s("p1"), s("p2"), 1.0),
+        ConstraintType::DistanceLineLine(s("p0"), s("p1"), s("p2"), s("p0"), 1.0),
+        ConstraintType::ArcLength(s("a2"), 2.0),
+        ConstraintType::ArcSweep(s("a2"), 5.9),
         ConstraintType::Difference(
             Operand::MinorRadius(s("e1")),
             Operand::Radius(s("c1")),
@@ -499,4 +559,25 @@ fn every_constraint_jacobian_matches_finite_differences() {
         failures.len(),
         failures.join("\n")
     );
+}
+
+/// An Arc's implicit rules (no sketch constraint builds them), including
+/// the shared-point cases.
+#[test]
+fn arc_rules_jacobian_matches_finite_differences() {
+    use acs::constraints::arc_rules::ArcRulesConstraint;
+    let s = |x: &str| x.to_string();
+    let mut failures = Vec::new();
+    for (center, start, end) in [
+        ("a1_center", "a1_start", "a1_end"),
+        ("a1_center", "a1_start", "a1_start"),
+        ("a1_start", "a1_start", "a1_end"),
+    ] {
+        let c = ArcRulesConstraint::new(s(center), s(start), s(end), s("a1"));
+        let what = format!("ArcRules({center}, {start}, {end})");
+        for seed in [1, 2, 3, 42, 1234] {
+            failures.extend(fd_mismatches_of(&c, &what, seed).into_iter().map(|m| format!("{what}: {m}")));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

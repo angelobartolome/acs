@@ -327,7 +327,7 @@ pub enum ConstraintType {
     MidpointOfLineOnLine(String, String, String, String),
 
     // ── Extension variants (measure against the infinite line through a
-    //    Line's endpoints; for sketches authored under PlaneGCS semantics) ──
+    //    Line's endpoints; native `extension: true`) ──
     /// A point lies on a Line's Extension.
     /// (point_id, line_pa_id, line_pb_id)
     PointOnExtension(String, String, String),
@@ -359,11 +359,6 @@ pub enum ConstraintType {
     Equal(Operand, Operand),
 
     // ── Arcs ──────────────────────────────────────────────────────────────────
-    /// An arc's start and end Points lie at its radius from its center, at
-    /// its start and end angles.
-    /// (center_point_id, start_point_id, end_point_id, arc_id)
-    ArcRules(String, String, String, String),
-
     /// A point lies on an arc's span (on its circle, between its start and
     /// end angles counter-clockwise).
     /// (point_id, arc_center_point_id, arc_id)
@@ -407,7 +402,7 @@ pub enum ConstraintType {
     EllipseAxisPoint(String, String, String, String, EllipseAxis),
 
     /// Two points are the two endpoints of an ellipse's major or minor axis
-    /// (PlaneGCS's internal-alignment diameter).
+    /// (native two-point `ellipse_axis`).
     /// (p1_id, p2_id, ellipse_center_id, ellipse_focus1_id, ellipse_id, axis)
     EllipseDiameter(String, String, String, String, String, EllipseAxis),
 
@@ -415,6 +410,71 @@ pub enum ConstraintType {
     /// is an arc endpoint): the line is perpendicular to the radius there.
     /// (point_id, other_line_end_id, arc_center_point_id)
     TangentAtPoint(String, String, String),
+
+    // ── Curve–curve tangency ──
+    /// Two circles touching inside: dist(centers) = |r1 − r2|.
+    /// (c1_center_point_id, c1_id, c2_center_point_id, c2_id)
+    TangentCirclesInternal(String, String, String, String),
+
+    /// A circle and an arc touching on the arc's span, externally
+    /// (dist(centers) = r1 + r2) or, when `internal`, inside (|r1 − r2|).
+    /// (circle_center_point_id, circle_id, arc_center_point_id, arc_id, internal)
+    TangentCircleArc(String, String, String, String, bool),
+
+    /// Two arcs touching on both spans, externally or, when `internal`,
+    /// inside.
+    /// (arc1_center_point_id, arc1_id, arc2_center_point_id, arc2_id, internal)
+    TangentArcs(String, String, String, String, bool),
+
+    /// Two arcs tangent at an endpoint they share: radii collinear there,
+    /// centers on opposite sides of it (external) or, when `internal`, on
+    /// the same side.
+    /// (point_id, arc1_center_point_id, arc2_center_point_id, internal)
+    TangentArcsAtPoint(String, String, String, bool),
+
+    /// Two Lines lie on one infinite line: both endpoints of Line B lie on
+    /// Line A's Extension (the segments need not overlap).
+    /// (a_p1_id, a_p2_id, b_p1_id, b_p2_id)
+    Collinear(String, String, String, String),
+
+    // ── Dimensions and distances to circles and lines ──
+    /// A circle's or arc's diameter: 2r = diameter.
+    /// (circle_id, diameter)
+    Diameter(String, f64),
+
+    /// An arc's length: r · sweep = length, sweep (end − start) mod 2π in
+    /// (0, 2π].
+    /// (arc_id, length)
+    ArcLength(String, f64),
+
+    /// An arc's sweep, 0 < sweep < 2π (anything else is rejected).
+    /// (arc_id, sweep_radians)
+    ArcSweep(String, f64),
+
+    /// Gap between a point and a circle: |p − c| − r = distance, or with
+    /// `internal`, r − |p − c| = distance.
+    /// (point_id, circle_center_point_id, circle_id, distance, internal)
+    DistancePointCircle(String, String, String, f64, bool),
+
+    /// Gap between a Line (the segment) and a circle: the distance from the
+    /// center to the segment, minus r.
+    /// (line_pa_id, line_pb_id, circle_center_point_id, circle_id, distance)
+    DistanceLineCircle(String, String, String, String, f64),
+
+    /// Gap between a Line's Extension and a circle: the distance from the
+    /// center to the Extension, minus r.
+    /// (line_pa_id, line_pb_id, circle_center_point_id, circle_id, distance)
+    DistanceExtensionCircle(String, String, String, String, f64),
+
+    /// Gap between two circles: |c1 − c2| − r1 − r2 = distance, or with
+    /// `internal`, |r1 − r2| − |c1 − c2| = distance (one inside the other).
+    /// (c1_center_point_id, c1_id, c2_center_point_id, c2_id, distance, internal)
+    DistanceCircleCircle(String, String, String, String, f64, bool),
+
+    /// Both endpoints of line b are `distance` from line a's Extension, on
+    /// one side: b is parallel to a, `distance` away.
+    /// (a_p1_id, a_p2_id, b_p1_id, b_p2_id, distance)
+    DistanceLineLine(String, String, String, String, f64),
 }
 
 pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Constraint>, String> {
@@ -517,9 +577,6 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         ConstraintType::Equal(a, b) => Ok(Box::new(
             crate::constraints::equal::EqualConstraint::new(a, b),
         )),
-        ConstraintType::ArcRules(center, start, end, arc) => Ok(Box::new(
-            crate::constraints::arc_rules::ArcRulesConstraint::new(center, start, end, arc),
-        )),
         ConstraintType::PointOnArc(p, center, arc) => Ok(Box::new(
             crate::constraints::point_on_arc::PointOnArcConstraint::new(p, center, arc),
         )),
@@ -530,6 +587,35 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         )),
         ConstraintType::TangentAtPoint(p, other, center) => Ok(Box::new(
             crate::constraints::tangent_at_point::TangentAtPointConstraint::new(p, other, center),
+        )),
+        ConstraintType::TangentCirclesInternal(c1_center, c1, c2_center, c2) => {
+            use crate::constraints::tangent_curves::{TangentCurve, TangentCurvesConstraint};
+            Ok(Box::new(TangentCurvesConstraint::new(
+                TangentCurve::circle(c1_center, c1),
+                TangentCurve::circle(c2_center, c2),
+                true,
+            )))
+        }
+        ConstraintType::TangentCircleArc(c_center, c, a_center, a, internal) => {
+            use crate::constraints::tangent_curves::{TangentCurve, TangentCurvesConstraint};
+            Ok(Box::new(TangentCurvesConstraint::new(
+                TangentCurve::circle(c_center, c),
+                TangentCurve::arc(a_center, a),
+                internal,
+            )))
+        }
+        ConstraintType::TangentArcs(a1_center, a1, a2_center, a2, internal) => {
+            use crate::constraints::tangent_curves::{TangentCurve, TangentCurvesConstraint};
+            Ok(Box::new(TangentCurvesConstraint::new(
+                TangentCurve::arc(a1_center, a1),
+                TangentCurve::arc(a2_center, a2),
+                internal,
+            )))
+        }
+        ConstraintType::TangentArcsAtPoint(p, c1, c2, internal) => Ok(Box::new(
+            crate::constraints::tangent_arcs_at_point::TangentArcsAtPointConstraint::new(
+                p, c1, c2, internal,
+            ),
         )),
         ConstraintType::PointPointAngle(p1, p2, angle) => Ok(Box::new(
             crate::constraints::point_point_angle::PointPointAngleConstraint::new(p1, p2, angle),
@@ -569,5 +655,58 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
                 p1, p2, center, focus, e, axis,
             ),
         )),
+        ConstraintType::Collinear(a1, a2, b1, b2) => Ok(Box::new(
+            crate::constraints::collinear::CollinearConstraint::new(a1, a2, b1, b2),
+        )),
+        ConstraintType::Diameter(c, d) => Ok(Box::new(
+            crate::constraints::diameter::DiameterConstraint::new(c, d),
+        )),
+        ConstraintType::ArcLength(arc, length) => Ok(Box::new(
+            crate::constraints::arc_length::ArcLengthConstraint::new(arc, length),
+        )),
+        ConstraintType::ArcSweep(arc, sweep) => {
+            if !crate::constraints::arc_sweep::ArcSweepConstraint::accepts(sweep) {
+                return Err(format!("arc sweep {sweep} is not between 0 and 2π"));
+            }
+            Ok(Box::new(
+                crate::constraints::arc_sweep::ArcSweepConstraint::new(arc, sweep),
+            ))
+        }
+        ConstraintType::DistancePointCircle(p, center, c, d, internal) => Ok(Box::new(
+            crate::constraints::distance_point_circle::DistancePointCircleConstraint::new(
+                p, center, c, d, internal,
+            ),
+        )),
+        ConstraintType::DistanceLineCircle(pa, pb, center, c, d) => Ok(Box::new(
+            crate::constraints::distance_line_circle::DistanceLineCircleConstraint::new(
+                pa, pb, center, c, d,
+            ),
+        )),
+        ConstraintType::DistanceExtensionCircle(pa, pb, center, c, d) => Ok(Box::new(
+            crate::constraints::distance_extension_circle::DistanceExtensionCircleConstraint::new(
+                pa, pb, center, c, d,
+            ),
+        )),
+        ConstraintType::DistanceCircleCircle(c1_center, c1, c2_center, c2, d, internal) => {
+            Ok(Box::new(
+                crate::constraints::distance_circle_circle::DistanceCircleCircleConstraint::new(
+                    c1_center, c1, c2_center, c2, d, internal,
+                ),
+            ))
+        }
+        ConstraintType::DistanceLineLine(a1, a2, b1, b2, d) => {
+            // At 0 the side-free residual |d| − value only touches zero:
+            // two Lines at distance 0 are `collinear`.
+            if d <= 0.0 {
+                return Err(format!(
+                    "distance {d} between lines is not positive (use collinear for 0)"
+                ));
+            }
+            Ok(Box::new(
+                crate::constraints::distance_line_line::DistanceLineLineConstraint::new(
+                    a1, a2, b1, b2, d,
+                ),
+            ))
+        }
     }
 }
