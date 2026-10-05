@@ -471,7 +471,9 @@ fn an_unsupported_combination_is_rejected_naming_the_constraint_and_kinds() {
          expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension) \
          or (a: point, b: circle) or (a: point, b: circle, internal) or (a: line, b: circle) \
          or (a: line, b: circle, extension) or (a: circle, b: circle) \
-         or (a: circle, b: circle, internal) or (a: line, b: line)"
+         or (a: circle, b: circle, internal) or (a: circle, b: arc) \
+         or (a: circle, b: arc, internal) or (a: arc, b: arc) or (a: arc, b: arc, internal) \
+         or (a: line, b: line)"
     );
 }
 

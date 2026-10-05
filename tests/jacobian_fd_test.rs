@@ -258,10 +258,12 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         DistanceLineCircle(..) => "DistanceLineCircle",
         DistanceExtensionCircle(..) => "DistanceExtensionCircle",
         DistanceCircleCircle(..) => "DistanceCircleCircle",
+        DistanceCircleArc(..) => "DistanceCircleArc",
+        DistanceArcs(..) => "DistanceArcs",
         DistanceLineLine(..) => "DistanceLineLine",
     }
 }
-const ALL_VARIANTS: [&str; 51] = [
+const ALL_VARIANTS: [&str; 53] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -312,6 +314,8 @@ const ALL_VARIANTS: [&str; 51] = [
     "DistanceLineCircle",
     "DistanceExtensionCircle",
     "DistanceCircleCircle",
+    "DistanceCircleArc",
+    "DistanceArcs",
     "DistanceLineLine",
 ];
 
@@ -525,6 +529,8 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::DistanceCircleCircle(s("c1_center"), s("c1"), s("c2_center"), s("c2"), 0.5, true),
         ConstraintType::DistanceCircleCircle(s("c2_center"), s("c2"), s("c1_center"), s("c1"), 0.5, true),
         ConstraintType::DistanceCircleCircle(s("c1_center"), s("c1"), s("c1_center"), s("c2"), 0.5, false),
+        ConstraintType::DistanceCircleArc(s("c1_center"), s("c1"), s("a1_center"), s("a1"), 0.5, true),
+        ConstraintType::DistanceArcs(s("a1_center"), s("a1"), s("a2_center"), s("a2"), 0.5, true),
         ConstraintType::DistanceLineCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1"), 1.0),
         ConstraintType::DistanceLineCircle(s("p0"), s("p1"), s("c1_center"), s("c1"), 1.0),
         ConstraintType::DistanceExtensionCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1"), 1.0),
