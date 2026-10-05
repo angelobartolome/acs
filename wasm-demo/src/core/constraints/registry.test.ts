@@ -47,6 +47,7 @@ describe("ConstraintRegistry", () => {
       type: string;
       fields: { name: string; index?: number; kind: string }[];
       extension?: boolean;
+      internal?: boolean;
       deprecated?: boolean;
     };
     // Deprecated forms are accepted for one more release, never offered.
@@ -70,6 +71,7 @@ describe("ConstraintRegistry", () => {
         ],
       };
       if (def.extension !== undefined) row.extension = def.extension;
+      if (def.internal !== undefined) row.internal = def.internal;
       return row;
     };
     const key = (r: Row) =>
@@ -77,6 +79,7 @@ describe("ConstraintRegistry", () => {
         r.type,
         r.fields.map((f) => `${f.name}${f.index === undefined ? "" : `[${f.index}]`}:${f.kind}`),
         r.extension ?? null,
+        r.internal ?? null,
       ]);
     expect(CONSTRAINT_DEFS.map(asRow).map(key).sort()).toEqual(
       catalog.map(key).sort(),
@@ -274,6 +277,27 @@ describe("ConstraintRegistry", () => {
     });
     expect(kinds({ type: "midpoint", entities: ["l1", "p1"] })).toBeNull();
     expect(kinds({ type: "midpoint", entities: ["p1", "l1", "p2"] })).toBeNull();
+    // `internal: true` selects the inside variant
+    const C1 = { kind: "circle" as const, id: "c1", center: "p2", radius: 1, fixed: false };
+    const withCircle = (id: string) => (id === "c1" ? C1 : resolve(id));
+    expect(
+      primitiveToConstraint({ type: "distance", a: "c1", b: "p1", value: 1 }, "f", withCircle),
+    ).toMatchObject({ def: "distance_point_circle", entities: ["p1", "c1"] });
+    expect(
+      primitiveToConstraint(
+        { type: "distance", a: "p1", b: "c1", value: 1, internal: true },
+        "f",
+        withCircle,
+      ),
+    ).toMatchObject({ def: "distance_point_circle_internal" });
+    expect(
+      constraintToPrimitive({
+        id: "k",
+        def: "distance_point_circle_internal",
+        entities: ["p1", "c1"],
+        params: { value: 1 },
+      }),
+    ).toEqual({ id: "k", type: "distance", internal: true, a: "p1", b: "c1", value: 1 });
     // no variant takes a point and a missing entity
     expect(kinds({ type: "distance", a: "p1", b: "ghost", value: 1 })).toBeNull();
   });

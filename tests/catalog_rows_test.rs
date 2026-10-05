@@ -39,6 +39,9 @@ fn sketch_for(spec: &ConstraintSpec, vocabulary: Vocabulary) -> Value {
     if spec.extension == ExtensionFlag::Extension {
         constraint["extension"] = json!(true);
     }
+    if spec.internal {
+        constraint["internal"] = json!(true);
+    }
     let (entity_key, property_key) = match vocabulary {
         Vocabulary::Native => ("entity", "property"),
         Vocabulary::PlaneGcs => ("o_id", "prop"),
@@ -231,13 +234,19 @@ fn acs_constraint_catalog_describes_the_native_vocabulary() {
         "rotation",
         "translation",
         "ellipse_axis",
+        "diameter",
+        "length",
     ] {
         assert!(types.contains(t), "{t} missing from the native catalog");
     }
     // `distance` from a point to a Line: a segment row and an Extension row.
     let point_line: Vec<&Value> = rows
         .iter()
-        .filter(|r| r["type"] == "distance" && r["fields"][1]["kind"] == "line")
+        .filter(|r| {
+            r["type"] == "distance"
+                && r["fields"][0]["kind"] == "point"
+                && r["fields"][1]["kind"] == "line"
+        })
         .collect();
     assert_eq!(point_line.len(), 2);
     assert_eq!(point_line[0]["extension"], false);
@@ -253,6 +262,15 @@ fn acs_constraint_catalog_describes_the_native_vocabulary() {
     // Rows without an Extension variant carry no flag.
     let coincident = rows.iter().find(|r| r["type"] == "coincident").unwrap();
     assert!(coincident.get("extension").is_none());
+    // `internal: true` marks the inside variants of point–circle and
+    // circle–circle distance; other rows carry no `internal`.
+    let internal: Vec<&Value> = rows.iter().filter(|r| r.get("internal").is_some()).collect();
+    assert_eq!(internal.len(), 2);
+    for row in internal {
+        assert_eq!(row["type"], "distance");
+        assert_eq!(row["internal"], true);
+        assert_eq!(row["fields"][1]["kind"], "circle");
+    }
 }
 
 #[test]

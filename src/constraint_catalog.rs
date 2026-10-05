@@ -5,8 +5,8 @@
 //! - **Native** ([`native`]): ACS's own, one type per relationship
 //!   (`distance`, `on`, `tangent`, …) with role-named fields. A type may have
 //!   several rows (variants); the one used is inferred from the kinds of the
-//!   entities its fields reference, and `extension: true` selects an
-//!   Extension variant.
+//!   entities its fields reference, `extension: true` selects an
+//!   Extension variant and `internal: true` an inside variant.
 //! - **PlaneGCS dialect** ([`planegcs`]): the GCS types, unchanged
 //!   (`p2p_distance`, `horizontal_l`, …), one row each.
 //!
@@ -83,9 +83,10 @@ impl Vocabulary {
 
     /// The catalog as JSON, one object per row:
     /// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?,
-    /// "deprecated"? }]`. A native type with several variants has several
-    /// rows; `extension` is present on rows that take the flag (`false`: the
-    /// segment variant, `true`: the Extension variant). A field with an
+    /// "internal"?, "deprecated"? }]`. A native type with several variants
+    /// has several rows; `extension` is present on rows that take the flag
+    /// (`false`: the segment variant, `true`: the Extension variant), and
+    /// `internal: true` on the inside variants. A field with an
     /// `index` is that element of the array field `name`. `deprecated: true`
     /// marks a form still accepted for one more release.
     pub fn catalog_json(self) -> String {
@@ -108,6 +109,9 @@ impl Vocabulary {
                     ExtensionFlag::NotAccepted => {}
                     ExtensionFlag::Segment => row["extension"] = json!(false),
                     ExtensionFlag::Extension => row["extension"] = json!(true),
+                }
+                if s.internal {
+                    row["internal"] = json!(true);
                 }
                 if s.deprecated {
                     row["deprecated"] = json!(true);
@@ -354,6 +358,10 @@ pub struct ConstraintSpec {
     /// (JSON field name, kind), in order.
     pub fields: &'static [(&'static str, FieldKind)],
     pub extension: ExtensionFlag,
+    /// The inside variant, selected by the native `internal: true` (a
+    /// point–circle or circle–circle distance measured inside the circle).
+    /// Rows without it are selected only when `internal` is absent or false.
+    pub internal: bool,
     /// A form still accepted, for one more release, with a replacement.
     pub deprecated: bool,
     build: fn(&Args) -> ConstraintType,
@@ -369,6 +377,7 @@ impl ConstraintSpec {
             json_type,
             fields,
             extension: ExtensionFlag::NotAccepted,
+            internal: false,
             deprecated: false,
             build,
         }
@@ -386,6 +395,14 @@ impl ConstraintSpec {
     pub const fn segment(self) -> Self {
         ConstraintSpec {
             extension: ExtensionFlag::Segment,
+            ..self
+        }
+    }
+
+    /// This row as the inside variant (`internal: true`).
+    pub const fn internal(self) -> Self {
+        ConstraintSpec {
+            internal: true,
             ..self
         }
     }

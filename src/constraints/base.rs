@@ -415,6 +415,45 @@ pub enum ConstraintType {
     /// is an arc endpoint): the line is perpendicular to the radius there.
     /// (point_id, other_line_end_id, arc_center_point_id)
     TangentAtPoint(String, String, String),
+
+    // ── Dimensions and distances to circles and lines ──
+    /// A circle's or arc's diameter: 2r = diameter.
+    /// (circle_id, diameter)
+    Diameter(String, f64),
+
+    /// An arc's length: r · sweep = length, sweep (end − start) mod 2π in
+    /// (0, 2π].
+    /// (arc_id, length)
+    ArcLength(String, f64),
+
+    /// An arc's sweep, 0 < sweep < 2π (anything else is rejected).
+    /// (arc_id, sweep_radians)
+    ArcSweep(String, f64),
+
+    /// Gap between a point and a circle: |p − c| − r = distance, or with
+    /// `internal`, r − |p − c| = distance.
+    /// (point_id, circle_center_point_id, circle_id, distance, internal)
+    DistancePointCircle(String, String, String, f64, bool),
+
+    /// Gap between a Line (the segment) and a circle: the distance from the
+    /// center to the segment, minus r.
+    /// (line_pa_id, line_pb_id, circle_center_point_id, circle_id, distance)
+    DistanceLineCircle(String, String, String, String, f64),
+
+    /// Gap between a Line's Extension and a circle: the distance from the
+    /// center to the Extension, minus r.
+    /// (line_pa_id, line_pb_id, circle_center_point_id, circle_id, distance)
+    DistanceExtensionCircle(String, String, String, String, f64),
+
+    /// Gap between two circles: |c1 − c2| − r1 − r2 = distance, or with
+    /// `internal`, |r1 − r2| − |c1 − c2| = distance (one inside the other).
+    /// (c1_center_point_id, c1_id, c2_center_point_id, c2_id, distance, internal)
+    DistanceCircleCircle(String, String, String, String, f64, bool),
+
+    /// Both endpoints of line b are `distance` from line a's Extension, on
+    /// one side: b is parallel to a, `distance` away.
+    /// (a_p1_id, a_p2_id, b_p1_id, b_p2_id, distance)
+    DistanceLineLine(String, String, String, String, f64),
 }
 
 pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Constraint>, String> {
@@ -567,6 +606,47 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         ConstraintType::EllipseDiameter(p1, p2, center, focus, e, axis) => Ok(Box::new(
             crate::constraints::ellipse_diameter::EllipseDiameterConstraint::new(
                 p1, p2, center, focus, e, axis,
+            ),
+        )),
+        ConstraintType::Diameter(c, d) => Ok(Box::new(
+            crate::constraints::diameter::DiameterConstraint::new(c, d),
+        )),
+        ConstraintType::ArcLength(arc, length) => Ok(Box::new(
+            crate::constraints::arc_length::ArcLengthConstraint::new(arc, length),
+        )),
+        ConstraintType::ArcSweep(arc, sweep) => {
+            if !crate::constraints::arc_sweep::ArcSweepConstraint::accepts(sweep) {
+                return Err(format!("arc sweep {sweep} is not between 0 and 2π"));
+            }
+            Ok(Box::new(
+                crate::constraints::arc_sweep::ArcSweepConstraint::new(arc, sweep),
+            ))
+        }
+        ConstraintType::DistancePointCircle(p, center, c, d, internal) => Ok(Box::new(
+            crate::constraints::distance_point_circle::DistancePointCircleConstraint::new(
+                p, center, c, d, internal,
+            ),
+        )),
+        ConstraintType::DistanceLineCircle(pa, pb, center, c, d) => Ok(Box::new(
+            crate::constraints::distance_line_circle::DistanceLineCircleConstraint::new(
+                pa, pb, center, c, d,
+            ),
+        )),
+        ConstraintType::DistanceExtensionCircle(pa, pb, center, c, d) => Ok(Box::new(
+            crate::constraints::distance_extension_circle::DistanceExtensionCircleConstraint::new(
+                pa, pb, center, c, d,
+            ),
+        )),
+        ConstraintType::DistanceCircleCircle(c1_center, c1, c2_center, c2, d, internal) => {
+            Ok(Box::new(
+                crate::constraints::distance_circle_circle::DistanceCircleCircleConstraint::new(
+                    c1_center, c1, c2_center, c2, d, internal,
+                ),
+            ))
+        }
+        ConstraintType::DistanceLineLine(a1, a2, b1, b2, d) => Ok(Box::new(
+            crate::constraints::distance_line_line::DistanceLineLineConstraint::new(
+                a1, a2, b1, b2, d,
             ),
         )),
     }

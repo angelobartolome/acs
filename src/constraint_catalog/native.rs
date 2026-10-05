@@ -5,7 +5,8 @@
 //! inferred from the kinds of the entities its fields reference (`distance`
 //! with `b` a Point is point–point, with `b` a Line point–segment) and from
 //! `extension: true`, which selects a variant measured against the Line's
-//! Extension. Rows are tried in order; for the [`COMMUTATIVE`] types, `a` and
+//! Extension, and `internal: true`, which selects an inside variant (a
+//! distance measured inside a circle). Rows are tried in order; for the [`COMMUTATIVE`] types, `a` and
 //! `b` may come in either order. A combination no row takes is rejected,
 //! naming the kinds given and the ones the type accepts.
 
@@ -55,6 +56,9 @@ pub(super) static SPECS: &[S] = &[
         &[("a", Line), ("b", Line), ("value", Scalar)],
         |a| ConstraintType::Angle(a.p(0), a.p(1), a.p(2), a.p(3), a.s(0)),
     ),
+    S::new("angle", &[("arc", Arc), ("value", Scalar)], |a| {
+        ConstraintType::ArcSweep(a.c(0), a.s(0))
+    }),
     S::new("direction", &[("line", Line), ("value", Scalar)], |a| {
         ConstraintType::PointPointAngle(a.p(0), a.p(1), a.s(0))
     }),
@@ -80,6 +84,63 @@ pub(super) static SPECS: &[S] = &[
         |a| ConstraintType::DistancePointExtension(a.p(0), a.p(1), a.p(2), a.s(0)),
     )
     .extension(),
+    S::new(
+        "distance",
+        &[("a", Point), ("b", Circle), ("value", Scalar)],
+        |a| ConstraintType::DistancePointCircle(a.p(0), a.center(0), a.c(0), a.s(0), false),
+    ),
+    S::new(
+        "distance",
+        &[("a", Point), ("b", Circle), ("value", Scalar)],
+        |a| ConstraintType::DistancePointCircle(a.p(0), a.center(0), a.c(0), a.s(0), true),
+    )
+    .internal(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Circle), ("value", Scalar)],
+        |a| ConstraintType::DistanceLineCircle(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
+    )
+    .segment(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Circle), ("value", Scalar)],
+        |a| ConstraintType::DistanceExtensionCircle(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
+    )
+    .extension(),
+    S::new(
+        "distance",
+        &[("a", Circle), ("b", Circle), ("value", Scalar)],
+        |a| {
+            ConstraintType::DistanceCircleCircle(
+                a.center(0),
+                a.c(0),
+                a.center(1),
+                a.c(1),
+                a.s(0),
+                false,
+            )
+        },
+    ),
+    S::new(
+        "distance",
+        &[("a", Circle), ("b", Circle), ("value", Scalar)],
+        |a| {
+            ConstraintType::DistanceCircleCircle(
+                a.center(0),
+                a.c(0),
+                a.center(1),
+                a.c(1),
+                a.s(0),
+                true,
+            )
+        },
+    )
+    .internal(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Line), ("value", Scalar)],
+        |a| ConstraintType::DistanceLineLine(a.p(0), a.p(1), a.p(2), a.p(3), a.s(0)),
+    ),
     S::new(
         "offset",
         &[
@@ -182,6 +243,18 @@ pub(super) static SPECS: &[S] = &[
     S::new("radius", &[("curve", Arc), ("value", Scalar)], |a| {
         ConstraintType::FixedRadius(a.c(0), a.s(0))
     }),
+    S::new("diameter", &[("curve", Circle), ("value", Scalar)], |a| {
+        ConstraintType::Diameter(a.c(0), a.s(0))
+    }),
+    S::new("diameter", &[("curve", Arc), ("value", Scalar)], |a| {
+        ConstraintType::Diameter(a.c(0), a.s(0))
+    }),
+    S::new("length", &[("curve", Line), ("value", Scalar)], |a| {
+        ConstraintType::DistancePointPoint(a.p(0), a.p(1), a.s(0))
+    }),
+    S::new("length", &[("curve", Arc), ("value", Scalar)], |a| {
+        ConstraintType::ArcLength(a.c(0), a.s(0))
+    }),
     S::new(
         "difference",
         &[("a", Val), ("b", Val), ("value", Val)],
@@ -244,7 +317,7 @@ pub(super) static SPECS: &[S] = &[
 ];
 
 /// Builds the native constraint `c` of type `json_type`, choosing the row
-/// whose entity kinds and `extension` flag match.
+/// whose entity kinds and `extension` and `internal` flags match.
 pub(super) fn parse(
     json_type: &str,
     c: &Value,
@@ -254,14 +327,11 @@ pub(super) fn parse(
     if variants.is_empty() {
         return Err(format!("unknown type '{json_type}'"));
     }
-    let extension = match c.get("extension") {
-        None => false,
-        Some(v) => v
-            .as_bool()
-            .ok_or("field 'extension' is not true or false")?,
-    };
+    let extension = flag(c, "extension")?;
+    let internal = flag(c, "internal")?;
+    let selects = |s: &S| s.extension.accepts(extension) && s.internal == internal;
     let swapped = COMMUTATIVE.contains(&json_type).then(|| swap_a_b(c));
-    let accepted = || variants.iter().filter(|s| s.extension.accepts(extension));
+    let accepted = || variants.iter().filter(|s| selects(s));
     for spec in accepted() {
         for obj in std::iter::once(c).chain(swapped.as_ref()) {
             if matches_kinds(spec, obj, refs) {
@@ -271,11 +341,22 @@ pub(super) fn parse(
     }
     // A type with one row reports exactly what's wrong with its fields.
     if let [only] = variants[..]
-        && only.extension.accepts(extension)
+        && selects(only)
     {
         return only.parse(c, refs);
     }
-    Err(unsupported(json_type, &variants, c, refs, extension))
+    Err(unsupported(json_type, &variants, c, refs, extension, internal))
+}
+
+/// The boolean flag `name` of `c` (`extension`, `internal`): false when
+/// absent.
+fn flag(c: &Value, name: &str) -> Result<bool, String> {
+    match c.get(name) {
+        None => Ok(false),
+        Some(v) => v
+            .as_bool()
+            .ok_or_else(|| format!("field '{name}' is not true or false")),
+    }
 }
 
 /// `c` with its `a` and `b` fields exchanged.
@@ -334,6 +415,7 @@ fn unsupported(
     c: &Value,
     refs: &References,
     extension: bool,
+    internal: bool,
 ) -> String {
     let mut names: Vec<&str> = Vec::new();
     for &(name, kind) in variants.iter().flat_map(|s| s.fields) {
@@ -358,6 +440,9 @@ fn unsupported(
     if extension {
         got.push("extension".into());
     }
+    if internal {
+        got.push("internal".into());
+    }
     let got = if got.is_empty() {
         "nothing".to_string()
     } else {
@@ -374,6 +459,9 @@ fn unsupported(
                 .collect();
             if s.extension == super::ExtensionFlag::Extension {
                 fields.push("extension".into());
+            }
+            if s.internal {
+                fields.push("internal".into());
             }
             format!("({})", fields.join(", "))
         })

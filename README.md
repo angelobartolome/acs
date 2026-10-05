@@ -29,16 +29,16 @@ ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numer
 
 ### Constraints
 
-ACS names constraints by relationship (its **native vocabulary**, used by the JSON API `acsSolveSketch`). One type covers every combination of entities it makes sense for; the variant is inferred from the kinds of the entities its fields reference. Lines are segments: constraints measure against the segment unless they are **Extension** variants (`extension: true`), which measure against the infinite line through a line's endpoints so sketches authored under infinite-line semantics, such as PlaneGCS's, keep their meaning.
+ACS names constraints by relationship (its **native vocabulary**, used by the JSON API `acsSolveSketch`). One type covers every combination of entities it makes sense for; the variant is inferred from the kinds of the entities its fields reference. Lines are segments: constraints measure against the segment unless they are **Extension** variants (`extension: true`), which measure against the infinite line through a line's endpoints so sketches authored under infinite-line semantics, such as PlaneGCS's, keep their meaning. `internal: true` selects the inside variant of a distance to a circle.
 
 | Type | Entities | Description |
 |------|----------|-------------|
 | `coincident` | point, point | Two points overlap |
 | `horizontal` / `vertical` | line, or two points | Horizontal / vertical |
 | `parallel` / `perpendicular` | line, line | Two lines are parallel / perpendicular |
-| `angle` | line, line | Directed angle between two lines (radians) |
+| `angle` | line, line; or arc | Directed angle between two lines; or an arc's sweep, `0 < value < 2π` (radians) |
 | `direction` | line, or two points | Direction from +X (radians, counter-clockwise) |
-| `distance` | point, point or line (`extension?`) | Point–point distance; point–segment distance; with `extension`, distance to the line's Extension |
+| `distance` | point–point, point–line (`extension?`), point–circle (`internal?`), line–circle (`extension?`), circle–circle (`internal?`), line–line | Point–point distance; point–segment distance (with `extension`, to the line's Extension); the gap from a point, segment (or Extension) or circle to a circle's outside (with `internal`, inside it); two parallel lines `value` apart (both of `b`'s endpoints from `a`'s Extension) |
 | `offset` | point, line | Distance from a point to a line's Extension on a given side (Linked Offsets) |
 | `on` | point, line (`extension?`) / circle / arc / ellipse | Point lies on the segment (or Extension), circle, arc's span, or ellipse |
 | `midpoint` | `entities`: [point, line] or [line, line] (`extension?`) | A point is the midpoint of a line; or the midpoint of one line lies on another line (or its Extension) |
@@ -47,6 +47,8 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `concentric` | circle/arc, circle/arc | Share a center |
 | `equal` | line–line, circle/arc–circle/arc, or values | Equal length, equal radius, or `a = b` |
 | `radius` | circle or arc | Fixed radius |
+| `diameter` | circle or arc | Fixed diameter |
+| `length` | line or arc | Fixed length of a line, or of an arc (`radius × sweep`) |
 | `difference` | values | `b − a = value` |
 | `x` / `y` | point | Pin a point to a coordinate value |
 | `mirror` | point, point, line | A point is another mirrored across a line's Extension |

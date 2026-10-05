@@ -241,9 +241,17 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         TangentLineEllipse(..) => "TangentLineEllipse",
         EllipseAxisPoint(..) => "EllipseAxisPoint",
         EllipseDiameter(..) => "EllipseDiameter",
+        Diameter(..) => "Diameter",
+        ArcLength(..) => "ArcLength",
+        ArcSweep(..) => "ArcSweep",
+        DistancePointCircle(..) => "DistancePointCircle",
+        DistanceLineCircle(..) => "DistanceLineCircle",
+        DistanceExtensionCircle(..) => "DistanceExtensionCircle",
+        DistanceCircleCircle(..) => "DistanceCircleCircle",
+        DistanceLineLine(..) => "DistanceLineLine",
     }
 }
-const ALL_VARIANTS: [&str; 39] = [
+const ALL_VARIANTS: [&str; 47] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -283,6 +291,14 @@ const ALL_VARIANTS: [&str; 39] = [
     "TangentLineEllipse",
     "EllipseAxisPoint",
     "EllipseDiameter",
+    "Diameter",
+    "ArcLength",
+    "ArcSweep",
+    "DistancePointCircle",
+    "DistanceLineCircle",
+    "DistanceExtensionCircle",
+    "DistanceCircleCircle",
+    "DistanceLineLine",
 ];
 
 #[test]
@@ -472,6 +488,20 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::EllipseDiameter(s("e1_focus"), s("p1"), s("e1_center"), s("e1_focus"), s("e1"), EllipseAxis::Major),
         ConstraintType::EllipseDiameter(s("p0"), s("e2_center"), s("e2_center"), s("e2_focus"), s("e2"), EllipseAxis::Minor),
         ConstraintType::Equal(Operand::MinorRadius(s("e1")), Operand::MinorRadius(s("e2"))),
+        // Dimensions and distances: the internal variants (the catalog
+        // builds the outside ones first), shared points and both circles.
+        ConstraintType::DistancePointCircle(s("p0"), s("c1_center"), s("c1"), 0.5, true),
+        ConstraintType::DistancePointCircle(s("c2_center"), s("c1_center"), s("c1"), 0.5, false),
+        ConstraintType::DistanceCircleCircle(s("c1_center"), s("c1"), s("c2_center"), s("c2"), 0.5, true),
+        ConstraintType::DistanceCircleCircle(s("c2_center"), s("c2"), s("c1_center"), s("c1"), 0.5, true),
+        ConstraintType::DistanceCircleCircle(s("c1_center"), s("c1"), s("c1_center"), s("c2"), 0.5, false),
+        ConstraintType::DistanceLineCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1"), 1.0),
+        ConstraintType::DistanceLineCircle(s("p0"), s("p1"), s("c1_center"), s("c1"), 1.0),
+        ConstraintType::DistanceExtensionCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1"), 1.0),
+        ConstraintType::DistanceLineLine(s("p0"), s("p1"), s("p1"), s("p2"), 1.0),
+        ConstraintType::DistanceLineLine(s("p0"), s("p1"), s("p2"), s("p0"), 1.0),
+        ConstraintType::ArcLength(s("a2"), 2.0),
+        ConstraintType::ArcSweep(s("a2"), 5.9),
         ConstraintType::Difference(
             Operand::MinorRadius(s("e1")),
             Operand::Radius(s("c1")),

@@ -520,14 +520,20 @@ fn an_unsupported_combination_is_rejected_naming_the_constraint_and_kinds() {
     let (error, id) = reject(json!([
         { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
         { "id": "o", "type": "point", "x": 1.0, "y": 0.0 },
-        { "id": "c", "type": "circle", "c_id": "o", "radius": 1.0 },
+        { "id": "s", "type": "point", "x": 2.0, "y": 0.0 },
+        { "id": "e", "type": "point", "x": 1.0, "y": 1.0 },
+        { "id": "c", "type": "arc", "c_id": "o", "start_id": "s", "end_id": "e",
+          "radius": 1.0, "start_angle": 0.0, "end_angle": std::f64::consts::FRAC_PI_2 },
         { "id": "k1", "type": "distance", "a": "a", "b": "c", "value": 2.0 }
     ]));
     assert_eq!(id, "k1");
     assert_eq!(
         error,
-        "constraint k1: unsupported combination for 'distance': got a: point, b: circle; \
-         expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension)"
+        "constraint k1: unsupported combination for 'distance': got a: point, b: arc; \
+         expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension) \
+         or (a: point, b: circle) or (a: point, b: circle, internal) or (a: line, b: circle) \
+         or (a: line, b: circle, extension) or (a: circle, b: circle) \
+         or (a: circle, b: circle, internal) or (a: line, b: line)"
     );
 }
 

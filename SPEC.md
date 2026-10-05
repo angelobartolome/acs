@@ -649,6 +649,35 @@ For example `PointOnEllipse`: with `ŵ₁ = (p − f)/|p − f|`,
 length has zero partials, and with `k ≈ 0` (focus on the center, a circle)
 `u` is taken as `+X` with no partials.
 
+### 22  Dimensions and distances to circles and lines
+
+Dimensions hold the number given; the distances are **signed gaps**, so each
+residual crosses zero linearly (negative when the entities overlap) instead
+of touching it from one side. `σ = −1` for `internal`, else `+1`.
+`u = (p − c)/|p − c|` (zero when `|p − c| ≈ 0`).
+
+| Constraint (JSON) | Residuals | Partials |
+|-------------------|-----------|----------|
+| `Diameter(c, D)` (`diameter`) | `R = 2r − D` | `∂r = 2` |
+| `ArcLength(A, ℓ)` (`length`, arc) | `R = r·s − ℓ`, `s = (β − α) mod 2π` in `(0, 2π]` (0 → full turn) | `∂r = s`, `∂α = −r`, `∂β = r` |
+| `ArcSweep(A, θ)` (`angle`, arc; `0 < θ < 2π`, else rejected) | `R = wrap(β − α − θ)`, `wrap(t) = ((t + π) mod 2π) − π` | `∂α = −1`, `∂β = 1` |
+| `DistancePointCircle(p, c, C, d, internal)` (`distance` point–circle) | `R = σ(\|p − c\| − r) − d` | `∂p = σu`, `∂c = −σu`, `∂r = −σ` |
+| `DistanceLineCircle(a, b, c, C, d)` (`distance` line–circle) | `R = D(c, ab) − r − d`, `D` the unsigned segment distance (Segment geometry) | `∂(c, a, b)` from `segment_distance`, `∂r = −1` |
+| `DistanceExtensionCircle(a, b, c, C, d)` (`distance` line–circle, `extension`) | `R = \|C/L\| − r − d` (as `TangentExtensionCircle`) | `sign(C)·∂(C/L)`, `∂r = −1` |
+| `DistanceCircleCircle(c₁, C₁, c₂, C₂, d, false)` | `R = \|c₂ − c₁\| − r₁ − r₂ − d` | with `w = (c₂ − c₁)/\|c₂ − c₁\|`: `∂c₁ = −w`, `∂c₂ = w`, `∂r₁ = ∂r₂ = −1` |
+| `DistanceCircleCircle(…, d, true)` (`internal`) | `R = \|r₁ − r₂\| − \|c₂ − c₁\| − d` | `∂c₁ = w`, `∂c₂ = −w`, `∂r₁ = τ`, `∂r₂ = −τ`, `τ = +1` if `r₁ ≥ r₂` else `−1` |
+| `DistanceLineLine(a₁, a₂, b₁, b₂, d)` (`distance` line–line) | `R₀ = ς·C(b₁)/L − d`, `R₁ = ς·C(b₂)/L − d`, signed distances to the line through `a₁, a₂`; `ς = +1` if `C(b₁) + C(b₂) ≥ 0` else `−1` | `ς·∂(C/L)` per row (Segment geometry), `p` = `b₁` or `b₂` |
+
+`ArcSweep` unwraps the sweep near the target `θ`: a sweep taken mod 2π jumps by
+2π where the end angle crosses the start (the 0/2π seam), as a drag across it
+does; `wrap` is continuous there and jumps only half a turn from `θ`.
+`ArcLength`'s sweep jumps where the arc itself does, between a full turn and
+none. `DistanceLineLine`'s two equations make `b` parallel to `a` (an explicit
+`Parallel` on the pair is redundant). The internal circle–circle gap is
+symmetric in its circles; it is kinked only at `r₁ = r₂` (where the gap is
+`−|c₂ − c₁| ≤ 0`). The new distances take circles only, not arcs (a
+span-clamped residual would be kinked).
+
 ---
 
 ## ConstraintType Enum Summary (updated)
@@ -705,6 +734,16 @@ pub enum ConstraintType {
     TangentLineEllipse(String, String, String, String, String), // line_pa, line_pb, center_id, focus1_id, ellipse_id
     EllipseAxisPoint(String, String, String, String, EllipseAxis), // point_id, center_id, focus1_id, ellipse_id, Major|Minor
     EllipseDiameter(String, String, String, String, String, EllipseAxis), // p1_id, p2_id, center_id, focus1_id, ellipse_id, Major|Minor
+
+    // Dimensions and distances
+    Diameter(String, f64),                                  // circle_or_arc_id, diameter
+    ArcLength(String, f64),                                 // arc_id, length
+    ArcSweep(String, f64),                                  // arc_id, sweep (0 < sweep < 2π)
+    DistancePointCircle(String, String, String, f64, bool), // point_id, circle_center_id, circle_id, gap, internal
+    DistanceLineCircle(String, String, String, String, f64), // line_pa, line_pb, circle_center_id, circle_id, gap
+    DistanceExtensionCircle(String, String, String, String, f64), // line_pa, line_pb, circle_center_id, circle_id, gap
+    DistanceCircleCircle(String, String, String, String, f64, bool), // c1_center_id, c1_id, c2_center_id, c2_id, gap, internal
+    DistanceLineLine(String, String, String, String, f64),  // a_p1, a_p2, b_p1, b_p2, distance
 }
 ```
 
