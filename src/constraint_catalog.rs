@@ -1,14 +1,10 @@
-//! Every constraint type the JSON API accepts, declared once per vocabulary.
+//! Every constraint type the JSON API accepts, declared once.
 //!
-//! ACS reads constraints in two vocabularies (see [`Vocabulary`]):
-//!
-//! - **Native** ([`native`]): ACS's own, one type per relationship
-//!   (`distance`, `on`, `tangent`, …) with role-named fields. A type may have
-//!   several rows (variants); the one used is inferred from the kinds of the
-//!   entities its fields reference, `extension: true` selects an
-//!   Extension variant and `internal: true` an inside variant.
-//! - **PlaneGCS dialect** ([`planegcs`]): the GCS types, unchanged
-//!   (`p2p_distance`, `horizontal_l`, …), one row each.
+//! ACS's constraint vocabulary ([`native`]) has one type per relationship
+//! (`distance`, `on`, `tangent`, …) with role-named fields. A type may have
+//! several rows (variants); the one used is inferred from the kinds of the
+//! entities its fields reference, `extension: true` selects an
+//! Extension variant and `internal: true` an inside variant.
 //!
 //! Each row ([`ConstraintSpec`]) names a JSON `type`, its fields with their
 //! kinds, and how to build an internal [`ConstraintType`] from them. Field
@@ -16,9 +12,9 @@
 //! Circle or Arc field also resolves its center Point and an Ellipse field
 //! its center and focus Points; a Scalar field takes
 //! a number or a Parameter id; a Value field also takes a property reference,
-//! which becomes a solver variable. The JSON API, the catalogs returned by
-//! [`Vocabulary::catalog_json`] and the Jacobian test all read these tables,
-//! so supporting a constraint in a vocabulary means adding a row there.
+//! which becomes a solver variable. The JSON API, the catalog returned by
+//! [`catalog_json`] and the Jacobian test all read this table, so
+//! supporting a constraint means adding a row there.
 //!
 //! A field name `name[i]` addresses element `i` of the array field `name`
 //! (native `midpoint`'s `entities`); see [`field_path`].
@@ -30,100 +26,55 @@ use serde_json::{Value, json};
 use crate::{ConstraintType, EllipseAxis, Operand};
 
 pub mod native;
-pub mod planegcs;
 
-/// Which constraint vocabulary a request speaks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Vocabulary {
-    /// ACS's own: `acsSolveSketch`, `solve_sketch_json`.
-    #[default]
-    Native,
-    /// The PlaneGCS dialect: `P3DSketch_Solve`,
-    /// `acsSolveSketchPlaneGcs`.
-    PlaneGcs,
+/// Every row of the catalog.
+pub fn specs() -> &'static [ConstraintSpec] {
+    native::SPECS
 }
 
-impl Vocabulary {
-    /// Every row of this vocabulary's catalog.
-    pub fn specs(self) -> &'static [ConstraintSpec] {
-        match self {
-            Vocabulary::Native => native::SPECS,
-            Vocabulary::PlaneGcs => planegcs::SPECS,
-        }
-    }
+/// Builds the constraint a JSON constraint object of type `json_type`
+/// describes. Errors name an unknown type, a missing field, an unknown
+/// reference or an unsupported combination of entity kinds.
+pub fn parse(json_type: &str, c: &Value, refs: &References) -> Result<ConstraintType, String> {
+    native::parse(json_type, c, refs)
+}
 
-    /// The keys of a property reference: native `{ entity, property }`,
-    /// dialect `{ o_id, prop }`.
-    fn property_keys(self) -> (&'static str, &'static str) {
-        match self {
-            Vocabulary::Native => ("entity", "property"),
-            Vocabulary::PlaneGcs => ("o_id", "prop"),
-        }
-    }
-
-    /// Builds the constraint a JSON constraint object of type `json_type`
-    /// describes. Errors name an unknown type, a missing field, an unknown
-    /// reference or (native) an unsupported combination of entity kinds.
-    pub fn parse(
-        self,
-        json_type: &str,
-        c: &Value,
-        refs: &References,
-    ) -> Result<ConstraintType, String> {
-        match self {
-            Vocabulary::Native => native::parse(json_type, c, refs),
-            Vocabulary::PlaneGcs => self
-                .specs()
+/// The catalog as JSON, one object per row:
+/// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?,
+/// "internal"? }]`. A type with several variants has several rows;
+/// `extension` is present on rows that take the flag (`false`: the segment
+/// variant, `true`: the Extension variant), and `internal` likewise
+/// (`false`: outside, `true`: the inside variant). A field with an `index`
+/// is that element of the array field `name`.
+pub fn catalog_json() -> String {
+    let specs: Vec<Value> = specs()
+        .iter()
+        .map(|s| {
+            let fields: Vec<Value> = s
+                .fields
                 .iter()
-                .find(|s| s.json_type == json_type)
-                .ok_or_else(|| format!("unknown type '{json_type}'"))?
-                .parse(c, refs),
-        }
-    }
-
-    /// The catalog as JSON, one object per row:
-    /// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?,
-    /// "internal"?, "deprecated"? }]`. A native type with several variants
-    /// has several rows; `extension` is present on rows that take the flag
-    /// (`false`: the segment variant, `true`: the Extension variant), and
-    /// `internal` likewise (`false`: outside, `true`: the inside variant). A
-    /// field with an
-    /// `index` is that element of the array field `name`. `deprecated: true`
-    /// marks a form still accepted for one more release.
-    pub fn catalog_json(self) -> String {
-        let specs: Vec<Value> = self
-            .specs()
-            .iter()
-            .map(|s| {
-                let fields: Vec<Value> = s
-                    .fields
-                    .iter()
-                    .map(|&(name, kind)| match field_path(name) {
-                        (name, None) => json!({ "name": name, "kind": kind.as_str() }),
-                        (name, Some(i)) => {
-                            json!({ "name": name, "index": i, "kind": kind.as_str() })
-                        }
-                    })
-                    .collect();
-                let mut row = json!({ "type": s.json_type, "fields": fields });
-                match s.extension {
-                    ExtensionFlag::NotAccepted => {}
-                    ExtensionFlag::Segment => row["extension"] = json!(false),
-                    ExtensionFlag::Extension => row["extension"] = json!(true),
-                }
-                match s.internal {
-                    InternalFlag::NotAccepted => {}
-                    InternalFlag::External => row["internal"] = json!(false),
-                    InternalFlag::Internal => row["internal"] = json!(true),
-                }
-                if s.deprecated {
-                    row["deprecated"] = json!(true);
-                }
-                row
-            })
-            .collect();
-        Value::Array(specs).to_string()
-    }
+                .map(|&(name, kind)| match field_path(name) {
+                    (name, None) => json!({ "name": name, "kind": kind.as_str() }),
+                    (name, Some(i)) => {
+                        json!({ "name": name, "index": i, "kind": kind.as_str() })
+                    }
+                })
+                .collect();
+            let mut row = json!({ "type": s.json_type, "fields": fields });
+            match s.extension {
+                ExtensionFlag::NotAccepted => {}
+                ExtensionFlag::Segment => row["extension"] = json!(false),
+                ExtensionFlag::Extension => row["extension"] = json!(true),
+            }
+            match s.internal {
+                InternalFlag::NotAccepted => {}
+                InternalFlag::External => row["internal"] = json!(false),
+                InternalFlag::Internal => row["internal"] = json!(true),
+            }
+            row
+        })
+        .collect();
+    Value::Array(specs).to_string()
 }
 
 /// A field name split into the JSON key it reads and, for `name[i]`, the
@@ -161,8 +112,8 @@ pub enum FieldKind {
     Axis,
     /// A constant: a number, a numeric string or a Parameter id.
     Scalar,
-    /// A Scalar, or an `{o_id, prop}` reference to an entity property the
-    /// solver may move (see [`property_operand`]).
+    /// A Scalar, or an `{entity, property}` reference to an entity property
+    /// the solver may move (see [`property_operand`]).
     Value,
 }
 
@@ -298,9 +249,6 @@ pub struct References {
     pub arc_endpoints: HashMap<String, (String, String)>,
     /// Ellipse ID → (center Point ID, focus Point ID).
     pub ellipses: HashMap<String, (String, String)>,
-    /// The vocabulary the request speaks, which names the keys of property
-    /// references.
-    pub vocabulary: Vocabulary,
 }
 
 impl References {
@@ -319,8 +267,8 @@ impl References {
             .map_err(|_| format!("field '{name}': unknown Parameter '{s}'"))
     }
 
-    /// A Value field: a Scalar, or a property reference (native
-    /// `{entity, property}`, dialect `{o_id, prop}`).
+    /// A Value field: a Scalar, or a property reference
+    /// `{entity, property}`.
     fn operand(&self, name: &str, v: &Value) -> Result<Operand, String> {
         let Some(obj) = v.as_object() else {
             return self.scalar(name, v).map(Operand::Const);
@@ -330,14 +278,13 @@ impl References {
                 .and_then(Value::as_str)
                 .ok_or_else(|| format!("field '{name}': property reference has no '{key}'"))
         };
-        let (entity_key, property_key) = self.vocabulary.property_keys();
-        let (o_id, prop) = (field(entity_key)?, field(property_key)?);
+        let (entity, prop) = (field("entity")?, field("property")?);
         let kind = self
             .entity_types
-            .get(o_id)
-            .ok_or_else(|| format!("field '{name}': '{o_id}' is not an entity"))?;
-        property_operand(kind, o_id, prop)
-            .ok_or_else(|| format!("field '{name}': {kind} '{o_id}' has no property '{prop}'"))
+            .get(entity)
+            .ok_or_else(|| format!("field '{name}': '{entity}' is not an entity"))?;
+        property_operand(kind, entity, prop)
+            .ok_or_else(|| format!("field '{name}': {kind} '{entity}' has no property '{prop}'"))
     }
 }
 
@@ -406,8 +353,6 @@ pub struct ConstraintSpec {
     pub fields: &'static [(&'static str, FieldKind)],
     pub extension: ExtensionFlag,
     pub internal: InternalFlag,
-    /// A form still accepted, for one more release, with a replacement.
-    pub deprecated: bool,
     build: fn(&Args) -> ConstraintType,
 }
 
@@ -422,16 +367,7 @@ impl ConstraintSpec {
             fields,
             extension: ExtensionFlag::NotAccepted,
             internal: InternalFlag::NotAccepted,
-            deprecated: false,
             build,
-        }
-    }
-
-    /// This row as a deprecated form (`deprecated: true` in the catalog).
-    pub const fn deprecated(self) -> Self {
-        ConstraintSpec {
-            deprecated: true,
-            ..self
         }
     }
 
@@ -473,8 +409,7 @@ impl ConstraintSpec {
     }
 
     /// Resolves a JSON constraint object's fields against `refs` and builds
-    /// the constraint. An explicit `center_id` overrides the center of the
-    /// `c_id` circle. Errors name the missing field or unknown reference.
+    /// the constraint. Errors name the missing field or unknown reference.
     pub fn parse(&self, c: &Value, refs: &References) -> Result<ConstraintType, String> {
         let mut args = Args::default();
         for &(name, kind) in self.fields {
@@ -513,17 +448,11 @@ impl ConstraintSpec {
                     args.points.push(b.clone());
                 }
                 FieldKind::Circle | FieldKind::Arc => {
-                    let explicit = (name == "c_id")
-                        .then(|| c.get("center_id").and_then(Value::as_str))
-                        .flatten();
-                    let center = match explicit {
-                        Some(center) => center.to_string(),
-                        None => refs
-                            .centers
-                            .get(&id)
-                            .cloned()
-                            .ok_or_else(|| format!("'{id}' is not a circle or arc"))?,
-                    };
+                    let center = refs
+                        .centers
+                        .get(&id)
+                        .cloned()
+                        .ok_or_else(|| format!("'{id}' is not a circle or arc"))?;
                     if kind == FieldKind::Arc {
                         let ends = refs
                             .arc_endpoints

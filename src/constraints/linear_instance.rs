@@ -6,7 +6,7 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Constrains `pk` to be `p0` translated `base_distance · n` along the
 /// direction from `dir_p1` to `dir_p2`: the n-th instance of a linear array.
-/// PlaneGCS's `linear_instance`.
+/// Native `translation`.
 ///
 /// Entities:
 ///   - `p0_id`         – source point p0

@@ -204,21 +204,6 @@ pub(super) static SPECS: &[S] = &[
         |a| ConstraintType::MidpointOfLineOnExtension(a.p(0), a.p(1), a.p(2), a.p(3)),
     )
     .extension(),
-    // Deprecated in 0.1.6 for `midpoint` with `entities`; removed in 0.1.7.
-    S::new("midpoint", &[("point", Point), ("line", Line)], |a| {
-        ConstraintType::Midpoint(a.p(0), a.p(1), a.p(2))
-    })
-    .deprecated(),
-    S::new("midpoint_on", &[("line", Line), ("on", Line)], |a| {
-        ConstraintType::MidpointOfLineOnLine(a.p(0), a.p(1), a.p(2), a.p(3))
-    })
-    .segment()
-    .deprecated(),
-    S::new("midpoint_on", &[("line", Line), ("on", Line)], |a| {
-        ConstraintType::MidpointOfLineOnExtension(a.p(0), a.p(1), a.p(2), a.p(3))
-    })
-    .extension()
-    .deprecated(),
     S::new("tangent", &[("a", Line), ("b", Circle)], |a| {
         ConstraintType::TangentLineCircle(a.p(0), a.p(1), a.center(0), a.c(0))
     })

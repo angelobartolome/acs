@@ -4,9 +4,9 @@ This document specifies every constraint type in ACS: the geometric meaning, the
 parametric entities involved, the residual equations fed to the Dog-Leg solver, and
 the analytical Jacobian used during each iteration.
 
-Constraints are named here by their internal `ConstraintType`. The JSON names
-in parentheses are the native type that reaches each one, then the PlaneGCS
-dialect type (`GCS ...`); `USAGE.md` lists both vocabularies in full.
+Constraints are named here by their internal `ConstraintType`. The JSON name
+in parentheses is the native type that reaches each one; `USAGE.md` lists the
+vocabulary in full.
 
 ## Notation
 
@@ -411,16 +411,16 @@ partials, and `l2a`, `l2b` take theirs unchanged.
 
 The **Extension** of a Line is the infinite line through its endpoints. These
 constraints measure against it instead of the segment, so sketches authored
-under infinite-line semantics (PlaneGCS) keep their meaning. Each takes the
+under infinite-line semantics keep their meaning. Each takes the
 same entities as its segment counterpart and replaces the segment helpers
 with `S∞`; none has a "foot on the segment" condition.
 
 | Constraint (JSON type) | Segment counterpart | Residual |
 |------------------------|---------------------|----------|
-| `PointOnExtension(p, a, b)` (`on` + `extension`; GCS `point_on_extension_pl`) | PointOnLine | `R = S∞(p; a, b)` |
-| `DistancePointExtension(p, a, b, d)` (`distance` + `extension`; GCS `p2l_extension_distance`) | DistancePointLine | `d > 0: R = \|S∞(p; a, b)\| − d`; `d = 0: R = S∞(p; a, b)` |
-| `TangentExtensionCircle(a, b, c_center, c)` (`tangent` + `extension`; GCS `tangent_extension_lc`) | TangentLineCircle | `R = \|S∞(c_center; a, b)\| − r` (R₀ of TangentLineCircle, no R₁) |
-| `MidpointOfLineOnExtension(l1a, l1b, l2a, l2b)` (`midpoint` `[line, line]` + `extension`; GCS `midpoint_on_extension_ll`) | MidpointOfLineOnLine | `R = S∞(m; l2a, l2b)`, `m = (l1a + l1b)/2` |
+| `PointOnExtension(p, a, b)` (`on` + `extension`) | PointOnLine | `R = S∞(p; a, b)` |
+| `DistancePointExtension(p, a, b, d)` (`distance` + `extension`) | DistancePointLine | `d > 0: R = \|S∞(p; a, b)\| − d`; `d = 0: R = S∞(p; a, b)` |
+| `TangentExtensionCircle(a, b, c_center, c)` (`tangent` + `extension`) | TangentLineCircle | `R = \|S∞(c_center; a, b)\| − r` (R₀ of TangentLineCircle, no R₁) |
+| `MidpointOfLineOnExtension(l1a, l1b, l2a, l2b)` (`midpoint` `[line, line]` + `extension`) | MidpointOfLineOnLine | `R = S∞(m; l2a, l2b)`, `m = (l1a + l1b)/2` |
 
 **Jacobians:** `∂S∞` from the shared section; for the `|S∞|` forms,
 `sign(S∞)·∂S∞` (and `∂R/∂r = −1` for the tangent). For the midpoint, `l1a`
@@ -429,8 +429,7 @@ and `l1b` each get half of the `(px, py)` partials. As with DistancePointLine,
 
 ### 14  SignedDistancePointExtension
 
-`SignedDistancePointExtension(p, a, b, d, side)` (`offset`; GCS
-`p2l_signed_distance`), used
+`SignedDistancePointExtension(p, a, b, d, side)` (`offset`), used
 by Linked Offsets. Always measured against the Extension, since an offset
 line's endpoints routinely stick out past its source. `σ = −1` when `side < 0`,
 else `+1` (`+1` is left of `a → b`).
@@ -447,21 +446,21 @@ side (or pulled across to it) and the row never vanishes.
 
 These relate scalar **operands**, each a constant (a number or a Parameter's
 value, resolved when the constraint is built) or a solver variable named by a
-property reference (native `{entity, property}`, GCS `{o_id, prop}`): a
+property reference (`{entity, property}`): a
 Point's `x`/`y` or a Circle's or Arc's `radius`.
 Only variable operands are columns.
 
 | Constraint (JSON type) | Residual | Partials (variable operands) |
 |------------------------|----------|------------------------------|
-| `Difference(q1, q2, δ)` (`difference`; GCS `difference`) | `R = q2 − q1 − δ` | `∂q1 = −1`, `∂q2 = +1`, `∂δ = −1` |
-| `Equal(q1, q2)` (`equal` over values; GCS `equal`) | `R = q1 − q2` | `∂q1 = +1`, `∂q2 = −1` |
+| `Difference(q1, q2, δ)` (`difference`) | `R = q2 − q1 − δ` | `∂q1 = −1`, `∂q2 = +1`, `∂δ = −1` |
+| `Equal(q1, q2)` (`equal` over values) | `R = q1 − q2` | `∂q1 = +1`, `∂q2 = −1` |
 
 The same variable may appear twice (its partials add). With no variable
 operand the row is constant: it holds or it is Conflicting.
 
 ### 16  PointPointAngle
 
-`PointPointAngle(p1, p2, θ)` (`direction`; GCS `p2p_angle`): the direction of `p1 → p2` is `θ`
+`PointPointAngle(p1, p2, θ)` (`direction`): the direction of `p1 → p2` is `θ`
 radians counter-clockwise from +X. With `(dx, dy) = p2 − p1` rotated by `−θ`:
 
 ```
@@ -473,15 +472,14 @@ R = atan2(v, u)                      // signed angle from θ to p1 → p2, in (�
 ∂p1 = −∂d, ∂p2 = +∂d
 ```
 
-PlaneGCS's form. Unlike `dot·sinθ − cross·cosθ` (Angle) it has no root at
+Unlike `dot·sinθ − cross·cosθ` (Angle) it has no root at
 `θ + π`. When `p1 = p2` the residual is 0 and the row is zero.
 
 ### 17  MirrorPointExtension
 
-`MirrorPointExtension(A, B, a, b)` (`mirror`; GCS `mirror_point_ppl`,
-`p2p_symmetric_ppl`): `B` is `A` reflected
+`MirrorPointExtension(A, B, a, b)` (`mirror`): `B` is `A` reflected
 across the Extension of the axis Line `a → b` (a mirror reflects across the
-whole line, as in PlaneGCS). With `D = b − a`, `L = |D|`, unit normal
+whole line). With `D = b − a`, `L = |D|`, unit normal
 `n̂ = (−Dy, Dx) / L` and `s = S∞(A; a, b)` (the shared signed distance):
 
 ```
@@ -502,7 +500,7 @@ partials w.r.t. the line's points.) A degenerate axis (`l² ≈ 0`) uses
 
 ### 18  CircularInstance
 
-`CircularInstance(p0, pk, c, θ)` (`rotation`; GCS `circular_instance`): `pk` is `p0` rotated
+`CircularInstance(p0, pk, c, θ)` (`rotation`): `pk` is `p0` rotated
 by `θ` (counter-clockwise) about `c`. With `v = p0 − c`:
 
 ```
@@ -517,7 +515,7 @@ Driven: p0, pk.  Guide: c.
 
 ### 19  LinearInstance
 
-`LinearInstance(p0, pk, d1, d2, s₀, n)` (`translation`; GCS `linear_instance`): `pk` is `p0`
+`LinearInstance(p0, pk, d1, d2, s₀, n)` (`translation`): `pk` is `p0`
 moved `s = s₀·n` along the unit direction `u = D / L`, `D = d2 − d1`,
 `L = |D|`:
 
@@ -551,9 +549,9 @@ row is 0, so like the segment's `O` it removes no degree of freedom there.
 
 | Constraint (JSON type) | Residuals |
 |------------------------|-----------|
-| `ArcRules(c, s, e, arc)` (`arc_rules`; GCS `arc_rules`) | `R₀ = sx − cx − r·cos α`, `R₁ = sy − cy − r·sin α`, `R₂ = ex − cx − r·cos β`, `R₃ = ey − cy − r·sin β` |
-| `PointOnArc(p, c, arc)` (`on`; GCS `point_on_arc`) | `R₀ = ρ − r`, `R₁ = r·A(φ; α, β)`, with `v = p − c`, `ρ = \|v\|`, `φ = atan2(vy, vx)` |
-| `TangentLineArc(a, b, c, arc)` (`tangent`; GCS `tangent_la`) | `R₀ = \|S∞(c; a, b)\| − r`, `R₁ = O(c; a, b)`, `R₂ = r·A(φ; α, β)`, `φ` the direction from `c` to the tangency point |
+| `ArcRules(c, s, e, arc)` (implicit, every arc) | `R₀ = sx − cx − r·cos α`, `R₁ = sy − cy − r·sin α`, `R₂ = ex − cx − r·cos β`, `R₃ = ey − cy − r·sin β` |
+| `PointOnArc(p, c, arc)` (`on`) | `R₀ = ρ − r`, `R₁ = r·A(φ; α, β)`, with `v = p − c`, `ρ = \|v\|`, `φ = atan2(vy, vx)` |
+| `TangentLineArc(a, b, c, arc)` (`tangent`) | `R₀ = \|S∞(c; a, b)\| − r`, `R₁ = O(c; a, b)`, `R₂ = r·A(φ; α, β)`, `φ` the direction from `c` to the tangency point |
 
 **ArcRules Jacobian:** `∂R₀/∂(cx, sx, r, α) = (−1, 1, −cos α, r·sin α)`,
 `∂R₁/∂(cy, sy, r, α) = (−1, 1, −sin α, −r·cos α)`, and the same for `R₂`, `R₃`
@@ -561,13 +559,13 @@ with `e` and `β`. Four equations over the nine variables leave a free arc with
 its endpoints five degrees of freedom (center, radius, two angles). These rows
 are implicit: `SketchSystem` adds them for every arc (they join its Component,
 hold exactly under soft goals and count in rank and diagnosis, but are never
-reported), and an explicit `ArcRules` over an arc's own points is a no-op.
+reported); no JSON type builds them.
 
 **PointOnArc Jacobian:** `∂R₀/∂p = v/ρ = −∂R₀/∂c`, `∂R₀/∂r = −1`.
 `∂φ/∂(px, py) = (−vy, vx)/ρ² = −∂φ/∂(cx, cy)`; `∂R₁ = r·∂A/∂φ·∂φ` for the
 points, `∂R₁/∂r = A`, `∂R₁/∂(α, β) = r·∂A/∂(α, β)`. At `ρ = 0` only
 `∂R₀/∂r` is set. The circle residual is unsquared (unlike PointOnCircle) and
-matches PlaneGCS's `point_on_arc` (a point-to-center distance of `r`); `R₁` is
+is a point-to-center distance of `r`; `R₁` is
 ACS's addition, since an Arc is its span, as a Line is its segment.
 
 **TangentLineArc Jacobian:** `R₀`, `R₁` as TangentLineCircle. The tangency
@@ -576,12 +574,12 @@ point is the foot of the perpendicular from `c`, in direction
 (`+1` at 0). It depends only on the line's direction:
 `∂φ/∂(ax, ay, bx, by) = (dy, −dx, −dy, dx)/L²`, and `c` doesn't turn it.
 `∂R₂ = r·∂A/∂φ·∂φ` for `a`, `b`; `∂R₂/∂r = A`; `∂R₂/∂(α, β) = r·∂A/∂(α, β)`.
-PlaneGCS's `tangent_la` is only `R₀` against the infinite line; ACS keeps the
-tangency on the segment (as `tangent_lc`) and on the arc's span.
+`R₀` alone would be tangency to the infinite line; ACS keeps the tangency on
+the segment (as line–circle `tangent`) and on the arc's span.
 
 **Tangency at a shared point** (`TangentAtPoint(p, o, c)`). When a line
-endpoint *is* one of the arc's endpoints (same id; a slot's lines), both
-vocabularies build this instead of `TangentLineArc`. The distance form is
+endpoint *is* one of the arc's endpoints (same id; a slot's lines),
+`tangent` builds this instead of `TangentLineArc`. The distance form is
 degenerate there: through a point already on the arc, `|S∞| ≤ r` with equality
 only at tangency, so `R₀` changes quadratically as the line turns and its row
 vanishes at the solution, which makes diagnosis report spurious Redundant
@@ -648,10 +646,10 @@ A free ellipse has 5 degrees of freedom.
 
 | Constraint (JSON type) | Residuals |
 |------------------------|-----------|
-| `PointOnEllipse(p, c, f, E)` (`on`; GCS `point_on_ellipse`) | `R₀ = \|p − f\| + \|p − f₂\| − 2A` |
+| `PointOnEllipse(p, c, f, E)` (`on`) | `R₀ = \|p − f\| + \|p − f₂\| − 2A` |
 | `EllipseAxisPoint(p, c, f, E, axis)` (`ellipse_axis`) | with `d = p − c`: major `R₀ = u × d`, `R₁ = \|d\| − A`; minor `R₀ = u · d`, `R₁ = \|d\| − b` |
-| `EllipseDiameter(p₁, p₂, c, f, E, axis)` (`ellipse_axis` with `a`, `b`; GCS `internal_alignment_ellipse_major_diameter` / `_minor_diameter`) | with `m = (p₁ + p₂)/2`, `h = (p₂ − p₁)/2`: `R₀,₁ = m − c`; major `R₂ = u × h`, `R₃ = \|h\| − A`; minor `R₂ = u · h`, `R₃ = \|h\| − b` |
-| `TangentLineEllipse(a, b, c, f, E)` (`tangent`; GCS `tangent_le`) | with `L = \|b − a\|`, `g = (b − a)/L`, `ν = rot90(g)`, `sᵢ = ν·(fᵢ − a)`, `σᵢ = g·(fᵢ − a)` (`f₁ = f`): `R₀ = \|c − f + s₁ν\| − A`, `R₁ = overshoot of σ_T = (s₁σ₂ + s₂σ₁)/(s₁ + s₂)` past `[0, L]` |
+| `EllipseDiameter(p₁, p₂, c, f, E, axis)` (`ellipse_axis` with `a`, `b`) | with `m = (p₁ + p₂)/2`, `h = (p₂ − p₁)/2`: `R₀,₁ = m − c`; major `R₂ = u × h`, `R₃ = \|h\| − A`; minor `R₂ = u · h`, `R₃ = \|h\| − b` |
+| `TangentLineEllipse(a, b, c, f, E)` (`tangent`) | with `L = \|b − a\|`, `g = (b − a)/L`, `ν = rot90(g)`, `sᵢ = ν·(fᵢ − a)`, `σᵢ = g·(fᵢ − a)` (`f₁ = f`): `R₀ = \|c − f + s₁ν\| − A`, `R₁ = overshoot of σ_T = (s₁σ₂ + s₂σ₁)/(s₁ + s₂)` past `[0, L]` |
 
 All are unsquared and match GCS's semantics: `PointOnEllipse` is GCS's
 residual (the focal-distance sum); `R₀` of the tangent is half of GCS's
@@ -779,7 +777,6 @@ pub enum ConstraintType {
     Difference(Operand, Operand, Operand),                // param1, param2, difference
     Equal(Operand, Operand),                              // param1, param2
     // Arcs
-    ArcRules(String, String, String, String),       // center_id, start_id, end_id, arc_id
     PointOnArc(String, String, String),             // point_id, arc_center_id, arc_id
     TangentLineArc(String, String, String, String), // line_pa, line_pb, arc_center_id, arc_id
     TangentAtPoint(String, String, String),         // shared_point_id, other_line_end_id, arc_center_id

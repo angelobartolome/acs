@@ -1,15 +1,12 @@
 //! JSON sketch API: parses primitives, solves, and builds the response.
-//! Constraint types and their fields are declared in `constraint_catalog`,
-//! once per vocabulary: ACS's native one ([`solve_sketch_json`]) and the
-//! PlaneGCS dialect ([`solve_planegcs_sketch_json`]). The
-//! envelope, geometry primitives and Parameters are the same in both.
+//! Constraint types and their fields are declared in `constraint_catalog`.
 
 use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
 use crate::geometry::{Arc as GeoArc, Circle, Ellipse, Line, Point};
-use crate::constraint_catalog::{References, Vocabulary};
+use crate::constraint_catalog::{self, References};
 use crate::{ConstraintSolver, SolverResult};
 
 fn as_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -280,21 +277,8 @@ fn error_response(r: Rejection) -> String {
     out.to_string()
 }
 
-/// Solves one sketch written in ACS's native constraint vocabulary
-/// (`acsSolveSketch`). See [`solve_sketch_json_in`] for the contract.
-pub fn solve_sketch_json(request: &str) -> Result<String, String> {
-    solve_sketch_json_in(Vocabulary::Native, request)
-}
-
-/// Solves one sketch written in the PlaneGCS dialect, the constraint types
-/// the dialect accepts (`P3DSketch_Solve`, `acsSolveSketchPlaneGcs`). See
-/// [`solve_sketch_json_in`] for the contract.
-pub fn solve_planegcs_sketch_json(request: &str) -> Result<String, String> {
-    solve_sketch_json_in(Vocabulary::PlaneGcs, request)
-}
-
-/// Solves one sketch whose constraints speak `vocabulary`, using the
-/// contract of `P3DSketch_Solve`:
+/// Solves one sketch (`acsSolveSketch`, `P3DSketch_Solve`), with this
+/// contract:
 ///
 /// - Request: `{ "version": 1, "primitives": [...], "maxIterations"?: n }`.
 /// - Response: `{ "version": 1, "status": "converged" | "failed",
@@ -308,14 +292,14 @@ pub fn solve_planegcs_sketch_json(request: &str) -> Result<String, String> {
 /// status, and `Err(response)` with `status: "invalid"` and an `error` naming
 /// the problem otherwise: malformed JSON, a wrong version or `maxIterations`,
 /// a duplicate id, an unknown or unsupported type, a missing field, a
-/// reference to a missing entity or (native) a combination of entity kinds
+/// reference to a missing entity or a combination of entity kinds
 /// no variant of the type takes. When the problem is a constraint, the
 /// response also carries its `constraintId`.
-pub fn solve_sketch_json_in(vocabulary: Vocabulary, request: &str) -> Result<String, String> {
-    solve_request(vocabulary, request).map_err(error_response)
+pub fn solve_sketch_json(request: &str) -> Result<String, String> {
+    solve_request(request).map_err(error_response)
 }
 
-fn solve_request(vocabulary: Vocabulary, request: &str) -> Result<String, Rejection> {
+fn solve_request(request: &str) -> Result<String, Rejection> {
     let root: Value = serde_json::from_str(request).map_err(|e| format!("invalid JSON: {e}"))?;
     if root.get("version").and_then(Value::as_f64) != Some(1.0) {
         return Err("unsupported request version".into());
@@ -337,14 +321,7 @@ fn solve_request(vocabulary: Vocabulary, request: &str) -> Result<String, Reject
     let mut typed: Vec<(&str, &str, &Value)> = Vec::with_capacity(primitives.len());
     for (i, p) in primitives.iter().enumerate() {
         let t = as_str(p, "type").ok_or_else(|| format!("primitive #{i} has no type"))?;
-        let id = match as_str(p, "id") {
-            Some(id) => id,
-            // GCS keys a Parameter by its `name`, and GCS-style clients send
-            // them without an `id`; constraints then reference the name.
-            None if t == PARAM && vocabulary == Vocabulary::PlaneGcs => as_str(p, "name")
-                .ok_or_else(|| format!("primitive #{i} has no id or name"))?,
-            None => return Err(format!("primitive #{i} has no id").into()),
-        };
+        let id = as_str(p, "id").ok_or_else(|| format!("primitive #{i} has no id"))?;
         if !seen.insert(id) {
             return Err(format!("duplicate id '{id}'").into());
         }
@@ -362,7 +339,6 @@ fn solve_request(vocabulary: Vocabulary, request: &str) -> Result<String, Reject
             .collect(),
         arc_endpoints: build_arc_endpoints(primitives),
         ellipses: build_ellipses(primitives),
-        vocabulary,
     };
 
     for &(t, id, p) in typed.iter().filter(|(t, ..)| is_geometry(t)) {
@@ -373,8 +349,7 @@ fn solve_request(vocabulary: Vocabulary, request: &str) -> Result<String, Reject
     let mut constraint_ids: Vec<&str> = Vec::new();
     for &(t, id, p) in typed.iter().filter(|(t, ..)| !is_geometry(t) && *t != PARAM) {
         let temporary = p.get("temporary").and_then(Value::as_bool).unwrap_or(false);
-        vocabulary
-            .parse(t, p, &refs)
+        constraint_catalog::parse(t, p, &refs)
             .and_then(|ct| {
                 if temporary {
                     cs.add_temporary_constraint(ct)

@@ -117,7 +117,7 @@ impl VarEntity for Circle {
 /// An Arc: a span of a circle sweeping counter-clockwise from
 /// `start_angle` to `end_angle`, referencing its center, start and end
 /// Points. The endpoints always sit on it: the solver adds the arc's own
-/// rules (an `ArcRules` over these Points) for every arc.
+/// rules (an `ArcRulesConstraint` over these Points) for every arc.
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(getter_with_clone)]
 pub struct Arc {

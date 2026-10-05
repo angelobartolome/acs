@@ -11,7 +11,7 @@ ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numer
 - **Components:** each sketch is split into independent connected components, each solved on its own. A built-in pre-solver skips any component whose constraints already hold, about 5–8× faster on the bundled drag benchmark (`cargo test --release --test presolver_bench -- --nocapture`).
 - **Diagnosis:** every solve reports the **Conflicting** constraints (they can't all hold), the **Redundant** ones (they repeat what others already fix), the sketch's remaining **degrees of freedom**, and which entities are **fully constrained**.
 - **Drags as soft goals:** constraints marked `temporary` (the cursor's position while dragging) are met as closely as the real constraints allow, and the real ones always hold exactly.
-- **Two vocabularies:** a native one with one type per relationship, and a PlaneGCS dialect that accepts FreeCAD GCS's type names unchanged.
+- **One type per relationship:** `distance`, `on`, `tangent`, … cover every combination of entities they make sense for; the variant is inferred from the entities referenced.
 
 ---
 
@@ -29,7 +29,7 @@ ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numer
 
 ### Constraints
 
-ACS names constraints by relationship (its **native vocabulary**, used by the JSON API `acsSolveSketch`). One type covers every combination of entities it makes sense for; the variant is inferred from the kinds of the entities its fields reference. Lines are segments: constraints measure against the segment unless they are **Extension** variants (`extension: true`), which measure against the infinite line through a line's endpoints so sketches authored under infinite-line semantics, such as PlaneGCS's, keep their meaning. `internal: true` selects the inside variant of a distance to a circle.
+ACS names constraints by relationship (its **native vocabulary**, used by the JSON API `acsSolveSketch` and the C ABI `P3DSketch_Solve`). One type covers every combination of entities it makes sense for; the variant is inferred from the kinds of the entities its fields reference. Lines are segments: constraints measure against the segment unless they are **Extension** variants (`extension: true`), which measure against the infinite line through a line's endpoints so sketches authored under infinite-line semantics keep their meaning. `internal: true` selects the inside variant of tangency between circles and arcs, or of a distance to a circle.
 
 | Type | Entities | Description |
 |------|----------|-------------|
@@ -44,7 +44,6 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `offset` | point, line | Distance from a point to a line's Extension on a given side (Linked Offsets) |
 | `on` | point, line (`extension?`) / circle / arc / ellipse | Point lies on the segment (or Extension), circle, arc's span, or ellipse |
 | `midpoint` | `entities`: [point, line] or [line, line] (`extension?`) | A point is the midpoint of a line; or the midpoint of one line lies on another line (or its Extension) |
-| `midpoint_on` | line, line (`extension?`) | *Deprecated in 0.1.6, removed in 0.1.7*: use `midpoint` with `entities: [line, line]` (likewise `midpoint` with `point`, `line` fields: use `entities: [point, line]`) |
 | `tangent` | line–circle (`extension?`), line–arc, line–ellipse, circle–circle, circle–arc, arc–arc (`internal?`) | Tangency on the segment and on each arc's span; circles and arcs touch externally, or one inside the other with `internal: true`; arcs sharing an endpoint are tangent at it |
 | `concentric` | circle/arc, circle/arc | Share a center |
 | `equal` | line–line, circle/arc–circle/arc, or values | Equal length, equal radius, or `a = b` |
@@ -59,8 +58,6 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `ellipse_axis` | ellipse, point or two points, `which` (`major`/`minor`) | A point is an end of an ellipse's major or minor axis; or two points are its opposite ends |
 
 Values (for `equal` and `difference`) are constants (numbers or sketch Parameters) or entity properties the solver may move (a point's `x`/`y`, a circle's or arc's `radius`, an ellipse's `radmin`).
-
-**PlaneGCS dialect.** Clients written against FreeCAD GCS send its type names (`p2p_distance`, `horizontal_l`, `tangent_lc`, …). Its entry points, the C ABI's `P3DSketch_Solve` (with `P3D_SKETCH_VOCABULARY_PLANEGCS`) and the WASM export `acsSolveSketchPlaneGcs`, accept those types unchanged and map each onto the same internal constraints; see [USAGE.md](USAGE.md#planegcs-dialect) for the mapping.
 
 Internally each variant is a `ConstraintType` (`DistancePointLine`, `TangentExtensionCircle`, …) with an analytical Jacobian; see [SPEC.md](SPEC.md).
 
@@ -167,7 +164,7 @@ The WASM function takes a JSON string and returns a JSON string. The output `pri
 
 To drag, add constraints marked `temporary: true` that hold the dragged geometry at the cursor, such as `{ type: "x", id: "gx", point: "p", value: 6, temporary: true }`. A point on a line, dragged off it, slides along the line to the closest point. See [USAGE.md](USAGE.md#drags-soft-goals).
 
-`acsConstraintCatalog()` and `acsPlaneGcsConstraintCatalog()` return each vocabulary's constraint types and fields as JSON. For the full JSON input/output format, constraint type strings, and performance tips see [USAGE.md](USAGE.md).
+`acsConstraintCatalog()` returns the constraint types and fields as JSON. For the full JSON input/output format, constraint type strings, and performance tips see [USAGE.md](USAGE.md).
 
 ---
 
@@ -196,17 +193,12 @@ wasm-pack build --target web --out-dir pkg
 With the `c-abi` feature, the static library (`libacs.a`) exports the sketch solver C ABI, declared in [`include/p3d_sketch_solver.h`](include/p3d_sketch_solver.h):
 
 ```c
-typedef enum {
-    P3D_SKETCH_VOCABULARY_PLANEGCS = 0, // FreeCAD GCS's type names (the default)
-    P3D_SKETCH_VOCABULARY_NATIVE = 1,   // ACS's own types
-} P3DSketchVocabulary;
-
-// 0 = understood, non-zero = malformed (an unknown vocabulary included)
-int  P3DSketch_Solve(const char *requestJson, P3DSketchVocabulary vocabulary, char **responseJson);
+// 0 = understood, non-zero = malformed
+int  P3DSketch_Solve(const char *requestJson, char **responseJson);
 void P3DSketch_Free(char *p); // releases *responseJson
 ```
 
-The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, with constraints in the [PlaneGCS dialect](USAGE.md#planegcs-dialect) (as `acsSolveSketchPlaneGcs` in WASM) or the native vocabulary (as `acsSolveSketch`), as `vocabulary` says. `scripts/release.sh` builds macOS arm64, iOS arm64, iOS Simulator and Linux x86_64 archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`; a Linux program links it with `-lpthread -ldl -lm`), the Apple three as dynamic frameworks in one XCFramework (`dist/acs-<version>-xcframework.zip`, unpacking to `ACS.xcframework`, module `ACS`), and the WASM npm tarball (`dist/acs-<version>.tgz`).
+The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, exactly as `acsSolveSketch` answers it. (Before 0.1.7 `P3DSketch_Solve` took a `vocabulary` argument between the request and the response pointer. The symbol name is unchanged, so nothing catches a caller built against the old header at link time: rebuild it against the new one.) `scripts/release.sh` builds macOS arm64, iOS arm64, iOS Simulator and Linux x86_64 archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`; a Linux program links it with `-lpthread -ldl -lm`), the Apple three as dynamic frameworks in one XCFramework (`dist/acs-<version>-xcframework.zip`, unpacking to `ACS.xcframework`, module `ACS`), and the WASM npm tarball (`dist/acs-<version>.tgz`).
 
 An app on Apple platforms links the XCFramework rather than the static library. Rust's exception personality routine, beside Swift's, C++'s and Objective-C's, is one more than compact unwind can encode in one image; in a framework of its own it no longer counts against the app's three.
 

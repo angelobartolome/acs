@@ -2,8 +2,7 @@
  * C smoke test for the sketch solver C ABI (include/p3d_sketch_solver.h).
  *
  * Reads a request from stdin (or passes NULL with --null), solves it with
- * P3DSketch_Solve in the PlaneGCS dialect (or the native vocabulary with
- * --native), writes the response to stdout, releases it with P3DSketch_Free,
+ * P3DSketch_Solve, writes the response to stdout, releases it with P3DSketch_Free,
  * and exits with P3DSketch_Solve's return value.
  * Built and driven by tests/c_abi_test.rs.
  */
@@ -33,10 +32,8 @@ static char *read_stdin(void) {
 
 int main(int argc, char **argv) {
     int null_request = 0;
-    P3DSketchVocabulary vocabulary = P3D_SKETCH_VOCABULARY_PLANEGCS;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--null") == 0) null_request = 1;
-        if (strcmp(argv[i], "--native") == 0) vocabulary = P3D_SKETCH_VOCABULARY_NATIVE;
     }
 
     char *request = NULL;
@@ -46,7 +43,7 @@ int main(int argc, char **argv) {
     }
 
     char *response = NULL;
-    int code = P3DSketch_Solve(request, vocabulary, &response);
+    int code = P3DSketch_Solve(request, &response);
     free(request);
     if (!response) return 101;
 

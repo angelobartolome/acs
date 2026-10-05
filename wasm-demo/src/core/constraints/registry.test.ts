@@ -48,12 +48,8 @@ describe("ConstraintRegistry", () => {
       fields: { name: string; index?: number; kind: string }[];
       extension?: boolean;
       internal?: boolean;
-      deprecated?: boolean;
     };
-    // Deprecated forms are accepted for one more release, never offered.
-    const catalog = (JSON.parse(acs.acsConstraintCatalog()) as Row[]).filter(
-      (r) => r.deprecated !== true,
-    );
+    const catalog = JSON.parse(acs.acsConstraintCatalog()) as Row[];
     const asRow = (def: ConstraintDef): Row => {
       const kinds = expandedKinds(def);
       const row: Row = {

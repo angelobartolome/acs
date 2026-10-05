@@ -327,7 +327,7 @@ pub enum ConstraintType {
     MidpointOfLineOnLine(String, String, String, String),
 
     // ── Extension variants (measure against the infinite line through a
-    //    Line's endpoints; for sketches authored under PlaneGCS semantics) ──
+    //    Line's endpoints; native `extension: true`) ──
     /// A point lies on a Line's Extension.
     /// (point_id, line_pa_id, line_pb_id)
     PointOnExtension(String, String, String),
@@ -359,11 +359,6 @@ pub enum ConstraintType {
     Equal(Operand, Operand),
 
     // ── Arcs ──────────────────────────────────────────────────────────────────
-    /// An arc's start and end Points lie at its radius from its center, at
-    /// its start and end angles.
-    /// (center_point_id, start_point_id, end_point_id, arc_id)
-    ArcRules(String, String, String, String),
-
     /// A point lies on an arc's span (on its circle, between its start and
     /// end angles counter-clockwise).
     /// (point_id, arc_center_point_id, arc_id)
@@ -407,7 +402,7 @@ pub enum ConstraintType {
     EllipseAxisPoint(String, String, String, String, EllipseAxis),
 
     /// Two points are the two endpoints of an ellipse's major or minor axis
-    /// (PlaneGCS's internal-alignment diameter).
+    /// (native two-point `ellipse_axis`).
     /// (p1_id, p2_id, ellipse_center_id, ellipse_focus1_id, ellipse_id, axis)
     EllipseDiameter(String, String, String, String, String, EllipseAxis),
 
@@ -581,9 +576,6 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         )),
         ConstraintType::Equal(a, b) => Ok(Box::new(
             crate::constraints::equal::EqualConstraint::new(a, b),
-        )),
-        ConstraintType::ArcRules(center, start, end, arc) => Ok(Box::new(
-            crate::constraints::arc_rules::ArcRulesConstraint::new(center, start, end, arc),
         )),
         ConstraintType::PointOnArc(p, center, arc) => Ok(Box::new(
             crate::constraints::point_on_arc::PointOnArcConstraint::new(p, center, arc),
