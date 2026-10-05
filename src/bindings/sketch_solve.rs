@@ -12,7 +12,8 @@ pub fn acs_solve_sketch(request_json: &str) -> String {
 }
 
 /// Every constraint type `acsSolveSketch` accepts, one object per variant:
-/// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"? }]`.
+/// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?,
+/// "internal"? }]`.
 #[wasm_bindgen(js_name = acsConstraintCatalog)]
 pub fn acs_constraint_catalog() -> String {
     catalog_json()

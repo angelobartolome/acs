@@ -613,7 +613,7 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
             )))
         }
         ConstraintType::TangentArcsAtPoint(p, c1, c2, internal) => Ok(Box::new(
-            crate::constraints::tangent_curves::TangentArcsAtPointConstraint::new(
+            crate::constraints::tangent_arcs_at_point::TangentArcsAtPointConstraint::new(
                 p, c1, c2, internal,
             ),
         )),
@@ -694,10 +694,19 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
                 ),
             ))
         }
-        ConstraintType::DistanceLineLine(a1, a2, b1, b2, d) => Ok(Box::new(
-            crate::constraints::distance_line_line::DistanceLineLineConstraint::new(
-                a1, a2, b1, b2, d,
-            ),
-        )),
+        ConstraintType::DistanceLineLine(a1, a2, b1, b2, d) => {
+            // At 0 the side-free residual |d| − value only touches zero:
+            // two Lines at distance 0 are `collinear`.
+            if d <= 0.0 {
+                return Err(format!(
+                    "distance {d} between lines is not positive (use collinear for 0)"
+                ));
+            }
+            Ok(Box::new(
+                crate::constraints::distance_line_line::DistanceLineLineConstraint::new(
+                    a1, a2, b1, b2, d,
+                ),
+            ))
+        }
     }
 }

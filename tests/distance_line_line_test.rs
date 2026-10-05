@@ -67,3 +67,13 @@ fn it_implies_parallel() {
     );
     assert_eq!(resp["redundant"], json!(["p"]));
 }
+
+#[test]
+fn a_distance_of_zero_or_less_is_rejected() {
+    for value in [0.0, -1.0] {
+        let rest = json!([{ "id": "k", "type": "distance", "a": "a", "b": "b", "value": value }]);
+        let out = solve_sketch_json(&request(1.0, 2.0, rest)).unwrap_err();
+        assert!(out.contains("not positive (use collinear for 0)"), "{out}");
+        assert!(out.contains("\"constraintId\":\"k\""), "{out}");
+    }
+}

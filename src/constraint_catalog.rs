@@ -324,7 +324,8 @@ impl ExtensionFlag {
 }
 
 /// Whether a row takes the native `internal` flag (tangency between circles
-/// and arcs), and which value selects it.
+/// and arcs; `distance` point–circle and circle–circle), and which value
+/// selects it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InternalFlag {
     /// The row has no inside variant; `internal: true` doesn't select it.
