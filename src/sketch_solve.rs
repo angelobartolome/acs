@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use crate::geometry::{Arc as GeoArc, Circle, Ellipse, Line, Point};
 use crate::constraint_catalog::{self, References};
-use crate::{ConstraintSolver, SolverResult};
+use crate::{ConstraintSolver, ConstraintType, SolverResult};
 
 fn as_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key)?.as_str()
@@ -347,18 +347,21 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
     check_geometry_references(&cs, &typed)?;
     // JSON id of each constraint, by `ConstraintSolver` index.
     let mut constraint_ids: Vec<&str> = Vec::new();
+    let mut constraints: Vec<(ConstraintType, bool)> = Vec::new();
     for &(t, id, p) in typed.iter().filter(|(t, ..)| !is_geometry(t) && *t != PARAM) {
         let temporary = p.get("temporary").and_then(Value::as_bool).unwrap_or(false);
-        constraint_catalog::parse(t, p, &refs)
-            .and_then(|ct| {
-                if temporary {
-                    cs.add_temporary_constraint(ct)
-                } else {
-                    cs.add_constraint(ct)
-                }
-            })
-            .map_err(|e| constraint_error(id, e))?;
+        let ct = constraint_catalog::parse(t, p, &refs).map_err(|e| constraint_error(id, e))?;
+        constraints.push((ct, temporary));
         constraint_ids.push(id);
+    }
+    constraint_catalog::tangent_at_held_endpoints(&mut constraints);
+    for ((ct, temporary), id) in constraints.into_iter().zip(&constraint_ids) {
+        if temporary {
+            cs.add_temporary_constraint(ct)
+        } else {
+            cs.add_constraint(ct)
+        }
+        .map_err(|e| constraint_error(id, e))?;
     }
 
     let (converged, iterations, initial_error, final_error) = match cs.solve()? {
