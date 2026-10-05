@@ -42,6 +42,7 @@ pub mod point_on_ellipse;
 pub mod tangent_line_ellipse;
 pub mod ellipse_axis_point;
 pub mod ellipse_diameter;
+pub mod collinear;
 
 pub use angle::*;
 pub use base::*;
@@ -84,3 +85,4 @@ pub use point_on_ellipse::*;
 pub use tangent_line_ellipse::*;
 pub use ellipse_axis_point::*;
 pub use ellipse_diameter::*;
+pub use collinear::*;

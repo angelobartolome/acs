@@ -436,6 +436,11 @@ pub enum ConstraintType {
     /// the same side.
     /// (point_id, arc1_center_point_id, arc2_center_point_id, internal)
     TangentArcsAtPoint(String, String, String, bool),
+
+    /// Two Lines lie on one infinite line: both endpoints of Line B lie on
+    /// Line A's Extension (the segments need not overlap).
+    /// (a_p1_id, a_p2_id, b_p1_id, b_p2_id)
+    Collinear(String, String, String, String),
 }
 
 pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Constraint>, String> {
@@ -618,6 +623,9 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
             crate::constraints::ellipse_diameter::EllipseDiameterConstraint::new(
                 p1, p2, center, focus, e, axis,
             ),
+        )),
+        ConstraintType::Collinear(a1, a2, b1, b2) => Ok(Box::new(
+            crate::constraints::collinear::CollinearConstraint::new(a1, a2, b1, b2),
         )),
     }
 }

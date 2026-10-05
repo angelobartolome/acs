@@ -252,9 +252,10 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         TangentCircleArc(..) => "TangentCircleArc",
         TangentArcs(..) => "TangentArcs",
         TangentArcsAtPoint(..) => "TangentArcsAtPoint",
+        Collinear(..) => "Collinear",
     }
 }
-const ALL_VARIANTS: [&str; 43] = [
+const ALL_VARIANTS: [&str; 44] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -298,6 +299,7 @@ const ALL_VARIANTS: [&str; 43] = [
     "TangentCircleArc",
     "TangentArcs",
     "TangentArcsAtPoint",
+    "Collinear",
 ];
 
 #[test]
@@ -425,6 +427,9 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::DistancePointExtension(s("p0"), s("p1"), s("p0"), 1.0),
         ConstraintType::DistancePointExtension(s("p0"), s("p1"), s("p0"), 0.0),
         ConstraintType::PointOnExtension(s("p2"), s("p1"), s("p2")),
+        ConstraintType::Collinear(s("p0"), s("p1"), s("p1"), s("p2")),
+        ConstraintType::Collinear(s("p0"), s("p1"), s("p2"), s("p0")),
+        ConstraintType::PointOnExtension(s("c1_center"), s("c1_center"), s("p1")),
         ConstraintType::TangentExtensionCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1")),
         ConstraintType::Midpoint(s("p0"), s("p0"), s("p1")),
         ConstraintType::TangentLineCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1")),

@@ -36,6 +36,8 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `coincident` | point, point | Two points overlap |
 | `horizontal` / `vertical` | line, or two points | Horizontal / vertical |
 | `parallel` / `perpendicular` | line, line | Two lines are parallel / perpendicular |
+| `collinear` | line, line | Both lines lie on one infinite line (the segments need not overlap) |
+| `normal` | line, circle or arc | The line's Extension passes through the curve's center |
 | `angle` | line, line | Directed angle between two lines (radians) |
 | `direction` | line, or two points | Direction from +X (radians, counter-clockwise) |
 | `distance` | point, point or line (`extension?`) | Point–point distance; point–segment distance; with `extension`, distance to the line's Extension |
