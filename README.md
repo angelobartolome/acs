@@ -202,19 +202,19 @@ int  P3DSketch_Solve(const char *requestJson, P3DSketchVocabulary vocabulary, ch
 void P3DSketch_Free(char *p); // releases *responseJson
 ```
 
-The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, with constraints in the [PlaneGCS dialect](USAGE.md#planegcs-dialect) (as `acsSolveSketchPlaneGcs` in WASM) or the native vocabulary (as `acsSolveSketch`), as `vocabulary` says. `scripts/release.sh` builds macOS arm64, iOS arm64 and iOS Simulator archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`) the same three as dynamic frameworks in one XCFramework (`dist/acs-<version>-xcframework.zip`, unpacking to `ACS.xcframework`, module `ACS`), and the WASM npm tarball (`dist/acs-<version>.tgz`).
+The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, with constraints in the [PlaneGCS dialect](USAGE.md#planegcs-dialect) (as `acsSolveSketchPlaneGcs` in WASM) or the native vocabulary (as `acsSolveSketch`), as `vocabulary` says. `scripts/release.sh` builds macOS arm64, iOS arm64, iOS Simulator and Linux x86_64 archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`; a Linux program links it with `-lpthread -ldl -lm`), the Apple three as dynamic frameworks in one XCFramework (`dist/acs-<version>-xcframework.zip`, unpacking to `ACS.xcframework`, module `ACS`), and the WASM npm tarball (`dist/acs-<version>.tgz`).
 
 An app on Apple platforms links the XCFramework rather than the static library. Rust's exception personality routine, beside Swift's, C++'s and Objective-C's, is one more than compact unwind can encode in one image; in a framework of its own it no longer counts against the app's three.
 
 ```bash
 cargo build --release --features c-abi
 ./scripts/release.sh   # everything, in parallel: the archives, the XCFramework and dist/acs-<version>.tgz
-./scripts/release.sh ios-arm64 wasm   # or only some pieces (macos-arm64, ios-arm64, ios-arm64-simulator, xcframework, wasm)
+./scripts/release.sh ios-arm64 wasm   # or only some pieces (macos-arm64, ios-arm64, ios-arm64-simulator, linux-x86_64, xcframework, wasm)
 ```
 
 ### Releases
 
-Each release publishes the crate to crates.io (`acs-solver`) and prebuilt artifacts on the [Releases](https://github.com/angelobartolome/acs/releases) page: the static library for macOS arm64, iOS arm64 and the iOS Simulator (`acs-<version>-<platform>.tar.gz`), the same as an XCFramework (`acs-<version>-xcframework.zip`), and the WASM npm package (`acs-<version>.tgz`, package `acs-solver`, installable with `npm install ./acs-<version>.tgz`).
+Each release publishes the crate to crates.io (`acs-solver`) and prebuilt artifacts on the [Releases](https://github.com/angelobartolome/acs/releases) page: the static library for macOS arm64, iOS arm64, the iOS Simulator and Linux x86_64 (`acs-<version>-<platform>.tar.gz`), the Apple three as an XCFramework (`acs-<version>-xcframework.zip`), and the WASM npm package (`acs-<version>.tgz`, package `acs-solver`, installable with `npm install ./acs-<version>.tgz`).
 
 To cut a release, set `version` in `Cargo.toml`, merge it, then push a matching tag:
 
@@ -222,7 +222,7 @@ To cut a release, set `version` in `Cargo.toml`, merge it, then push a matching 
 git tag v0.1.4 && git push origin v0.1.4
 ```
 
-The [Release workflow](.github/workflows/release.yml) checks that the tag matches the crate version, then runs in parallel jobs: clippy, the tests and `cargo publish --dry-run`; one macOS job per Apple platform (`scripts/release.sh <platform>`) and one for the XCFramework (`scripts/release.sh xcframework`); and the WASM package on Linux (`scripts/release.sh wasm`). A last job collects the artifacts, publishes the GitHub Release, then publishes the crate with the `CARGO_REGISTRY_TOKEN` repository secret. Run it manually (Actions → Release → Run workflow) to build the artifacts without publishing.
+The [Release workflow](.github/workflows/release.yml) checks that the tag matches the crate version, then runs in parallel jobs: clippy, the tests and `cargo publish --dry-run`; one macOS job per Apple platform (`scripts/release.sh <platform>`) and one for the XCFramework (`scripts/release.sh xcframework`); and on Linux the static library (`scripts/release.sh linux-x86_64`) and the WASM package (`scripts/release.sh wasm`). A last job collects the artifacts, publishes the GitHub Release, then publishes the crate with the `CARGO_REGISTRY_TOKEN` repository secret. Run it manually (Actions → Release → Run workflow) to build the artifacts without publishing.
 
 ---
 
