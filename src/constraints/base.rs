@@ -415,6 +415,27 @@ pub enum ConstraintType {
     /// is an arc endpoint): the line is perpendicular to the radius there.
     /// (point_id, other_line_end_id, arc_center_point_id)
     TangentAtPoint(String, String, String),
+
+    // ── Curve–curve tangency ──
+    /// Two circles touching inside: dist(centers) = |r1 − r2|.
+    /// (c1_center_point_id, c1_id, c2_center_point_id, c2_id)
+    TangentCirclesInternal(String, String, String, String),
+
+    /// A circle and an arc touching on the arc's span, externally
+    /// (dist(centers) = r1 + r2) or, when `internal`, inside (|r1 − r2|).
+    /// (circle_center_point_id, circle_id, arc_center_point_id, arc_id, internal)
+    TangentCircleArc(String, String, String, String, bool),
+
+    /// Two arcs touching on both spans, externally or, when `internal`,
+    /// inside.
+    /// (arc1_center_point_id, arc1_id, arc2_center_point_id, arc2_id, internal)
+    TangentArcs(String, String, String, String, bool),
+
+    /// Two arcs tangent at an endpoint they share: radii collinear there,
+    /// centers on opposite sides of it (external) or, when `internal`, on
+    /// the same side.
+    /// (point_id, arc1_center_point_id, arc2_center_point_id, internal)
+    TangentArcsAtPoint(String, String, String, bool),
 }
 
 pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Constraint>, String> {
@@ -530,6 +551,35 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         )),
         ConstraintType::TangentAtPoint(p, other, center) => Ok(Box::new(
             crate::constraints::tangent_at_point::TangentAtPointConstraint::new(p, other, center),
+        )),
+        ConstraintType::TangentCirclesInternal(c1_center, c1, c2_center, c2) => {
+            use crate::constraints::tangent_curves::{TangentCurve, TangentCurvesConstraint};
+            Ok(Box::new(TangentCurvesConstraint::new(
+                TangentCurve::circle(c1_center, c1),
+                TangentCurve::circle(c2_center, c2),
+                true,
+            )))
+        }
+        ConstraintType::TangentCircleArc(c_center, c, a_center, a, internal) => {
+            use crate::constraints::tangent_curves::{TangentCurve, TangentCurvesConstraint};
+            Ok(Box::new(TangentCurvesConstraint::new(
+                TangentCurve::circle(c_center, c),
+                TangentCurve::arc(a_center, a),
+                internal,
+            )))
+        }
+        ConstraintType::TangentArcs(a1_center, a1, a2_center, a2, internal) => {
+            use crate::constraints::tangent_curves::{TangentCurve, TangentCurvesConstraint};
+            Ok(Box::new(TangentCurvesConstraint::new(
+                TangentCurve::arc(a1_center, a1),
+                TangentCurve::arc(a2_center, a2),
+                internal,
+            )))
+        }
+        ConstraintType::TangentArcsAtPoint(p, c1, c2, internal) => Ok(Box::new(
+            crate::constraints::tangent_curves::TangentArcsAtPointConstraint::new(
+                p, c1, c2, internal,
+            ),
         )),
         ConstraintType::PointPointAngle(p1, p2, angle) => Ok(Box::new(
             crate::constraints::point_point_angle::PointPointAngleConstraint::new(p1, p2, angle),

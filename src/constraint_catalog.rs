@@ -5,8 +5,8 @@
 //! - **Native** ([`native`]): ACS's own, one type per relationship
 //!   (`distance`, `on`, `tangent`, …) with role-named fields. A type may have
 //!   several rows (variants); the one used is inferred from the kinds of the
-//!   entities its fields reference, and `extension: true` selects an
-//!   Extension variant.
+//!   entities its fields reference, `extension: true` selects an
+//!   Extension variant and `internal: true` an inside-tangency variant.
 //! - **PlaneGCS dialect** ([`planegcs`]): the GCS types, unchanged
 //!   (`p2p_distance`, `horizontal_l`, …), one row each.
 //!
@@ -83,9 +83,11 @@ impl Vocabulary {
 
     /// The catalog as JSON, one object per row:
     /// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?,
-    /// "deprecated"? }]`. A native type with several variants has several
-    /// rows; `extension` is present on rows that take the flag (`false`: the
-    /// segment variant, `true`: the Extension variant). A field with an
+    /// "internal"?, "deprecated"? }]`. A native type with several variants
+    /// has several rows; `extension` is present on rows that take the flag
+    /// (`false`: the segment variant, `true`: the Extension variant), and
+    /// `internal` likewise (`false`: external tangency, `true`: inside). A
+    /// field with an
     /// `index` is that element of the array field `name`. `deprecated: true`
     /// marks a form still accepted for one more release.
     pub fn catalog_json(self) -> String {
@@ -108,6 +110,11 @@ impl Vocabulary {
                     ExtensionFlag::NotAccepted => {}
                     ExtensionFlag::Segment => row["extension"] = json!(false),
                     ExtensionFlag::Extension => row["extension"] = json!(true),
+                }
+                match s.internal {
+                    InternalFlag::NotAccepted => {}
+                    InternalFlag::External => row["internal"] = json!(false),
+                    InternalFlag::Internal => row["internal"] = json!(true),
                 }
                 if s.deprecated {
                     row["deprecated"] = json!(true);
@@ -244,6 +251,27 @@ impl Args {
             ConstraintType::TangentLineArc(a, b, center, self.c(0))
         }
     }
+    /// Arc fields 0 and 1 tangent, inside when `internal`. When the arcs
+    /// share an endpoint, tangency is the angle between their radii at that
+    /// point (`TangentArcsAtPoint`); measuring it by distance there is
+    /// degenerate, as for `tangent_line_arc`. Otherwise, by distance
+    /// (`TangentArcs`).
+    fn tangent_arcs(&self, internal: bool) -> ConstraintType {
+        let (s0, e0) = (self.arc_start(0), self.arc_end(0));
+        let shared = [self.arc_start(1), self.arc_end(1)]
+            .into_iter()
+            .find(|p| *p == s0 || *p == e0);
+        match shared {
+            Some(p) => ConstraintType::TangentArcsAtPoint(p, self.center(0), self.center(1), internal),
+            None => ConstraintType::TangentArcs(
+                self.center(0),
+                self.c(0),
+                self.center(1),
+                self.c(1),
+                internal,
+            ),
+        }
+    }
     /// (center, focus, ellipse) IDs of Ellipse field `i`.
     fn e(&self, i: usize) -> (String, String, String) {
         let e = &self.ellipses[i];
@@ -348,12 +376,35 @@ impl ExtensionFlag {
     }
 }
 
+/// Whether a row takes the native `internal` flag (tangency between circles
+/// and arcs), and which value selects it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InternalFlag {
+    /// The row has no inside variant; `internal: true` doesn't select it.
+    NotAccepted,
+    /// External tangency: `internal` absent or `false`.
+    External,
+    /// Inside tangency: `internal: true`.
+    Internal,
+}
+
+impl InternalFlag {
+    /// Whether a constraint with `internal` set as given can select this row.
+    pub fn accepts(self, internal: bool) -> bool {
+        match self {
+            InternalFlag::NotAccepted | InternalFlag::External => !internal,
+            InternalFlag::Internal => internal,
+        }
+    }
+}
+
 /// One row of a catalog: a JSON `type` with one set of field kinds.
 pub struct ConstraintSpec {
     pub json_type: &'static str,
     /// (JSON field name, kind), in order.
     pub fields: &'static [(&'static str, FieldKind)],
     pub extension: ExtensionFlag,
+    pub internal: InternalFlag,
     /// A form still accepted, for one more release, with a replacement.
     pub deprecated: bool,
     build: fn(&Args) -> ConstraintType,
@@ -369,6 +420,7 @@ impl ConstraintSpec {
             json_type,
             fields,
             extension: ExtensionFlag::NotAccepted,
+            internal: InternalFlag::NotAccepted,
             deprecated: false,
             build,
         }
@@ -394,6 +446,23 @@ impl ConstraintSpec {
     pub const fn extension(self) -> Self {
         ConstraintSpec {
             extension: ExtensionFlag::Extension,
+            ..self
+        }
+    }
+
+    /// This row as the external variant of a tangency that has an inside
+    /// one (`internal` absent or `false`).
+    pub const fn external(self) -> Self {
+        ConstraintSpec {
+            internal: InternalFlag::External,
+            ..self
+        }
+    }
+
+    /// This row as the inside variant (`internal: true`).
+    pub const fn internal(self) -> Self {
+        ConstraintSpec {
+            internal: InternalFlag::Internal,
             ..self
         }
     }

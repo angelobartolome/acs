@@ -4,7 +4,7 @@
  * `acsConstraintCatalog` lists it.
  *
  * A native type (`distance`, `on`, `tangent`, …) has one variant per
- * combination of entity kinds (and `extension` flag); the solver infers the
+ * combination of entity kinds (and `extension` and `internal` flags); the solver infers the
  * variant from the entities a constraint references. The demo keeps one entry
  * per variant, under its own `key`, so each can be offered for the selection
  * it fits. UI buttons, selection validation, default scalar values and
@@ -55,6 +55,12 @@ export interface ConstraintDef {
    * variant, `false` for its segment sibling, absent when the type has none
    */
   extension?: boolean;
+  /**
+   * the JSON `internal` flag this variant sends: `true` for inside tangency
+   * between circles and arcs, `false` for its external sibling, absent when
+   * the type has none
+   */
+  internal?: boolean;
   label: string;
   /** short text drawn on the canvas next to the constrained entities */
   badge: string;
@@ -487,10 +493,61 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
   {
     key: "tangent_circles",
     type: "tangent",
+    internal: false,
     label: "Tangent Circles",
     badge: "tan",
     description: "Two circles touch externally",
     selection: [C(2)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_circles_internal",
+    type: "tangent",
+    internal: true,
+    label: "Tangent Inside",
+    badge: "tanI",
+    description: "Two circles touch, one inside the other",
+    selection: [C(2)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_circle_arc",
+    type: "tangent",
+    internal: false,
+    label: "Tangent",
+    badge: "tan",
+    description: "A circle and an arc touch externally, within the arc",
+    selection: [C(1), A(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_circle_arc_internal",
+    type: "tangent",
+    internal: true,
+    label: "Tangent Inside",
+    badge: "tanI",
+    description: "A circle and an arc touch, one inside the other, within the arc",
+    selection: [C(1), A(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_arcs",
+    type: "tangent",
+    internal: false,
+    label: "Tangent",
+    badge: "tan",
+    description: "Two arcs touch externally, within both arcs (or at an endpoint they share)",
+    selection: [A(2)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_arcs_internal",
+    type: "tangent",
+    internal: true,
+    label: "Tangent Inside",
+    badge: "tanI",
+    description: "Two arcs touch, one inside the other, within both arcs (or at an endpoint they share)",
+    selection: [A(2)],
     entityFields: ["a", "b"],
   },
   {
@@ -832,6 +889,7 @@ export function constraintToPrimitive(c: ConstraintInstance): JsonPrimitive {
   }
   const prim: JsonPrimitive = { id: c.id, type: def.type };
   if (def.extension === true) prim.extension = true;
+  if (def.internal === true) prim.internal = true;
   def.entityFields.forEach((field, i) => {
     writeField(prim, field, c.entities[i]);
   });
@@ -874,7 +932,8 @@ function matchPrimitive(
 /**
  * Parse a native JSON constraint primitive back into a ConstraintInstance
  * (used by import / raw JSON apply), choosing the variant whose entity kinds
- * (looked up with `resolve`) and `extension` flag match, as the solver does.
+ * (looked up with `resolve`) and `extension` and `internal` flags match, as
+ * the solver does.
  * Returns null for unknown types, unsupported combinations and constraints
  * over values, which the demo doesn't edit.
  */
@@ -885,10 +944,12 @@ export function primitiveToConstraint(
 ): ConstraintInstance | null {
   const type = typeof prim.type === "string" ? prim.type : "";
   const extension = prim.extension === true;
+  const internal = prim.internal === true;
   for (const def of CONSTRAINT_DEFS) {
     if (def.type !== type || (def.valueFields ?? []).length > 0) continue;
     if ((def.axisFields ?? []).length > 0) continue;
     if ((def.extension === true) !== extension) continue;
+    if ((def.internal === true) !== internal) continue;
     const entities = matchPrimitive(def, prim, resolve);
     if (entities === null) continue;
 

@@ -597,6 +597,46 @@ R = u·v / (|u|·|v|) = 0      (u·v when |u| or |v| ≈ 0)
 ∂|v|/|v|)`. `p` lies on the line (an endpoint) and on the arc (its implicit
 rules), so no segment or span residual is needed.
 
+**Curve–curve tangency** (`tangent` between circles and arcs; `TangentCirclesInternal(c₁, C₁, c₂, C₂)`, `TangentCircleArc(c₁, C, c₂, arc, internal)`, `TangentArcs(c₁, arc₁, c₂, arc₂, internal)`, all `TangentCurvesConstraint` in `src/constraints/tangent_curves.rs`; external circle–circle stays §4's `Tangent`). With `w = c₂ − c₁`, `d = |w|`, and for inside tangency `s = sign(r₁ − r₂)` (`+1` at equal radii):
+
+| Residual | Value |
+|----------|-------|
+| `R₀` (external) | `d − (r₁ + r₂)` |
+| `R₀` (internal) | `d − s·(r₁ − r₂)` |
+| `Rₖ`, one per Arc side, `a` then `b` | `rₖ·A(φₖ; αₖ, βₖ)` |
+
+The tangency point is on the line of centers: from `c₁` in direction `+w` and
+from `c₂` in direction `−w` (external), or from both in direction `s·w`
+(inside, from the larger circle's center through the smaller's). `φₖ` is that
+direction's angle. `internal` is chosen by the caller and never inferred, so a
+solve can't flip one form into the other; `s` follows the radii, which can
+only swap order through concentric equal circles.
+
+**Jacobian:** `∂R₀/∂c₂ = w/d = −∂R₀/∂c₁`; `∂R₀/∂(r₁, r₂) = (−1, −1)`
+(external) or `(−s, s)` (internal). At `d ≈ 0` only the radius partials are
+set. `φ` turns with `w` alone, either way along it:
+`∂φ/∂c₁ = (w_y, −w_x)/d² = −∂φ/∂c₂`; `∂Rₖ = rₖ·∂A/∂φ·∂φ` for the centers,
+`∂Rₖ/∂rₖ = A`, `∂Rₖ/∂(αₖ, βₖ) = rₖ·∂A/∂(α, β)`.
+
+**Arcs tangent at a shared endpoint** (`TangentArcsAtPoint(p, c₁, c₂,
+internal)`). When the two arcs share an endpoint Point (same id; a fillet
+chain), the native catalog builds this instead of `TangentArcs`, for the same
+reason as `TangentAtPoint`: through a point on both circles, `d` can only fall
+short of `r₁ + r₂` (or exceed `|r₁ − r₂|`), so `R₀` changes quadratically as an
+arc turns about the point and its row vanishes at tangency. With `v₁ = p − c₁`,
+`v₂ = p − c₂` and `θ = atan2(v₁ × v₂, v₁ · v₂)`, the angle from `v₁` to `v₂`:
+
+```
+R = θ                                   (internal: centers on the same side of p)
+R = atan2(−v₁ × v₂, −v₁ · v₂) = θ − π   (external: opposite sides), wrapped to (−π, π]
+(v₁ × v₂ when |v₁| or |v₂| ≈ 0)
+```
+
+Each has a single zero, the side named. `∂θ/∂v₁ = (v₁y, −v₁x)/|v₁|²`,
+`∂θ/∂v₂ = (−v₂y, v₂x)/|v₂|²` (both forms), and `∂v₁/∂p = ∂v₂/∂p = I`,
+`∂v₁/∂c₁ = ∂v₂/∂c₂ = −I`. `p` lies on both spans (an endpoint of each), so no
+span residual is needed.
+
 ### 21  Ellipses
 
 An **Ellipse** (GCS's model) references a center Point `c` and a
@@ -693,6 +733,11 @@ pub enum ConstraintType {
     ArcRules(String, String, String, String),       // center_id, start_id, end_id, arc_id
     PointOnArc(String, String, String),             // point_id, arc_center_id, arc_id
     TangentLineArc(String, String, String, String), // line_pa, line_pb, arc_center_id, arc_id
+    TangentAtPoint(String, String, String),         // shared_point_id, other_line_end_id, arc_center_id
+    TangentCirclesInternal(String, String, String, String), // c1_center_id, c1_id, c2_center_id, c2_id
+    TangentCircleArc(String, String, String, String, bool), // circle_center_id, circle_id, arc_center_id, arc_id, internal
+    TangentArcs(String, String, String, String, bool),      // arc1_center_id, arc1_id, arc2_center_id, arc2_id, internal
+    TangentArcsAtPoint(String, String, String, bool),       // shared_point_id, arc1_center_id, arc2_center_id, internal
 
     // Arrays and mirror
     PointPointAngle(String, String, f64),                 // p1_id, p2_id, angle

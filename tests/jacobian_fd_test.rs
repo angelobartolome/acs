@@ -182,8 +182,10 @@ fn args_for(spec: &ConstraintSpec) -> Args {
 }
 
 /// Builds `spec` with distinct entities, plus, for a row relating a Line
-/// to an Arc, again with the line starting at the arc's start point: a
-/// shared point is what selects the angle-at-point form of tangency.
+/// to an Arc, again with the line starting at the arc's start point, and
+/// for a row relating two Arcs, again with the second starting where the
+/// first starts: a shared point is what selects the angle-at-point form of
+/// tangency.
 fn build_from_spec(spec: &ConstraintSpec) -> Vec<ConstraintType> {
     let args = args_for(spec);
     let mut out = vec![spec.build(&args)];
@@ -191,6 +193,11 @@ fn build_from_spec(spec: &ConstraintSpec) -> Vec<ConstraintType> {
     if kinds.contains(&FieldKind::Line) && kinds.contains(&FieldKind::Arc) {
         let mut shared = args.clone();
         shared.points[0] = shared.arc_ends[0].0.clone();
+        out.push(spec.build(&shared));
+    }
+    if kinds.iter().filter(|&&k| k == FieldKind::Arc).count() == 2 {
+        let mut shared = args.clone();
+        shared.arc_ends[1].0 = shared.arc_ends[0].0.clone();
         out.push(spec.build(&shared));
     }
     out
@@ -241,9 +248,13 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         TangentLineEllipse(..) => "TangentLineEllipse",
         EllipseAxisPoint(..) => "EllipseAxisPoint",
         EllipseDiameter(..) => "EllipseDiameter",
+        TangentCirclesInternal(..) => "TangentCirclesInternal",
+        TangentCircleArc(..) => "TangentCircleArc",
+        TangentArcs(..) => "TangentArcs",
+        TangentArcsAtPoint(..) => "TangentArcsAtPoint",
     }
 }
-const ALL_VARIANTS: [&str; 39] = [
+const ALL_VARIANTS: [&str; 43] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -283,6 +294,10 @@ const ALL_VARIANTS: [&str; 39] = [
     "TangentLineEllipse",
     "EllipseAxisPoint",
     "EllipseDiameter",
+    "TangentCirclesInternal",
+    "TangentCircleArc",
+    "TangentArcs",
+    "TangentArcsAtPoint",
 ];
 
 #[test]
@@ -444,6 +459,17 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::TangentAtPoint(s("a1_start"), s("p1"), s("a1_center")),
         ConstraintType::TangentAtPoint(s("p0"), s("p0"), s("a1_center")),
         ConstraintType::TangentAtPoint(s("p0"), s("p1"), s("p0")),
+        // Curve–curve tangency: inside as well as external (the catalog
+        // reaches each variant first with `internal: false`), a circle and
+        // an arc on one center, and joined arcs sharing a center.
+        ConstraintType::TangentCircleArc(s("c1_center"), s("c1"), s("a1_center"), s("a1"), true),
+        ConstraintType::TangentCircleArc(s("a1_center"), s("c1"), s("a1_center"), s("a1"), false),
+        ConstraintType::TangentArcs(s("a1_center"), s("a1"), s("a2_center"), s("a2"), true),
+        ConstraintType::TangentArcs(s("a2_center"), s("a1"), s("a1_center"), s("a2"), false),
+        ConstraintType::TangentArcsAtPoint(s("a1_start"), s("a1_center"), s("a2_center"), true),
+        ConstraintType::TangentArcsAtPoint(s("a1_end"), s("a1_center"), s("a2_center"), false),
+        ConstraintType::TangentArcsAtPoint(s("p0"), s("p0"), s("a2_center"), false),
+        ConstraintType::TangentArcsAtPoint(s("p0"), s("a1_center"), s("a1_center"), true),
         ConstraintType::PointPointAngle(s("p0"), s("p0"), 0.7),
         ConstraintType::PointPointAngle(s("p0"), s("p1"), -2.5),
         ConstraintType::MirrorPointExtension(s("p0"), s("p0"), s("p1"), s("p2")),

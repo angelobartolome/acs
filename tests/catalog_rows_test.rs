@@ -8,7 +8,9 @@ use acs::bindings::sketch_solve::{
     acs_constraint_catalog, acs_planegcs_constraint_catalog, acs_solve_sketch,
     acs_solve_sketch_planegcs,
 };
-use acs::constraint_catalog::{ConstraintSpec, ExtensionFlag, FieldKind, Vocabulary, field_path};
+use acs::constraint_catalog::{
+    ConstraintSpec, ExtensionFlag, FieldKind, InternalFlag, Vocabulary, field_path,
+};
 use acs::sketch_solve::{solve_planegcs_sketch_json, solve_sketch_json};
 use serde_json::{Value, json};
 
@@ -38,6 +40,9 @@ fn sketch_for(spec: &ConstraintSpec, vocabulary: Vocabulary) -> Value {
     let mut constraint = json!({ "id": "k", "type": spec.json_type });
     if spec.extension == ExtensionFlag::Extension {
         constraint["extension"] = json!(true);
+    }
+    if spec.internal == InternalFlag::Internal {
+        constraint["internal"] = json!(true);
     }
     let (entity_key, property_key) = match vocabulary {
         Vocabulary::Native => ("entity", "property"),
@@ -303,6 +308,36 @@ fn the_native_catalog_lists_midpoint_by_entities_and_marks_the_old_forms_depreca
             { "name": "which", "kind": "axis" }
         ])
     );
+}
+
+/// `tangent` between circles and arcs has an external row (`internal:
+/// false`) and an inside one (`internal: true`) per pair of kinds; rows with
+/// a Line carry no flag.
+#[test]
+fn the_native_catalog_marks_external_and_inside_tangency() {
+    let rows = catalog(&acs_constraint_catalog());
+    let tangent: Vec<&Value> = rows.iter().filter(|r| r["type"] == "tangent").collect();
+    let kinds = |r: &Value| -> Vec<String> {
+        r["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["kind"].as_str().unwrap().to_string())
+            .collect()
+    };
+    for pair in [["circle", "circle"], ["circle", "arc"], ["arc", "arc"]] {
+        let flags: Vec<&Value> = tangent
+            .iter()
+            .filter(|r| kinds(r) == pair)
+            .map(|r| &r["internal"])
+            .collect();
+        assert_eq!(flags, [&json!(false), &json!(true)], "{pair:?}");
+    }
+    for row in tangent.iter().filter(|r| kinds(r).contains(&"line".to_string())) {
+        assert!(row.get("internal").is_none(), "{row}");
+    }
+    let coincident = rows.iter().find(|r| r["type"] == "coincident").unwrap();
+    assert!(coincident.get("internal").is_none());
 }
 
 #[test]

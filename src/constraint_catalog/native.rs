@@ -4,14 +4,20 @@
 //! A type may have several rows, its variants. Which one a constraint uses is
 //! inferred from the kinds of the entities its fields reference (`distance`
 //! with `b` a Point is point–point, with `b` a Line point–segment) and from
-//! `extension: true`, which selects a variant measured against the Line's
-//! Extension. Rows are tried in order; for the [`COMMUTATIVE`] types, `a` and
-//! `b` may come in either order. A combination no row takes is rejected,
-//! naming the kinds given and the ones the type accepts.
+//! two flags: `extension: true`, which selects a variant measured against
+//! the Line's Extension, and `internal: true`, which selects inside tangency
+//! between circles and arcs (`tangent` only; never inferred from the
+//! geometry, and rejected with a Line). Rows are tried in order; for the
+//! [`COMMUTATIVE`] types, `a` and `b` may come in either order. A
+//! combination no row takes is rejected, naming the kinds given and the ones
+//! the type accepts.
 
 use serde_json::Value;
 
-use super::{ConstraintSpec as S, FieldKind, References, field_path, field_value};
+use super::{
+    ConstraintSpec as S, ExtensionFlag, FieldKind, InternalFlag, References, field_path,
+    field_value,
+};
 use crate::ConstraintType;
 
 use FieldKind::{Arc, Axis, Circle, Ellipse, Line, Point, Scalar, Value as Val};
@@ -157,7 +163,22 @@ pub(super) static SPECS: &[S] = &[
     }),
     S::new("tangent", CC, |a| {
         ConstraintType::Tangent(a.center(0), a.c(0), a.center(1), a.c(1))
-    }),
+    })
+    .external(),
+    S::new("tangent", CC, |a| {
+        ConstraintType::TangentCirclesInternal(a.center(0), a.c(0), a.center(1), a.c(1))
+    })
+    .internal(),
+    S::new("tangent", CA, |a| {
+        ConstraintType::TangentCircleArc(a.center(0), a.c(0), a.center(1), a.c(1), false)
+    })
+    .external(),
+    S::new("tangent", CA, |a| {
+        ConstraintType::TangentCircleArc(a.center(0), a.c(0), a.center(1), a.c(1), true)
+    })
+    .internal(),
+    S::new("tangent", AA, |a| a.tangent_arcs(false)).external(),
+    S::new("tangent", AA, |a| a.tangent_arcs(true)).internal(),
     S::new("concentric", CC, |a| {
         ConstraintType::Concentric(a.center(0), a.center(1))
     }),
@@ -244,7 +265,7 @@ pub(super) static SPECS: &[S] = &[
 ];
 
 /// Builds the native constraint `c` of type `json_type`, choosing the row
-/// whose entity kinds and `extension` flag match.
+/// whose entity kinds and `extension` and `internal` flags match.
 pub(super) fn parse(
     json_type: &str,
     c: &Value,
@@ -254,28 +275,46 @@ pub(super) fn parse(
     if variants.is_empty() {
         return Err(format!("unknown type '{json_type}'"));
     }
-    let extension = match c.get("extension") {
-        None => false,
+    let flag = |name: &str| match c.get(name) {
+        None => Ok(false),
         Some(v) => v
             .as_bool()
-            .ok_or("field 'extension' is not true or false")?,
+            .ok_or_else(|| format!("field '{name}' is not true or false")),
     };
+    let (extension, internal) = (flag("extension")?, flag("internal")?);
     let swapped = COMMUTATIVE.contains(&json_type).then(|| swap_a_b(c));
-    let accepted = || variants.iter().filter(|s| s.extension.accepts(extension));
-    for spec in accepted() {
-        for obj in std::iter::once(c).chain(swapped.as_ref()) {
-            if matches_kinds(spec, obj, refs) {
-                return spec.parse(obj, refs);
-            }
+    let matching = |spec: &S| {
+        std::iter::once(c)
+            .chain(swapped.as_ref())
+            .find(|obj| matches_kinds(spec, obj, refs))
+    };
+    let accepts = |s: &S| s.extension.accepts(extension) && s.internal.accepts(internal);
+    for spec in variants.iter().filter(|s| accepts(s)) {
+        if let Some(obj) = matching(spec) {
+            return spec.parse(obj, refs);
         }
     }
     // A type with one row reports exactly what's wrong with its fields.
     if let [only] = variants[..]
-        && only.extension.accepts(extension)
+        && accepts(only)
     {
         return only.parse(c, refs);
     }
-    Err(unsupported(json_type, &variants, c, refs, extension))
+    // `internal` on a tangency whose entities' row has no inside (a Line).
+    if internal
+        && variants.iter().any(|s| s.internal == InternalFlag::Internal)
+        && variants.iter().any(|s| {
+            s.internal == InternalFlag::NotAccepted
+                && s.extension.accepts(extension)
+                && matching(s).is_some()
+        })
+    {
+        return Err(format!(
+            "field 'internal' applies only to tangency between circles and arcs; got {}",
+            got_kinds(&variants, c, refs, false, false)
+        ));
+    }
+    Err(unsupported(json_type, &variants, c, refs, extension, internal))
 }
 
 /// `c` with its `a` and `b` fields exchanged.
@@ -334,6 +373,41 @@ fn unsupported(
     c: &Value,
     refs: &References,
     extension: bool,
+    internal: bool,
+) -> String {
+    let got = got_kinds(variants, c, refs, extension, internal);
+    let expected: Vec<String> = variants
+        .iter()
+        .map(|s| {
+            let mut fields: Vec<String> = s
+                .fields
+                .iter()
+                .filter(|(_, kind)| !matches!(kind, Scalar | Axis))
+                .map(|(name, kind)| format!("{name}: {}", kind.as_str()))
+                .collect();
+            if s.extension == ExtensionFlag::Extension {
+                fields.push("extension".into());
+            }
+            if s.internal == InternalFlag::Internal {
+                fields.push("internal".into());
+            }
+            format!("({})", fields.join(", "))
+        })
+        .collect();
+    format!(
+        "unsupported combination for '{json_type}': got {got}; expected {}",
+        expected.join(" or ")
+    )
+}
+
+/// The kinds of the entities `c` references in the entity fields of
+/// `variants`, and the flags it sets: `a: point, b: circle, extension`.
+fn got_kinds(
+    variants: &[&S],
+    c: &Value,
+    refs: &References,
+    extension: bool,
+    internal: bool,
 ) -> String {
     let mut names: Vec<&str> = Vec::new();
     for &(name, kind) in variants.iter().flat_map(|s| s.fields) {
@@ -358,28 +432,12 @@ fn unsupported(
     if extension {
         got.push("extension".into());
     }
-    let got = if got.is_empty() {
+    if internal {
+        got.push("internal".into());
+    }
+    if got.is_empty() {
         "nothing".to_string()
     } else {
         got.join(", ")
-    };
-    let expected: Vec<String> = variants
-        .iter()
-        .map(|s| {
-            let mut fields: Vec<String> = s
-                .fields
-                .iter()
-                .filter(|(_, kind)| !matches!(kind, Scalar | Axis))
-                .map(|(name, kind)| format!("{name}: {}", kind.as_str()))
-                .collect();
-            if s.extension == super::ExtensionFlag::Extension {
-                fields.push("extension".into());
-            }
-            format!("({})", fields.join(", "))
-        })
-        .collect();
-    format!(
-        "unsupported combination for '{json_type}': got {got}; expected {}",
-        expected.join(" or ")
-    )
+    }
 }

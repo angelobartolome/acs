@@ -43,7 +43,7 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `on` | point, line (`extension?`) / circle / arc / ellipse | Point lies on the segment (or Extension), circle, arc's span, or ellipse |
 | `midpoint` | `entities`: [point, line] or [line, line] (`extension?`) | A point is the midpoint of a line; or the midpoint of one line lies on another line (or its Extension) |
 | `midpoint_on` | line, line (`extension?`) | *Deprecated in 0.1.6, removed in 0.1.7*: use `midpoint` with `entities: [line, line]` (likewise `midpoint` with `point`, `line` fields: use `entities: [point, line]`) |
-| `tangent` | line–circle (`extension?`), line–arc, circle–circle, line–ellipse | Tangency on the segment (and arc span); circles touch externally |
+| `tangent` | line–circle (`extension?`), line–arc, line–ellipse, circle–circle, circle–arc, arc–arc (`internal?`) | Tangency on the segment and on each arc's span; circles and arcs touch externally, or one inside the other with `internal: true`; arcs sharing an endpoint are tangent at it |
 | `concentric` | circle/arc, circle/arc | Share a center |
 | `equal` | line–line, circle/arc–circle/arc, or values | Equal length, equal radius, or `a = b` |
 | `radius` | circle or arc | Fixed radius |
