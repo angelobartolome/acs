@@ -6,8 +6,8 @@ name: Release
 # machinery, builds the same artifacts and attaches them to the run without publishing.
 #
 # The pieces build in parallel jobs, each on its own runner: one macOS job per Apple platform
-# (scripts/release.sh <platform>) plus one for the XCFramework, the WASM npm package on Linux,
-# and lint + tests alongside.
+# (scripts/release.sh <platform>) plus one for the XCFramework, the Linux static library and the
+# WASM npm package on Linux, and lint + tests alongside.
 on:
   push:
     tags: ["v*"]
@@ -121,6 +121,30 @@ jobs:
           path: dist/acs-${{ needs.version.outputs.version }}-xcframework.zip
           if-no-files-found: error
 
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-x86_64
+
+      - name: Build the static library
+        run: ./scripts/release.sh linux-x86_64
+
+      - name: Upload it to the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: acs-${{ needs.version.outputs.version }}-linux-x86_64
+          path: dist/acs-${{ needs.version.outputs.version }}-linux-x86_64.tar.gz
+          if-no-files-found: error
+
   wasm:
     needs: version
     runs-on: ubuntu-latest
@@ -154,7 +178,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [version, check, apple, xcframework, wasm]
+    needs: [version, check, apple, xcframework, linux, wasm]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
@@ -176,6 +200,7 @@ jobs:
             "dist/acs-$VERSION-macos-arm64.tar.gz" \
             "dist/acs-$VERSION-ios-arm64.tar.gz" \
             "dist/acs-$VERSION-ios-arm64-simulator.tar.gz" \
+            "dist/acs-$VERSION-linux-x86_64.tar.gz" \
             "dist/acs-$VERSION-xcframework.zip" \
             "dist/acs-$VERSION.tgz"
 
