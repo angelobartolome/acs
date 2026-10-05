@@ -96,6 +96,49 @@ pub fn field_value<'v>(c: &'v Value, name: &str) -> Option<&'v Value> {
     }
 }
 
+/// Rewrites, among a sketch's constraints, each real Line–circle or Line–arc
+/// tangency whose Line has an endpoint a real `on` holds on that same curve
+/// into tangency at that endpoint (`TangentAtPoint`: the Line perpendicular
+/// to the radius there). Through a point already on the curve, the distance
+/// form changes only quadratically as the endpoint slides along the Line:
+/// the endpoint drifts micrometres from the tangent point and diagnosis
+/// reports spurious Redundant constraints (issue #14). Both forms have the
+/// same solutions, segment or Extension. If both endpoints are held, the
+/// Line's first endpoint is used. `constraints` pairs each constraint with
+/// whether it is temporary; temporaries neither trigger nor get the rewrite.
+pub fn tangent_at_held_endpoints(constraints: &mut [(ConstraintType, bool)]) {
+    let held: std::collections::HashSet<(String, String)> = constraints
+        .iter()
+        .filter(|(_, temporary)| !temporary)
+        .filter_map(|(ct, _)| match ct {
+            ConstraintType::PointOnCircle(p, _, curve) | ConstraintType::PointOnArc(p, _, curve) => {
+                Some((p.clone(), curve.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    let is_held = |p: &String, curve: &String| held.contains(&(p.clone(), curve.clone()));
+    for (ct, temporary) in constraints.iter_mut() {
+        if *temporary {
+            continue;
+        }
+        let (a, b, center, curve) = match &*ct {
+            ConstraintType::TangentLineCircle(a, b, center, curve)
+            | ConstraintType::TangentExtensionCircle(a, b, center, curve)
+            | ConstraintType::TangentLineArc(a, b, center, curve) => (a, b, center, curve),
+            _ => continue,
+        };
+        let rewritten = if is_held(a, curve) {
+            ConstraintType::TangentAtPoint(a.clone(), b.clone(), center.clone())
+        } else if is_held(b, curve) {
+            ConstraintType::TangentAtPoint(b.clone(), a.clone(), center.clone())
+        } else {
+            continue;
+        };
+        *ct = rewritten;
+    }
+}
+
 /// What a JSON constraint field refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
