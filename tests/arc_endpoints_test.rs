@@ -1,8 +1,7 @@
 //! An Arc keeps its start and end Points on itself (at its radius from its
 //! center, at its start and end angles) without any constraint saying so.
-//! An explicit `ArcRules` for an arc's own Points adds nothing. Tested
-//! through `ConstraintSolver` so the JSON vocabulary can change without
-//! touching these.
+//! Tested through `ConstraintSolver` so the JSON vocabulary can change
+//! without touching these.
 
 use acs::{Arc, ConstraintSolver, ConstraintType, Point, SolverResult};
 use std::f64::consts::FRAC_PI_2;
@@ -49,10 +48,6 @@ fn quarter_arc(s: (f64, f64), e: (f64, f64), fixed: bool) -> ConstraintSolver {
     solver
 }
 
-fn explicit_rules() -> ConstraintType {
-    ConstraintType::ArcRules("c".into(), "s".into(), "e".into(), "a".into())
-}
-
 #[test]
 fn endpoints_off_the_arc_land_on_it_without_any_constraint() {
     let mut s = quarter_arc((12.0, 1.0), (-1.0, 9.0), false);
@@ -61,32 +56,9 @@ fn endpoints_off_the_arc_land_on_it_without_any_constraint() {
 }
 
 #[test]
-fn explicit_arc_rules_solve_the_same_and_are_never_redundant() {
-    let mut implicit = quarter_arc((12.0, 1.0), (-1.0, 9.0), false);
-    let mut explicit = quarter_arc((12.0, 1.0), (-1.0, 9.0), false);
-    explicit.add_constraint(explicit_rules()).unwrap();
-    // Twice, as a sketch with duplicate rules would send them.
-    explicit.add_constraint(explicit_rules()).unwrap();
-
-    converged(implicit.solve().unwrap());
-    converged(explicit.solve().unwrap());
-    for id in ["c", "s", "e"] {
-        assert_eq!(xy(&implicit, id), xy(&explicit, id), "{id}");
-    }
-    assert_eq!(implicit.get_arc("a".into()), explicit.get_arc("a".into()));
-    let d = explicit.diagnose();
-    assert!(d.conflicting.is_empty() && d.redundant.is_empty(), "{d:?}");
-    assert_eq!(explicit.dof(), implicit.dof());
-}
-
-#[test]
 fn a_free_arc_has_five_degrees_of_freedom_with_its_endpoints_determined() {
     let s = quarter_arc((10.0, 0.0), (0.0, 10.0), false);
     // Center (2) + radius (1) + angles (2); the endpoints follow.
-    assert_eq!(s.dof(), 5);
-
-    let mut s = quarter_arc((10.0, 0.0), (0.0, 10.0), false);
-    s.add_constraint(explicit_rules()).unwrap();
     assert_eq!(s.dof(), 5);
 }
 
@@ -152,38 +124,31 @@ fn dragging_an_arc_endpoint_keeps_it_on_the_arc() {
 
 #[test]
 fn a_constraint_contradicting_the_arc_is_conflicting_and_the_arc_is_not_reported() {
-    for with_rules in [false, true] {
-        let mut s = ConstraintSolver::new();
-        s.add_point(Point::new("c".into(), 0.0, 0.0, true));
-        s.add_point(Point::new("s".into(), 10.0, 0.0, false));
-        s.add_point(Point::new("e".into(), 0.0, 10.0, false));
-        s.add_arc(Arc::new("a".into(), "c".into(), "s".into(), "e".into(), 10.0, 0.0, FRAC_PI_2, true));
-        if with_rules {
-            s.add_constraint(explicit_rules()).unwrap();
-        }
-        // The start Point must be 7 from the center, but the arc's radius is a fixed 10.
-        s.add_constraint(ConstraintType::DistancePointPoint("c".into(), "s".into(), 7.0))
-            .unwrap();
-        let k = usize::from(with_rules);
+    let mut s = ConstraintSolver::new();
+    s.add_point(Point::new("c".into(), 0.0, 0.0, true));
+    s.add_point(Point::new("s".into(), 10.0, 0.0, false));
+    s.add_point(Point::new("e".into(), 0.0, 10.0, false));
+    s.add_arc(Arc::new("a".into(), "c".into(), "s".into(), "e".into(), 10.0, 0.0, FRAC_PI_2, true));
+    // The start Point must be 7 from the center, but the arc's radius is a fixed 10.
+    s.add_constraint(ConstraintType::DistancePointPoint("c".into(), "s".into(), 7.0))
+        .unwrap();
 
-        assert!(matches!(s.solve().unwrap(), SolverResult::MaxIterationsReached { .. }));
-        let d = s.diagnose();
-        assert_eq!(d.conflicting, vec![k], "with_rules {with_rules}: {d:?}");
-        assert!(d.redundant.is_empty(), "{d:?}");
-    }
+    assert!(matches!(s.solve().unwrap(), SolverResult::MaxIterationsReached { .. }));
+    let d = s.diagnose();
+    assert_eq!(d.conflicting, vec![0], "{d:?}");
+    assert!(d.redundant.is_empty(), "{d:?}");
 }
 
 #[test]
 fn a_constraint_the_arc_already_implies_is_redundant() {
     let mut s = quarter_arc((10.0, 0.0), (0.0, 10.0), false);
-    s.add_constraint(explicit_rules()).unwrap();
     // The radius already puts the start Point 10 from the center.
     s.add_constraint(ConstraintType::FixedRadius("a".into(), 10.0)).unwrap();
     s.add_constraint(ConstraintType::DistancePointPoint("c".into(), "s".into(), 10.0))
         .unwrap();
     converged(s.solve().unwrap());
     let d = s.diagnose();
-    assert_eq!(d.redundant, vec![2], "{d:?}");
+    assert_eq!(d.redundant, vec![1], "{d:?}");
     assert!(d.conflicting.is_empty(), "{d:?}");
 }
 

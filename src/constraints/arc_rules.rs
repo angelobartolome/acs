@@ -5,9 +5,8 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// Ties an arc's start and end Points to its center, radius and angles, so
 /// other geometry (lines sharing an endpoint) follows the arc and vice versa.
 ///
-/// Every Arc gets these rules implicitly (`SketchSystem` adds one per arc),
-/// so an explicit `ArcRules` over an arc's own Points is a no-op
-/// (`ConstraintSolver` marks it implied); one over other Points is real.
+/// Every Arc gets these rules implicitly (`SketchSystem` adds one per arc);
+/// they are never a sketch constraint of their own.
 ///
 /// Entities:
 ///   - `center_id` – the arc's center point (cx, cy)

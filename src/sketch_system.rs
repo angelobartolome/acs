@@ -33,10 +33,6 @@ pub(crate) enum Role {
     Real,
     /// A soft goal (see [`SketchSystem::solve`]), outside the diagnosed system.
     Temporary,
-    /// Already implied by the geometry (an explicit `ArcRules` for an arc's
-    /// own Points, which the arc's implicit rules hold): adds nothing, is in
-    /// no Component and is never reported.
-    Implied,
 }
 
 /// The sketch's constraints followed by the implicit ones (one per Arc).
@@ -103,17 +99,11 @@ impl<'a> SketchSystem<'a> {
         };
         let n = constraints.explicit.len();
 
-        // Every constraint that takes part, by index into `constraints`.
-        let active: Vec<usize> = (0..n)
-            .filter(|&i| roles[i] != Role::Implied)
-            .chain(n..n + constraints.implicit.len())
-            .collect();
-
-        let components = find_components_of(active.iter().map(|&i| constraints.get(i)))
+        let all = n + constraints.implicit.len();
+        let components = find_components_of((0..all).map(|i| constraints.get(i)))
             .components
             .into_iter()
-            .map(|positions| {
-                let indices: Vec<usize> = positions.into_iter().map(|k| active[k]).collect();
+            .map(|indices| {
                 let mut columns = Vec::new();
                 let mut local_of = HashMap::new();
                 // Guides are columns too: an ordinary solve moves them.

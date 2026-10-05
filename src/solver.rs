@@ -72,11 +72,6 @@ impl ConstraintSolver {
     /// with the right kind (a point where a point is expected, and so on).
     /// Constraints are numbered in the order they're added (temporary ones
     /// included); [`Diagnosis`] reports them by that index.
-    ///
-    /// Every Arc keeps its start and end Points on itself without any
-    /// constraint, so an `ArcRules` naming an arc's own center, start and
-    /// end Points is accepted and adds nothing: it is never Redundant and
-    /// doesn't change [`Self::dof`].
     pub fn add_constraint(&mut self, constraint_type: ConstraintType) -> Result<(), String> {
         self.push_constraint(constraint_type, false)
     }
@@ -91,29 +86,15 @@ impl ConstraintSolver {
     }
 
     fn push_constraint(&mut self, constraint_type: ConstraintType, temporary: bool) -> Result<(), String> {
-        let implied = self.implied_by_geometry(&constraint_type);
         let constraint = create_constraint(constraint_type)?;
         check_vars(constraint.as_ref(), &self.geometry)?;
         self.constraints.push(constraint);
-        self.roles.push(if implied {
-            Role::Implied
-        } else if temporary {
+        self.roles.push(if temporary {
             Role::Temporary
         } else {
             Role::Real
         });
         Ok(())
-    }
-
-    /// Whether a constraint says only what the geometry already holds: an
-    /// `ArcRules` for an arc's own center, start and end Points.
-    fn implied_by_geometry(&self, constraint_type: &ConstraintType) -> bool {
-        let ConstraintType::ArcRules(center, start, end, arc) = constraint_type else {
-            return false;
-        };
-        self.geometry
-            .get_arc(arc)
-            .is_some_and(|a| (&a.center, &a.start, &a.end) == (center, start, end))
     }
 
     fn system(&self) -> SketchSystem<'_> {

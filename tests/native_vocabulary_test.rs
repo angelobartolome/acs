@@ -400,85 +400,23 @@ fn midpoint_takes_a_point_or_a_line_then_a_line() {
     );
 }
 
-/// The 0.1.5 forms, deprecated: `midpoint {point, line}` and `midpoint_on`.
+/// The 0.1.5 forms, removed in 0.1.7: `midpoint {point, line}` and
+/// `midpoint_on`.
 #[test]
-fn deprecated_midpoint_forms_still_solve() {
-    let resp = solve(with_fixed_line(json!([
+fn removed_midpoint_forms_are_rejected() {
+    let (error, _) = reject(with_fixed_line(json!([
         { "id": "m", "type": "point", "x": 2.0, "y": 3.0 },
         { "id": "k", "type": "midpoint", "point": "m", "line": "l" }
     ])));
-    close(&resp, "m", 5.0, 0.0);
+    assert!(error.contains("unsupported combination for 'midpoint'"), "{error}");
 
-    let resp = solve(with_fixed_line(json!([
-        { "id": "q1", "type": "point", "x": 14.0, "y": 2.0, "fixed": true },
-        { "id": "q2", "type": "point", "x": 16.0, "y": 1.0 },
-        { "id": "q", "type": "line", "p1_id": "q1", "p2_id": "q2" },
-        { "id": "k1", "type": "midpoint_on", "line": "q", "on": "l", "extension": true },
-        { "id": "k2", "type": "x", "point": "q2", "value": 16.0 }
-    ])));
-    close(&resp, "q2", 16.0, -2.0);
-}
-
-/// Solves `native` and `dialect`, which describe the same sketch, and
-/// checks they answer the same, constraints aside.
-fn same_as_dialect(native: Value, dialect: Value) {
-    let solve_in = |solve: fn(&str) -> Result<String, String>, prims: Value| {
-        let out = solve(&request(prims)).unwrap_or_else(|e| panic!("rejected: {e}"));
-        let mut resp: Value = serde_json::from_str(&out).unwrap();
-        let geometry: Vec<Value> = resp["primitives"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|p| ["point", "line", "ellipse"].contains(&p["type"].as_str().unwrap()))
-            .cloned()
-            .collect();
-        resp["primitives"] = json!(geometry);
-        resp.as_object_mut().unwrap().remove("stats");
-        resp
-    };
-    let native = solve_in(solve_sketch_json, native);
-    assert_eq!(native["status"], "converged", "{native}");
-    assert_eq!(
-        native,
-        solve_in(acs::sketch_solve::solve_planegcs_sketch_json, dialect)
-    );
-}
-
-#[test]
-fn midpoint_solves_as_the_dialect_does() {
-    let geometry = json!([
-        { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
-        { "id": "b", "type": "point", "x": 10.0, "y": 1.0 },
-        { "id": "l", "type": "line", "p1_id": "a", "p2_id": "b" },
-        { "id": "m", "type": "point", "x": 2.0, "y": 3.0 },
+    let (error, _) = reject(with_fixed_line(json!([
         { "id": "q1", "type": "point", "x": 14.0, "y": 2.0 },
         { "id": "q2", "type": "point", "x": 16.0, "y": 1.0 },
-        { "id": "q", "type": "line", "p1_id": "q1", "p2_id": "q2" }
-    ]);
-    let with = |constraints: Value| {
-        let mut prims = geometry.clone();
-        prims
-            .as_array_mut()
-            .unwrap()
-            .extend(constraints.as_array().unwrap().clone());
-        prims
-    };
-    same_as_dialect(
-        with(json!([{ "id": "k", "type": "midpoint", "entities": ["m", "l"] }])),
-        with(
-            json!([{ "id": "k", "type": "p2p_symmetric_ppp", "p1_id": "a", "p2_id": "b", "p_id": "m" }]),
-        ),
-    );
-    same_as_dialect(
-        with(json!([{ "id": "k", "type": "midpoint", "entities": ["q", "l"] }])),
-        with(json!([{ "id": "k", "type": "midpoint_on_line_ll", "l1_id": "q", "l2_id": "l" }])),
-    );
-    same_as_dialect(
-        with(json!([{ "id": "k", "type": "midpoint", "entities": ["q", "l"], "extension": true }])),
-        with(
-            json!([{ "id": "k", "type": "midpoint_on_extension_ll", "l1_id": "q", "l2_id": "l" }]),
-        ),
-    );
+        { "id": "q", "type": "line", "p1_id": "q1", "p2_id": "q2" },
+        { "id": "k", "type": "midpoint_on", "line": "q", "on": "l" }
+    ])));
+    assert_eq!(error, "constraint k: unknown type 'midpoint_on'");
 }
 
 #[test]
@@ -602,25 +540,6 @@ fn a_missing_entity_in_a_multi_variant_type_is_named() {
     assert!(
         error.contains("expected (line: line) or (a: point, b: point)"),
         "{error}"
-    );
-}
-
-#[test]
-fn planegcs_types_and_property_keys_are_not_native() {
-    let (error, _) = reject(json!([
-        { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
-        { "id": "b", "type": "point", "x": 1.0, "y": 0.0 },
-        { "id": "k1", "type": "p2p_coincident", "p1_id": "a", "p2_id": "b" }
-    ]));
-    assert_eq!(error, "constraint k1: unknown type 'p2p_coincident'");
-
-    let (error, _) = reject(json!([
-        { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
-        { "id": "k1", "type": "equal", "a": { "o_id": "a", "prop": "x" }, "b": 1 }
-    ]));
-    assert_eq!(
-        error,
-        "constraint k1: field 'a': property reference has no 'entity'"
     );
 }
 
@@ -760,33 +679,6 @@ fn two_point_ellipse_axis_keeps_its_points_on_opposite_ends() {
         ax.abs() < 1e-8 && (ay.abs() - 4.0).abs() < 1e-8,
         "a = ({ax}, {ay})"
     );
-}
-
-#[test]
-fn two_point_ellipse_axis_solves_as_the_dialect_does() {
-    for (which, dialect) in [
-        ("major", "internal_alignment_ellipse_major_diameter"),
-        ("minor", "internal_alignment_ellipse_minor_diameter"),
-    ] {
-        let geometry = json!([
-            { "id": "c", "type": "point", "x": 0.0, "y": 0.0 },
-            { "id": "f", "type": "point", "x": 3.0, "y": 0.5 },
-            { "id": "e", "type": "ellipse", "c_id": "c", "focus1_id": "f", "radmin": 4.0 },
-            { "id": "a", "type": "point", "x": 4.5, "y": 0.4 },
-            { "id": "b", "type": "point", "x": -3.9, "y": -0.6 }
-        ]);
-        let with = |constraint: Value| {
-            let mut prims = geometry.clone();
-            prims.as_array_mut().unwrap().push(constraint);
-            prims
-        };
-        same_as_dialect(
-            with(
-                json!({ "id": "k", "type": "ellipse_axis", "ellipse": "e", "a": "a", "b": "b", "which": which }),
-            ),
-            with(json!({ "id": "k", "type": dialect, "e_id": "e", "p1_id": "a", "p2_id": "b" })),
-        );
-    }
 }
 
 #[test]

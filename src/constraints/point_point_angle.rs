@@ -4,7 +4,7 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Constrains the direction from one point to another: the vector p1 → p2
 /// makes `angle` (radians, counter-clockwise from +x) with the x axis.
-/// PlaneGCS's `p2p_angle`.
+/// Native `direction`.
 ///
 /// Entities:
 ///   - `p1_id` – start point

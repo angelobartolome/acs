@@ -3,7 +3,7 @@ use nalgebra::DMatrix;
 use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Constrains `pk` to be `p0` rotated about `center` by a fixed angle: one
-/// instance of a circular array. PlaneGCS's `circular_instance`.
+/// instance of a circular array. Native `rotation`.
 ///
 /// Entities:
 ///   - `p0_id`     – source point p0

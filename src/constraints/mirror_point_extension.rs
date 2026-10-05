@@ -6,9 +6,9 @@ use crate::constraints::segment::line_signed_distance;
 use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Constrains `pB` to be the mirror image of `pA` across a Line's Extension
-/// (the infinite line through the axis endpoints). PlaneGCS's
-/// `mirror_point_ppl`: a mirror reflects across the whole line, so a point
-/// beside or beyond the axis segment's ends still has its image.
+/// (the infinite line through the axis endpoints). Native `mirror`: a
+/// mirror reflects across the whole line, so a point beside or beyond the
+/// axis segment's ends still has its image.
 ///
 /// Entities:
 ///   - `pA_id`      – source point A
