@@ -1,4 +1,4 @@
-import { isArc, isCircle, isLine, isPoint } from "../core/model/types";
+import { isArc, isCircle, isEllipticalArc, isLine, isPoint } from "../core/model/types";
 import { useSketchStore } from "../hooks/useSketchStore";
 import { NumberField } from "./NumberField";
 
@@ -32,6 +32,7 @@ export function InspectorPanel() {
       x: number;
       y: number;
       radius: number;
+      radmin: number;
       startAngle: number;
       endAngle: number;
     }>,
@@ -113,6 +114,29 @@ export function InspectorPanel() {
           />
           <div className="text-xs text-slate-500">
             center: {e.center}, start: {e.start}, end: {e.end}
+          </div>
+        </>
+      )}
+      {isEllipticalArc(e) && (
+        <>
+          <NumberField
+            label="radmin"
+            value={e.radmin}
+            onCommit={(n) => commit({ radmin: n })}
+          />
+          <NumberField
+            label={"start \u00B0"}
+            value={e.startAngle / RAD}
+            onCommit={(n) => commit({ startAngle: n * RAD })}
+          />
+          <NumberField
+            label={"end \u00B0"}
+            value={e.endAngle / RAD}
+            onCommit={(n) => commit({ endAngle: n * RAD })}
+          />
+          <div className="text-xs text-slate-500">
+            center: {e.center}, focus: {e.focus}, start: {e.start}, end: {e.end}
+            (angles are parametric, from the major axis)
           </div>
         </>
       )}

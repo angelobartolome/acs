@@ -25,11 +25,10 @@ export type EntityResolver = (id: EntityId) => SketchEntity | undefined;
 
 /**
  * Kind of entity a selection slot takes: the demo's entity kinds, plus
- * `ellipse` and `elliptical_arc`, which the solver supports but the demo
- * can't draw yet (so a def with such a slot is never offered and is skipped
- * on import).
+ * `ellipse`, which the solver supports but the demo can't draw yet (so a
+ * def with an ellipse slot is never offered and is skipped on import).
  */
-export type SlotKind = EntityKind | "ellipse" | "elliptical_arc";
+export type SlotKind = EntityKind | "ellipse";
 
 export interface SelectionSlot {
   kind: SlotKind;
@@ -1101,18 +1100,19 @@ export function matchSelection(
     line: [],
     circle: [],
     arc: [],
+    elliptical_arc: [],
   };
   for (const e of selected) pools[e.kind].push(e.id);
 
   const result: EntityId[] = [];
   for (const k of kinds) {
-    if (k === "ellipse" || k === "elliptical_arc") return null; // the demo has no ellipses
+    if (k === "ellipse") return null; // the demo has no ellipses
     const id = pools[k].shift();
     if (id === undefined) return null;
     result.push(id);
   }
   // all pools must be exhausted
-  if (pools.point.length + pools.line.length + pools.circle.length + pools.arc.length > 0) {
+  if (Object.values(pools).some((pool) => pool.length > 0)) {
     return null;
   }
   return result;

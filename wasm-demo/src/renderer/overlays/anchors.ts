@@ -3,7 +3,8 @@ import type {
   EntityId,
   SketchEntity,
 } from "../../core/model/types";
-import { isArc, isCircle, isLine, isPoint } from "../../core/model/types";
+import { isArc, isCircle, isEllipticalArc, isLine, isPoint } from "../../core/model/types";
+import { ellipseFrame, pointAt } from "../../core/model/ellipse";
 import { getConstraintDef } from "../../core/constraints/registry";
 import type { Vec2 } from "../../core/sketch/store";
 
@@ -24,6 +25,16 @@ function entityAnchor(id: EntityId, resolve: Resolver): Vec2 | null {
   if (isCircle(e) || isArc(e)) {
     const c = resolve(e.center);
     if (c !== undefined && isPoint(c)) return { x: c.x, y: c.y };
+  }
+  if (isEllipticalArc(e)) {
+    // the middle of its span
+    const c = resolve(e.center);
+    const f = resolve(e.focus);
+    if (c !== undefined && isPoint(c) && f !== undefined && isPoint(f)) {
+      let span = e.endAngle - e.startAngle;
+      while (span <= 0) span += Math.PI * 2;
+      return pointAt(ellipseFrame(c, f, e.radmin), e.startAngle + span / 2);
+    }
   }
   return null;
 }

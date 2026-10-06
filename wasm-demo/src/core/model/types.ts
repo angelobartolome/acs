@@ -52,7 +52,39 @@ export interface ArcEntity {
   fixed: boolean;
 }
 
-export type SketchEntity = PointEntity | LineEntity | CircleEntity | ArcEntity;
+/**
+ * An arc of an ellipse (`elliptical_arc`): the ellipse's center, a focus
+ * (which sets the major axis direction) and minor radius `radmin`, plus
+ * start and end points at *parametric* angles, measured from the major axis
+ * towards the minor one: the point at `t` is `c + a·cos t·u + radmin·sin t·n`
+ * (see `ellipse.ts`). It sweeps counter-clockwise like an arc; the solver
+ * keeps its endpoints on it.
+ */
+export interface EllipticalArcEntity {
+  kind: "elliptical_arc";
+  id: EntityId;
+  /** id of the center point */
+  center: EntityId;
+  /** id of the focus point (center → focus is the major axis) */
+  focus: EntityId;
+  /** id of the start point (at `startAngle`) */
+  start: EntityId;
+  /** id of the end point (at `endAngle`) */
+  end: EntityId;
+  radmin: number;
+  /** radians, parametric */
+  startAngle: number;
+  /** radians, parametric; sweeps counter-clockwise from startAngle */
+  endAngle: number;
+  fixed: boolean;
+}
+
+export type SketchEntity =
+  | PointEntity
+  | LineEntity
+  | CircleEntity
+  | ArcEntity
+  | EllipticalArcEntity;
 export type EntityKind = SketchEntity["kind"];
 
 /** An applied constraint. `entities` is ordered per the registry selection spec. */
@@ -87,4 +119,7 @@ export function isCircle(e: SketchEntity): e is CircleEntity {
 }
 export function isArc(e: SketchEntity): e is ArcEntity {
   return e.kind === "arc";
+}
+export function isEllipticalArc(e: SketchEntity): e is EllipticalArcEntity {
+  return e.kind === "elliptical_arc";
 }

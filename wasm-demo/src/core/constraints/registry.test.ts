@@ -144,8 +144,6 @@ describe("ConstraintRegistry", () => {
       expect(keys).not.toContain("tangent_line_ellipse");
       expect(keys).not.toContain("ellipse_axis");
       expect(keys).not.toContain("ellipse_diameter");
-      expect(keys).not.toContain("on_elliptical_arc");
-      expect(keys).not.toContain("tangent_line_elliptical_arc");
     }
     expect(
       primitiveToConstraint(
@@ -154,6 +152,49 @@ describe("ConstraintRegistry", () => {
         resolve,
       ),
     ).toBeNull();
+  });
+
+  it("offers elliptical arc constraints for an elliptical arc and round-trips them", () => {
+    const EA1: SketchEntity = {
+      kind: "elliptical_arc",
+      id: "ea1",
+      center: "p1",
+      focus: "p2",
+      start: "p3",
+      end: "p4",
+      radmin: 2,
+      startAngle: 0.2,
+      endAngle: 1.4,
+      fixed: false,
+    };
+    const A1: SketchEntity = {
+      kind: "arc",
+      id: "a1",
+      center: "p5",
+      start: "p4",
+      end: "p6",
+      radius: 1,
+      startAngle: 0,
+      endAngle: 1,
+      fixed: false,
+    };
+    expect(applicableConstraints([P1, EA1]).map((d) => d.key)).toEqual(
+      expect.arrayContaining(["on_elliptical_arc", "elliptical_arc_axis"]),
+    );
+    expect(applicableConstraints([L1, EA1]).map((d) => d.key)).toContain(
+      "tangent_line_elliptical_arc",
+    );
+    expect(applicableConstraints([A1, EA1]).map((d) => d.key)).toContain(
+      "tangent_arc_elliptical_arc",
+    );
+    const byId = new Map([...ENTITIES, EA1].map((e) => [e.id, e]));
+    expect(
+      primitiveToConstraint(
+        { id: "k", type: "on", point: "p1", curve: "ea1" },
+        "f",
+        (id) => byId.get(id),
+      ),
+    ).toMatchObject({ def: "on_elliptical_arc", entities: ["p1", "ea1"] });
   });
 
   it("derives default scalar params from geometry", () => {
