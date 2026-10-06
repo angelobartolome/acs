@@ -37,6 +37,7 @@ pub enum EntityType {
     Circle,
     Arc,
     Ellipse,
+    EllipticalArc,
 }
 
 /// Manages the global variable vector and entity-to-variable mapping

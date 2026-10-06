@@ -14,7 +14,8 @@ import type {
   Sketch,
   SketchEntity,
 } from "../model/types";
-import { isArc, isCircle, isLine, isPoint } from "../model/types";
+import { isArc, isCircle, isEllipticalArc, isLine, isPoint } from "../model/types";
+import { ellipseFrame, pointAt, sampleArc } from "../model/ellipse";
 import type { ISolverService, SolveOutcome } from "../solver/SolverService";
 
 // ---------------------------------------------------------------------------
@@ -47,7 +48,14 @@ export function screenToWorld(vp: Viewport, p: Vec2): Vec2 {
 // tool + draft state
 // ---------------------------------------------------------------------------
 
-export type ToolId = "select" | "point" | "line" | "circle" | "arc" | "pan";
+export type ToolId =
+  | "select"
+  | "point"
+  | "line"
+  | "circle"
+  | "arc"
+  | "elliptical_arc"
+  | "pan";
 
 export interface DraftClick {
   x: number;
@@ -120,6 +128,18 @@ export interface SketchState {
     startAngle: number,
     endAngle: number,
   ) => EntityId;
+  /**
+   * An elliptical arc on the ellipse with this center, focus and minor
+   * radius, from `startAngle` to `endAngle` (parametric). It gets its own
+   * start and end points.
+   */
+  addEllipticalArc: (
+    center: EntityId,
+    focus: EntityId,
+    radmin: number,
+    startAngle: number,
+    endAngle: number,
+  ) => EntityId;
   setPointPosition: (id: EntityId, x: number, y: number) => void;
   translateEntities: (ids: EntityId[], dx: number, dy: number) => void;
   setEntityFixed: (id: EntityId, fixed: boolean) => void;
@@ -129,6 +149,7 @@ export interface SketchState {
       x: number;
       y: number;
       radius: number;
+      radmin: number;
       startAngle: number;
       endAngle: number;
     }>,
@@ -247,6 +268,14 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
           include(c.x + e.radius, c.y + e.radius);
         }
       }
+      if (isEllipticalArc(e)) {
+        const c = get().getEntity(e.center);
+        const f = get().getEntity(e.focus);
+        if (c !== undefined && isPoint(c) && f !== undefined && isPoint(f)) {
+          const frame = ellipseFrame(c, f, e.radmin);
+          for (const p of sampleArc(frame, e.startAngle, e.endAngle, 32)) include(p.x, p.y);
+        }
+      }
     }
     const spanX = Math.max(maxX - minX, 1);
     const spanY = Math.max(maxY - minY, 1);
@@ -324,6 +353,40 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
     return id;
   },
 
+  addEllipticalArc: (center, focus, radmin, startAngle, endAngle) => {
+    const c = get().getEntity(center);
+    const f = get().getEntity(focus);
+    const origin = { x: 0, y: 0 };
+    const frame = ellipseFrame(
+      c !== undefined && isPoint(c) ? c : origin,
+      f !== undefined && isPoint(f) ? f : origin,
+      radmin,
+    );
+    const startPos = pointAt(frame, startAngle);
+    const endPos = pointAt(frame, endAngle);
+    const start = get().addPoint(startPos.x, startPos.y);
+    const end = get().addPoint(endPos.x, endPos.y);
+    const id = nextId("ea", get().entities, get().constraints);
+    set((s) => ({
+      entities: [
+        ...s.entities,
+        {
+          kind: "elliptical_arc",
+          id,
+          center,
+          focus,
+          start,
+          end,
+          radmin,
+          startAngle,
+          endAngle,
+          fixed: false,
+        },
+      ],
+    }));
+    return id;
+  },
+
   setPointPosition: (id, x, y) =>
     set((s) => ({
       entities: s.entities.map((e) =>
@@ -344,6 +407,11 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
         pointIds.add(e.p2);
       } else if (isArc(e)) {
         pointIds.add(e.center);
+        pointIds.add(e.start);
+        pointIds.add(e.end);
+      } else if (isEllipticalArc(e)) {
+        pointIds.add(e.center);
+        pointIds.add(e.focus);
         pointIds.add(e.start);
         pointIds.add(e.end);
       } else pointIds.add(e.center);
@@ -382,6 +450,14 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
             endAngle: patch.endAngle ?? e.endAngle,
           };
         }
+        if (isEllipticalArc(e)) {
+          return {
+            ...e,
+            radmin: patch.radmin ?? e.radmin,
+            startAngle: patch.startAngle ?? e.startAngle,
+            endAngle: patch.endAngle ?? e.endAngle,
+          };
+        }
         return e;
       }),
     })),
@@ -399,7 +475,9 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
           ? [e.p1, e.p2]
           : isArc(e)
             ? [e.center, e.start, e.end]
-            : isCircle(e)
+            : isEllipticalArc(e)
+              ? [e.center, e.focus, e.start, e.end]
+              : isCircle(e)
               ? [e.center]
               : [];
         if (deps.some((d) => doomed.has(d))) {

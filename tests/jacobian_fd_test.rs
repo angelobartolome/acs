@@ -11,7 +11,7 @@ use acs::constraints::{
     Constraint, ConstraintType, EllipseAxis, Operand, create_constraint, reads,
 };
 use nalgebra::DMatrix;
-use acs::geometry::{Arc, Circle, Ellipse, Point};
+use acs::geometry::{Arc, Circle, Ellipse, EllipticalArc, Point};
 use acs::var_registry::{EntityType, VarRegistry};
 
 const POINTS: [&str; 6] = ["p0", "p1", "p2", "p3", "p4", "p5"];
@@ -98,8 +98,43 @@ fn build_pm(seed: u64) -> VarRegistry {
             &Ellipse::new(id.to_string(), center.to_string(), focus.to_string(), b, false),
         );
     }
+    // Elliptical arcs, each with its own center, focus and endpoint Points.
+    // Sweeps are short so points and tangency points often fall outside.
+    for (id, center, focus, start, end) in ELLIPTICAL_ARCS {
+        for p in [center, focus, start, end] {
+            let (x, y) = (rng.range(-5.0, 5.0), rng.range(-5.0, 5.0));
+            pm.register_entity(
+                p.to_string(),
+                EntityType::Point,
+                &Point::new(p.to_string(), x, y, false),
+            );
+        }
+        let b = rng.range(0.5, 3.0);
+        let a0 = rng.range(-4.0, 4.0);
+        let a1 = a0 + rng.range(0.3, 1.5);
+        pm.register_entity(
+            id.to_string(),
+            EntityType::EllipticalArc,
+            &EllipticalArc::new(
+                id.to_string(),
+                center.to_string(),
+                focus.to_string(),
+                start.to_string(),
+                end.to_string(),
+                b,
+                a0,
+                a1,
+                false,
+            ),
+        );
+    }
     pm
 }
+
+/// (elliptical arc, center, focus, start, end) IDs of the elliptical arcs in
+/// `build_pm`.
+const ELLIPTICAL_ARCS: [(&str, &str, &str, &str, &str); 1] =
+    [("ea1", "ea1_center", "ea1_focus", "ea1_start", "ea1_end")];
 
 /// (ellipse, center, focus) IDs of the ellipses in `build_pm`.
 const ELLIPSES: [(&str, &str, &str); 2] = [
@@ -139,6 +174,7 @@ fn args_for(spec: &ConstraintSpec) -> Args {
     .into_iter();
     let mut next_arc = ARCS.iter();
     let mut next_ellipse = ELLIPSES.iter();
+    let mut next_elliptical_arc = ELLIPTICAL_ARCS.iter();
     for &(_, kind) in spec.fields {
         let points = match kind {
             FieldKind::Point => 1,
@@ -166,6 +202,15 @@ fn args_for(spec: &ConstraintSpec) -> Args {
                 center: center.to_string(),
                 focus: focus.to_string(),
             });
+        }
+        if kind == FieldKind::EllipticalArc {
+            let (e, center, focus, start, end) = next_elliptical_arc.next().unwrap();
+            args.ellipses.push(EllipseRef {
+                id: e.to_string(),
+                center: center.to_string(),
+                focus: focus.to_string(),
+            });
+            args.elliptical_arc_ends.push((start.to_string(), end.to_string()));
         }
         if kind == FieldKind::Axis {
             args.axes.push(EllipseAxis::Major);
@@ -198,6 +243,21 @@ fn build_from_spec(spec: &ConstraintSpec) -> Vec<ConstraintType> {
         let mut shared = args.clone();
         shared.arc_ends[1].0 = shared.arc_ends[0].0.clone();
         out.push(spec.build(&shared));
+    }
+    // A Line or an Arc sharing the elliptical arc's start, then its end.
+    if kinds.contains(&FieldKind::EllipticalArc)
+        && (kinds.contains(&FieldKind::Line) || kinds.contains(&FieldKind::Arc))
+    {
+        let (start, end) = args.elliptical_arc_ends[0].clone();
+        for p in [start, end] {
+            let mut shared = args.clone();
+            if kinds.contains(&FieldKind::Line) {
+                shared.points[0] = p;
+            } else {
+                shared.arc_ends[0].0 = p;
+            }
+            out.push(spec.build(&shared));
+        }
     }
     out
 }
@@ -246,6 +306,10 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         TangentLineEllipse(..) => "TangentLineEllipse",
         EllipseAxisPoint(..) => "EllipseAxisPoint",
         EllipseDiameter(..) => "EllipseDiameter",
+        PointOnEllipticalArc(..) => "PointOnEllipticalArc",
+        TangentLineEllipticalArc(..) => "TangentLineEllipticalArc",
+        TangentLineEllipticalArcAtPoint(..) => "TangentLineEllipticalArcAtPoint",
+        TangentArcEllipticalArcAtPoint(..) => "TangentArcEllipticalArcAtPoint",
         TangentCirclesInternal(..) => "TangentCirclesInternal",
         TangentCircleArc(..) => "TangentCircleArc",
         TangentArcs(..) => "TangentArcs",
@@ -263,7 +327,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         DistanceLineLine(..) => "DistanceLineLine",
     }
 }
-const ALL_VARIANTS: [&str; 53] = [
+const ALL_VARIANTS: [&str; 57] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -302,6 +366,10 @@ const ALL_VARIANTS: [&str; 53] = [
     "TangentLineEllipse",
     "EllipseAxisPoint",
     "EllipseDiameter",
+    "PointOnEllipticalArc",
+    "TangentLineEllipticalArc",
+    "TangentLineEllipticalArcAtPoint",
+    "TangentArcEllipticalArcAtPoint",
     "TangentCirclesInternal",
     "TangentCircleArc",
     "TangentArcs",
@@ -581,6 +649,25 @@ fn arc_rules_jacobian_matches_finite_differences() {
     ] {
         let c = ArcRulesConstraint::new(s(center), s(start), s(end), s("a1"));
         let what = format!("ArcRules({center}, {start}, {end})");
+        for seed in [1, 2, 3, 42, 1234] {
+            failures.extend(fd_mismatches_of(&c, &what, seed).into_iter().map(|m| format!("{what}: {m}")));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn elliptical_arc_rules_jacobian_matches_finite_differences() {
+    use acs::constraints::elliptical_arc_rules::EllipticalArcRulesConstraint;
+    let s = |x: &str| x.to_string();
+    let mut failures = Vec::new();
+    for (center, focus, start, end) in [
+        ("ea1_center", "ea1_focus", "ea1_start", "ea1_end"),
+        ("ea1_center", "ea1_focus", "ea1_start", "ea1_start"),
+        ("ea1_center", "ea1_center", "ea1_start", "ea1_end"),
+    ] {
+        let c = EllipticalArcRulesConstraint::new(s(center), s(focus), s(start), s(end), s("ea1"));
+        let what = format!("EllipticalArcRules({center}, {focus}, {start}, {end})");
         for seed in [1, 2, 3, 42, 1234] {
             failures.extend(fd_mismatches_of(&c, &what, seed).into_iter().map(|m| format!("{what}: {m}")));
         }

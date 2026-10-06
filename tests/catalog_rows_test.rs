@@ -78,6 +78,23 @@ fn sketch_for(spec: &ConstraintSpec) -> Value {
                 prims.push(json!({ "id": id, "type": "ellipse", "c_id": c, "focus1_id": f, "radmin": 2.0 }));
                 json!(id)
             }
+            FieldKind::EllipticalArc => {
+                // The ellipse above (a = 2.5, b = 2) from t = 0.2 to 1.4.
+                let c = point(&mut prims);
+                let (cx, cy) = {
+                    let p = prims.last().unwrap();
+                    (p["x"].as_f64().unwrap(), p["y"].as_f64().unwrap())
+                };
+                let (t0, t1, a, b) = (0.2_f64, 1.4_f64, 2.5, 2.0);
+                let (f, s, e) = (format!("{id}_focus"), format!("{id}_start"), format!("{id}_end"));
+                prims.push(json!({ "id": f, "type": "point", "x": cx + 1.5, "y": cy }));
+                prims.push(json!({ "id": s, "type": "point", "x": cx + a * t0.cos(), "y": cy + b * t0.sin() }));
+                prims.push(json!({ "id": e, "type": "point", "x": cx + a * t1.cos(), "y": cy + b * t1.sin() }));
+                prims.push(json!({ "id": id, "type": "elliptical_arc", "c_id": c, "focus1_id": f,
+                                   "start_id": s, "end_id": e, "radmin": b,
+                                   "start_angle": t0, "end_angle": t1 }));
+                json!(id)
+            }
             FieldKind::Axis => json!("major"),
             FieldKind::Scalar => match name {
                 "side" | "count" => json!(1),
@@ -100,6 +117,15 @@ fn sketch_for(spec: &ConstraintSpec) -> Value {
                 array[i] = value;
             }
         }
+    }
+    // An Arc and an elliptical arc are tangent only at an endpoint they
+    // share: the elliptical arc starts where the Arc starts.
+    let arc_start = prims.iter().find(|p| p["type"] == "arc").map(|p| p["start_id"].clone());
+    if let (Some(arc_start), Some(earc)) = (
+        arc_start,
+        prims.iter_mut().find(|p| p["type"] == "elliptical_arc"),
+    ) {
+        earc["start_id"] = arc_start;
     }
     prims.push(constraint);
     json!({ "version": 1, "primitives": prims })
@@ -247,7 +273,9 @@ fn the_catalog_lists_midpoint_by_entities() {
         .iter()
         .filter(|r| r["type"] == "ellipse_axis")
         .collect();
-    assert_eq!(axis.len(), 2);
+    // One-point and two-point, on an ellipse and on an elliptical arc.
+    assert_eq!(axis.len(), 4);
+    assert_eq!(axis[2]["fields"][0], json!({ "name": "ellipse", "kind": "elliptical_arc" }));
     assert_eq!(
         axis[1]["fields"],
         json!([

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, type PointerEvent, type WheelEvent } from "react";
 
-import { isArc, isCircle, isLine, isPoint } from "../core/model/types";
+import { isArc, isCircle, isEllipticalArc, isLine, isPoint } from "../core/model/types";
+import {
+  ellipseFrame,
+  ellipseThrough,
+  paramAngle,
+  sampleArc,
+  type XY,
+} from "../core/model/ellipse";
 import type { PointEntity } from "../core/model/types";
 import {
   screenToWorld,
@@ -19,6 +26,16 @@ import { PointGlyph } from "./entities/PointGlyph";
 import { ConstraintBadges } from "./overlays/ConstraintBadges";
 import { DimensionLabels } from "./overlays/DimensionLabels";
 import { COLORS, glyphState } from "./theme";
+
+/** Screen-space polyline points for world points. */
+function screenPolyline(toScreen: (p: Vec2) => Vec2, pts: XY[]): string {
+  return pts
+    .map((p) => {
+      const s = toScreen(p);
+      return `${s.x},${s.y}`;
+    })
+    .join(" ");
+}
 
 const MIN_SCALE = 0.02;
 const MAX_SCALE = 400;
@@ -148,6 +165,36 @@ function DraftPreview() {
             strokeDasharray="4 3"
           />,
         );
+      }
+    }
+  }
+  if (draft.cursor !== null && activeTool === "elliptical_arc") {
+    const dashed = (key: string, pts: XY[]) => (
+      <polyline
+        key={key}
+        points={screenPolyline(toScreen, pts)}
+        fill="none"
+        stroke={COLORS.draft}
+        strokeWidth={1.5}
+        strokeDasharray="4 3"
+      />
+    );
+    const [c0, c1, c2] = draft.clicks;
+    if (draft.clicks.length === 1) {
+      shapes.push(dashed("preview", [c0, draft.cursor]));
+    } else {
+      // The ellipse through the cursor (2 clicks) or the start click (3).
+      const shape = ellipseThrough(c0, c1, draft.clicks.length === 2 ? draft.cursor : c2);
+      shapes.push(dashed("axis", [c0, c1]));
+      if (shape !== null) {
+        const frame = ellipseFrame(c0, shape.focus, shape.radmin);
+        if (draft.clicks.length === 2) {
+          shapes.push(dashed("preview", sampleArc(frame, 0, 2 * Math.PI)));
+        } else {
+          const start = paramAngle(frame, c2);
+          const end = paramAngle(frame, draft.cursor);
+          shapes.push(dashed("preview", sampleArc(frame, start, end)));
+        }
       }
     }
   }
@@ -305,6 +352,21 @@ export function SketchCanvas() {
           cx={sc.x}
           cy={sc.y}
           r={e.radius * viewport.scale}
+          constrained={constrained}
+          state={state}
+          onHover={setHovered}
+        />,
+      );
+    } else if (isEllipticalArc(e)) {
+      const c = pointsById.get(e.center);
+      const f = pointsById.get(e.focus);
+      if (c === undefined || f === undefined) continue;
+      const frame = ellipseFrame(c, f, e.radmin);
+      arcGlyphs.push(
+        <ArcGlyph
+          key={e.id}
+          id={e.id}
+          points={screenPolyline(toScreen, sampleArc(frame, e.startAngle, e.endAngle))}
           constrained={constrained}
           state={state}
           onHover={setHovered}

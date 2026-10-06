@@ -174,6 +174,7 @@ const L = (count: number): SelectionSlot => ({ kind: "line", count });
 const C = (count: number): SelectionSlot => ({ kind: "circle", count });
 const A = (count: number): SelectionSlot => ({ kind: "arc", count });
 const E = (count: number): SelectionSlot => ({ kind: "ellipse", count });
+const EA = (count: number): SelectionSlot => ({ kind: "elliptical_arc", count });
 
 function lineAngle(ents: SketchEntity[], resolve: EntityResolver): number {
   const [a, b] = lineEndpoints(ents[0], resolve);
@@ -631,6 +632,15 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     entityFields: ["point", "curve"],
   },
   {
+    key: "on_elliptical_arc",
+    type: "on",
+    label: "Point on Elliptical Arc",
+    badge: "⋅EA",
+    description: "Point lies on the elliptical arc, between its start and end",
+    selection: [P(1), EA(1)],
+    entityFields: ["point", "curve"],
+  },
+  {
     key: "midpoint",
     type: "midpoint",
     label: "Midpoint",
@@ -695,6 +705,25 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     badge: "tan",
     description: "Line is tangent to the ellipse, touching within the segment",
     selection: [L(1), E(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_line_elliptical_arc",
+    type: "tangent",
+    label: "Tangent",
+    badge: "tan",
+    description:
+      "Line is tangent to the elliptical arc, touching within the segment and the arc (or along its tangent at an endpoint they share)",
+    selection: [L(1), EA(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_arc_elliptical_arc",
+    type: "tangent",
+    label: "Tangent",
+    badge: "tan",
+    description: "Arc and elliptical arc are tangent at an endpoint they share",
+    selection: [A(1), EA(1)],
     entityFields: ["a", "b"],
   },
   {
@@ -1012,6 +1041,27 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     entityFields: ["ellipse", "a", "b"],
     axisFields: ["which"],
   },
+  {
+    key: "elliptical_arc_axis",
+    type: "ellipse_axis",
+    label: "Elliptical Arc Axis",
+    badge: "ax",
+    description: "Point is an end of the elliptical arc's major or minor axis",
+    selection: [EA(1), P(1)],
+    entityFields: ["ellipse", "point"],
+    axisFields: ["which"],
+  },
+  {
+    key: "elliptical_arc_diameter",
+    type: "ellipse_axis",
+    label: "Elliptical Arc Diameter",
+    badge: "⌀",
+    description:
+      "The two points are opposite ends of the elliptical arc's major or minor axis",
+    selection: [EA(1), P(2)],
+    entityFields: ["ellipse", "a", "b"],
+    axisFields: ["which"],
+  },
 ];
 
 const DEF_BY_KEY: ReadonlyMap<string, ConstraintDef> = new Map(
@@ -1050,6 +1100,7 @@ export function matchSelection(
     line: [],
     circle: [],
     arc: [],
+    elliptical_arc: [],
   };
   for (const e of selected) pools[e.kind].push(e.id);
 
@@ -1061,7 +1112,7 @@ export function matchSelection(
     result.push(id);
   }
   // all pools must be exhausted
-  if (pools.point.length + pools.line.length + pools.circle.length + pools.arc.length > 0) {
+  if (Object.values(pools).some((pool) => pool.length > 0)) {
     return null;
   }
   return result;

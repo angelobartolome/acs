@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
-use crate::{ConstraintType, EllipseAxis, Operand};
+use crate::{ArcEnd, ConstraintType, EllipseAxis, Operand};
 
 pub mod native;
 
@@ -151,6 +151,9 @@ pub enum FieldKind {
     Arc,
     /// An Ellipse; also resolves its center and focus Points.
     Ellipse,
+    /// An EllipticalArc; resolves like an Ellipse (center and focus Points),
+    /// plus its start and end Points.
+    EllipticalArc,
     /// One of an Ellipse's axes: the string `major` or `minor`.
     Axis,
     /// A constant: a number, a numeric string or a Parameter id.
@@ -173,6 +176,7 @@ impl FieldKind {
             FieldKind::Circle => "circle",
             FieldKind::Arc => "arc",
             FieldKind::Ellipse => "ellipse",
+            FieldKind::EllipticalArc => "elliptical_arc",
             FieldKind::Axis => "axis",
             FieldKind::Scalar => "scalar",
             FieldKind::Value => "value",
@@ -184,7 +188,9 @@ impl FieldKind {
 /// field order. A Line field contributes two entries to `points`; a Circle or
 /// Arc field one entry each to `circles` and `centers`. An Arc field also
 /// adds its start and end Points to `arc_ends`. An Ellipse field adds one
-/// entry to `ellipses`, an Axis field one to `axes`.
+/// entry to `ellipses`, an Axis field one to `axes`. An EllipticalArc field
+/// adds one entry to `ellipses` (it is read through the same kernels) and
+/// one to `elliptical_arc_ends`.
 #[derive(Debug, Default, Clone)]
 pub struct Args {
     pub points: Vec<String>,
@@ -194,8 +200,11 @@ pub struct Args {
     pub operands: Vec<Operand>,
     /// (start Point ID, end Point ID) of each Arc field, in field order.
     pub arc_ends: Vec<(String, String)>,
-    /// Each Ellipse field, in field order.
+    /// Each Ellipse or EllipticalArc field, in field order.
     pub ellipses: Vec<EllipseRef>,
+    /// (start Point ID, end Point ID) of each EllipticalArc field, in field
+    /// order.
+    pub elliptical_arc_ends: Vec<(String, String)>,
     /// Each Axis field, in field order.
     pub axes: Vec<EllipseAxis>,
 }
@@ -274,6 +283,61 @@ impl Args {
     fn axis(&self, i: usize) -> EllipseAxis {
         self.axes[i]
     }
+    /// The endpoint of EllipticalArc field 0 that `p` is, if it is one.
+    fn elliptical_arc_end(&self, p: &str) -> Option<ArcEnd> {
+        let (start, end) = &self.elliptical_arc_ends[0];
+        if p == start {
+            Some(ArcEnd::Start)
+        } else if p == end {
+            Some(ArcEnd::End)
+        } else {
+            None
+        }
+    }
+    /// The Line (points 0 and 1) tangent to EllipticalArc field 0 (its
+    /// ellipse is `ellipses[0]`). When a line endpoint is one of the
+    /// elliptical arc's endpoints, along its tangent there
+    /// (`TangentLineEllipticalArcAtPoint`), as for `tangent_line_arc`;
+    /// otherwise touching the segment and the span
+    /// (`TangentLineEllipticalArc`).
+    fn tangent_line_elliptical_arc(&self) -> ConstraintType {
+        let (a, b) = (self.p(0), self.p(1));
+        let (center, focus, e) = self.e(0);
+        if let Some(end) = self.elliptical_arc_end(&a) {
+            ConstraintType::TangentLineEllipticalArcAtPoint(a, b, center, focus, e, end)
+        } else if let Some(end) = self.elliptical_arc_end(&b) {
+            ConstraintType::TangentLineEllipticalArcAtPoint(b, a, center, focus, e, end)
+        } else {
+            ConstraintType::TangentLineEllipticalArc(a, b, center, focus, e)
+        }
+    }
+    /// The endpoint Arc field 0 shares with EllipticalArc field 0, and which
+    /// end of the elliptical arc it is.
+    fn arc_elliptical_arc_shared(&self) -> Option<(String, ArcEnd)> {
+        [self.arc_start(0), self.arc_end(0)]
+            .into_iter()
+            .find_map(|p| self.elliptical_arc_end(&p).map(|end| (p, end)))
+    }
+    /// Arc field 0 tangent to EllipticalArc field 0 at the endpoint they
+    /// share (`TangentArcEllipticalArcAtPoint`). Only that form exists (the
+    /// row's check rejects a pair with no shared endpoint); without one,
+    /// the elliptical arc's start stands in.
+    fn tangent_arc_elliptical_arc(&self) -> ConstraintType {
+        let (center, focus, e) = self.e(0);
+        let (p, end) = self
+            .arc_elliptical_arc_shared()
+            .unwrap_or_else(|| (self.elliptical_arc_ends[0].0.clone(), ArcEnd::Start));
+        ConstraintType::TangentArcEllipticalArcAtPoint(p, self.center(0), center, focus, e, end)
+    }
+}
+
+/// The check of the `tangent` arc–elliptical-arc row: they must share an
+/// endpoint.
+pub(crate) fn arc_and_elliptical_arc_share_an_endpoint(args: &Args) -> Result<(), String> {
+    match args.arc_elliptical_arc_shared() {
+        Some(_) => Ok(()),
+        None => Err("an arc and an elliptical arc are tangent only at an endpoint they share".into()),
+    }
 }
 
 /// What constraint fields resolve against: Lines, circle/arc centers,
@@ -292,6 +356,17 @@ pub struct References {
     pub arc_endpoints: HashMap<String, (String, String)>,
     /// Ellipse ID → (center Point ID, focus Point ID).
     pub ellipses: HashMap<String, (String, String)>,
+    /// EllipticalArc ID → its Points.
+    pub elliptical_arcs: HashMap<String, EllipticalArcPoints>,
+}
+
+/// The Point IDs an EllipticalArc references.
+#[derive(Debug, Clone)]
+pub struct EllipticalArcPoints {
+    pub center: String,
+    pub focus: String,
+    pub start: String,
+    pub end: String,
 }
 
 impl References {
@@ -340,7 +415,7 @@ pub fn property_operand(kind: &str, id: &str, prop: &str) -> Option<Operand> {
         ("point", "x") => Some(Operand::X(id)),
         ("point", "y") => Some(Operand::Y(id)),
         ("circle" | "arc", "radius") => Some(Operand::Radius(id)),
-        ("ellipse", "radmin") => Some(Operand::MinorRadius(id)),
+        ("ellipse" | "elliptical_arc", "radmin") => Some(Operand::MinorRadius(id)),
         _ => None,
     }
 }
@@ -390,6 +465,9 @@ impl InternalFlag {
     }
 }
 
+/// A row's test of its resolved fields (see [`ConstraintSpec::parse`]).
+pub type Check = fn(&Args) -> Result<(), String>;
+
 /// One row of a catalog: a JSON `type` with one set of field kinds.
 pub struct ConstraintSpec {
     pub json_type: &'static str,
@@ -397,6 +475,10 @@ pub struct ConstraintSpec {
     pub fields: &'static [(&'static str, FieldKind)],
     pub extension: ExtensionFlag,
     pub internal: InternalFlag,
+    /// A test of the resolved fields a row can only pass or fail once it
+    /// sees which entities they are (e.g. a shared endpoint), run before
+    /// `build`.
+    check: Option<Check>,
     build: fn(&Args) -> ConstraintType,
 }
 
@@ -411,7 +493,16 @@ impl ConstraintSpec {
             fields,
             extension: ExtensionFlag::NotAccepted,
             internal: InternalFlag::NotAccepted,
+            check: None,
             build,
+        }
+    }
+
+    /// This row with a check of its resolved fields (see [`Self::parse`]).
+    pub const fn check(self, check: Check) -> Self {
+        ConstraintSpec {
+            check: Some(check),
+            ..self
         }
     }
 
@@ -452,8 +543,9 @@ impl ConstraintSpec {
         (self.build)(args)
     }
 
-    /// Resolves a JSON constraint object's fields against `refs` and builds
-    /// the constraint. Errors name the missing field or unknown reference.
+    /// Resolves a JSON constraint object's fields against `refs`, runs the
+    /// row's check, if any, and builds the constraint. Errors name the
+    /// missing field, unknown reference or failed check.
     pub fn parse(&self, c: &Value, refs: &References) -> Result<ConstraintType, String> {
         let mut args = Args::default();
         for &(name, kind) in self.fields {
@@ -516,8 +608,24 @@ impl ConstraintSpec {
                         .ok_or_else(|| format!("'{id}' is not an ellipse"))?;
                     args.ellipses.push(EllipseRef { id, center, focus });
                 }
+                FieldKind::EllipticalArc => {
+                    let points = refs
+                        .elliptical_arcs
+                        .get(&id)
+                        .cloned()
+                        .ok_or_else(|| format!("'{id}' is not an elliptical arc"))?;
+                    args.ellipses.push(EllipseRef {
+                        id,
+                        center: points.center,
+                        focus: points.focus,
+                    });
+                    args.elliptical_arc_ends.push((points.start, points.end));
+                }
                 FieldKind::Scalar | FieldKind::Value | FieldKind::Axis => unreachable!(),
             }
+        }
+        if let Some(check) = self.check {
+            check(&args)?;
         }
         Ok(self.build(&args))
     }

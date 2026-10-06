@@ -11,6 +11,7 @@
 
 import type {
   ArcEntity,
+  EllipticalArcEntity,
   CircleEntity,
   ConstraintInstance,
   JsonPrimitive,
@@ -87,6 +88,19 @@ export function entityToPrimitive(e: SketchEntity): JsonPrimitive {
         start_id: e.start,
         end_id: e.end,
         radius: e.radius,
+        start_angle: e.startAngle,
+        end_angle: e.endAngle,
+        fixed: e.fixed,
+      };
+    case "elliptical_arc":
+      return {
+        id: e.id,
+        type: "elliptical_arc",
+        c_id: e.center,
+        focus1_id: e.focus,
+        start_id: e.start,
+        end_id: e.end,
+        radmin: e.radmin,
         start_angle: e.startAngle,
         end_angle: e.endAngle,
         fixed: e.fixed,
@@ -220,6 +234,36 @@ export function primitivesToSketch(prims: readonly unknown[]): ImportResult {
         entities.push(a);
         break;
       }
+      case "elliptical_arc": {
+        const center = asString(prim.c_id);
+        const focus = asString(prim.focus1_id);
+        const start = asString(prim.start_id);
+        const end = asString(prim.end_id);
+        if (
+          id === null ||
+          center === null ||
+          focus === null ||
+          start === null ||
+          end === null
+        ) {
+          warnings.push(`Skipped malformed elliptical arc ${id ?? "?"}`);
+          break;
+        }
+        const ea: EllipticalArcEntity = {
+          kind: "elliptical_arc",
+          id,
+          center,
+          focus,
+          start,
+          end,
+          radmin: asNumber(prim.radmin),
+          startAngle: asNumber(prim.start_angle),
+          endAngle: asNumber(prim.end_angle),
+          fixed: prim.fixed === true || prim.isReference === true,
+        };
+        entities.push(ea);
+        break;
+      }
       default:
         constraintPrims.push(prim);
     }
@@ -296,6 +340,13 @@ export function applySolvedPrimitives(
         return {
           ...e,
           radius: asNumber(solved.radius, e.radius),
+          startAngle: asNumber(solved.start_angle, e.startAngle),
+          endAngle: asNumber(solved.end_angle, e.endAngle),
+        };
+      case "elliptical_arc":
+        return {
+          ...e,
+          radmin: asNumber(solved.radmin, e.radmin),
           startAngle: asNumber(solved.start_angle, e.startAngle),
           endAngle: asNumber(solved.end_angle, e.endAngle),
         };

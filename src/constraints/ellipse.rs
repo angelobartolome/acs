@@ -16,6 +16,8 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use nalgebra::DMatrix;
 
+use crate::constraints::arc_span::span_overshoot;
+
 /// Below this squared length a vector has no direction (and a length with no
 /// usable partials).
 const DEGENERATE_SQ: f64 = 1e-24;
@@ -58,6 +60,30 @@ impl<const N: usize> D<N> {
 
     pub fn scale(self, k: f64) -> Self {
         self.map(k * self.v, k)
+    }
+
+    pub fn sin(self) -> Self {
+        self.map(self.v.sin(), self.v.cos())
+    }
+
+    pub fn cos(self) -> Self {
+        self.map(self.v.cos(), -self.v.sin())
+    }
+
+    /// atan2(self, x), the angle of (x, self): d = (x·dy − y·dx)/(x² + y²);
+    /// zero partials at the origin, which has no angle.
+    pub fn atan2(self, x: Self) -> Self {
+        let y = self;
+        let sq = x.v * x.v + y.v * y.v;
+        let v = y.v.atan2(x.v);
+        if sq < DEGENERATE_SQ {
+            return D::cst(v);
+        }
+        let mut g = [0.0; N];
+        for (k, g) in g.iter_mut().enumerate() {
+            *g = (x.v * y.g[k] - y.v * x.g[k]) / sq;
+        }
+        D { v, g }
     }
 
     /// Writes the partials into row `row` of a local Jacobian.
@@ -232,4 +258,47 @@ impl<const N: usize> EllipseFrame<N> {
     pub fn focus2(&self) -> V2<N> {
         self.center.add(self.center).sub(self.focus)
     }
+
+    /// Unit direction of the minor axis, `rot90` of the major one.
+    pub fn minor_dir(&self) -> V2<N> {
+        self.major_dir.rot90()
+    }
+
+    /// The point at parametric angle `t`: `c + a·cos t·u + b·sin t·n`.
+    pub fn point_at(&self, t: D<N>) -> V2<N> {
+        let along = self.major_dir.scale(self.major_radius * t.cos());
+        let across = self.minor_dir().scale(self.minor_radius * t.sin());
+        self.center.add(along).add(across)
+    }
+
+    /// The tangent at parametric angle `t` (the derivative of
+    /// [`Self::point_at`], counter-clockwise): `−a·sin t·u + b·cos t·n`.
+    pub fn tangent_at(&self, t: D<N>) -> V2<N> {
+        let along = self.major_dir.scale(-(self.major_radius * t.sin()));
+        let across = self.minor_dir().scale(self.minor_radius * t.cos());
+        along.add(across)
+    }
+
+    /// The parametric angle of `p`'s direction from the center: the `t`
+    /// with `p − c` along `(a·cos t, b·sin t)` in the axes' frame,
+    /// `atan2(a·(d·n), b·(d·u))` with `d = p − c` (scaling both arguments by
+    /// `a·b > 0` keeps a degenerate `b` finite). For a point on the ellipse,
+    /// the `t` [`Self::point_at`] puts it at.
+    pub fn param_angle(&self, p: V2<N>) -> D<N> {
+        let d = p.sub(self.center);
+        let across = self.major_radius * d.dot(self.minor_dir());
+        let along = self.minor_radius * d.dot(self.major_dir);
+        across.atan2(along)
+    }
+}
+
+/// [`span_overshoot`] in forward mode: how far the angle `t` falls outside
+/// the span from `start` to `end` (0 within it), with its partials.
+pub(crate) fn span_overshoot_d<const N: usize>(t: D<N>, start: D<N>, end: D<N>) -> D<N> {
+    let (v, [dt, ds, de]) = span_overshoot(t.v, start.v, end.v);
+    let mut g = [0.0; N];
+    for (k, g) in g.iter_mut().enumerate() {
+        *g = dt * t.g[k] + ds * start.g[k] + de * end.g[k];
+    }
+    D { v, g }
 }

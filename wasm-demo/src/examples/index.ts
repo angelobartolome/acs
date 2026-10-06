@@ -43,6 +43,34 @@ function arc(
     fixed: false,
   };
 }
+/**
+ * An elliptical arc from `start` to `end` (counter-clockwise, parametric
+ * angles) on the ellipse with this center, focus and minor radius.
+ */
+function earc(
+  id: string,
+  center: EntityId,
+  focus: EntityId,
+  start: EntityId,
+  end: EntityId,
+  radmin: number,
+  startAngle: number,
+  endAngle: number,
+  fixed = false,
+): SketchEntity {
+  return {
+    kind: "elliptical_arc",
+    id,
+    center,
+    focus,
+    start,
+    end,
+    radmin,
+    startAngle,
+    endAngle,
+    fixed,
+  };
+}
 /** A constraint by registry key (a native type's variant). */
 function k(
   id: string,
@@ -710,6 +738,34 @@ export const EXAMPLES: readonly Example[] = [
         k("k1", "midpoint_on_line", ["l2", "l1"]),
         k("k2", "horizontal_line", ["l2"]),
         k("k3", "distance_points", ["p3", "p4"], { value: 40 }),
+      ],
+    },
+  },
+  {
+    id: "elliptical-arc",
+    label: "Elliptical arc",
+    description:
+      "A fixed elliptical arc, as a projected edge (center, focus at 30 so a = 50, radmin 40): a line runs tangent off one end, an arc off the other, and a point is held on its span",
+    sketch: {
+      entities: [
+        pt("ec", 0, 0, true),
+        pt("ef", 30, 0, true),
+        pt("es", 50 * Math.cos(20 * DEG), 40 * Math.sin(20 * DEG), true),
+        pt("ee", 50 * Math.cos(150 * DEG), 40 * Math.sin(150 * DEG), true),
+        earc("ea1", "ec", "ef", "es", "ee", 40, 20 * DEG, 150 * DEG, true),
+        pt("q", -70, -10),
+        ln("l1", "ee", "q"),
+        pt("ac", 40, 5),
+        pt("ae", 60, -10),
+        arc("a1", "ac", "es", "ae", 15, 60 * DEG, 330 * DEG),
+        pt("m", 10, 45),
+      ],
+      constraints: [
+        k("k1", "tangent_line_elliptical_arc", ["l1", "ea1"]),
+        k("k2", "length_line", ["l1"], { value: 35 }),
+        k("k3", "tangent_arc_elliptical_arc", ["a1", "ea1"]),
+        k("k4", "radius_arc", ["a1"], { value: 15 }),
+        k("k5", "on_elliptical_arc", ["m", "ea1"]),
       ],
     },
   },

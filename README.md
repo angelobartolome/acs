@@ -26,6 +26,7 @@ ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numer
 | Circles | ✅ |
 | Arcs (center, start and end points) | ✅ |
 | Ellipses (center and focus points, minor radius) | ✅ |
+| Elliptical arcs (an ellipse's center, focus and minor radius, plus start and end points at parametric angles) | ✅ |
 
 ### Constraints
 
@@ -42,9 +43,9 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `direction` | line, or two points | Direction from +X (radians, counter-clockwise) |
 | `distance` | point–point, point–line (`extension?`), point–circle (`internal?`), line–circle (`extension?`), circle–circle, circle–arc, arc–arc (`internal?`), line–line | Point–point distance; point–segment distance (with `extension`, to the line's Extension); the gap from a point, segment (or Extension) or circle to a circle's outside (with `internal`, inside it), and between arcs and circles the same way with the nearest points on each arc's span; two parallel lines `value` apart (both of `b`'s endpoints from `a`'s Extension) |
 | `offset` | point, line | Distance from a point to a line's Extension on a given side (Linked Offsets) |
-| `on` | point, line (`extension?`) / circle / arc / ellipse | Point lies on the segment (or Extension), circle, arc's span, or ellipse |
+| `on` | point, line (`extension?`) / circle / arc / ellipse / elliptical arc | Point lies on the segment (or Extension), circle, arc's span, ellipse, or elliptical arc's span |
 | `midpoint` | `entities`: [point, line] or [line, line] (`extension?`) | A point is the midpoint of a line; or the midpoint of one line lies on another line (or its Extension) |
-| `tangent` | line–circle (`extension?`), line–arc, line–ellipse, circle–circle, circle–arc, arc–arc (`internal?`) | Tangency on the segment and on each arc's span; circles and arcs touch externally, or one inside the other with `internal: true`; arcs sharing an endpoint are tangent at it |
+| `tangent` | line–circle (`extension?`), line–arc, line–ellipse, line–elliptical arc, arc–elliptical arc (at a shared endpoint), circle–circle, circle–arc, arc–arc (`internal?`) | Tangency on the segment and on each arc's span; circles and arcs touch externally, or one inside the other with `internal: true`; arcs sharing an endpoint are tangent at it |
 | `concentric` | circle/arc, circle/arc | Share a center |
 | `equal` | line–line, circle/arc–circle/arc, or values | Equal length, equal radius, or `a = b` |
 | `radius` | circle or arc | Fixed radius |
@@ -55,9 +56,9 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `mirror` | point, point, line | A point is another mirrored across a line's Extension |
 | `rotation` | point, point, center point | A point is another rotated about a center by a given angle (circular array copy) |
 | `translation` | point, point, two direction points | A point is another translated `distance × count` along a direction (linear array copy) |
-| `ellipse_axis` | ellipse, point or two points, `which` (`major`/`minor`) | A point is an end of an ellipse's major or minor axis; or two points are its opposite ends |
+| `ellipse_axis` | ellipse or elliptical arc, point or two points, `which` (`major`/`minor`) | A point is an end of an ellipse's major or minor axis; or two points are its opposite ends |
 
-Values (for `equal` and `difference`) are constants (numbers or sketch Parameters) or entity properties the solver may move (a point's `x`/`y`, a circle's or arc's `radius`, an ellipse's `radmin`).
+Values (for `equal` and `difference`) are constants (numbers or sketch Parameters) or entity properties the solver may move (a point's `x`/`y`, a circle's or arc's `radius`, an ellipse's or elliptical arc's `radmin`).
 
 Internally each variant is a `ConstraintType` (`DistancePointLine`, `TangentExtensionCircle`, …) with an analytical Jacobian; see [SPEC.md](SPEC.md).
 
@@ -160,7 +161,7 @@ if (result.status === 'converged') {
 }
 ```
 
-The WASM function takes a JSON string and returns a JSON string. The output `primitives` array mirrors the input with the solved values (`x`, `y`, `radius`, arc angles, an ellipse's `radmin`), alongside `status`, `conflicting`, `redundant`, `dof`, `fullyConstrained` and `stats`.
+The WASM function takes a JSON string and returns a JSON string. The output `primitives` array mirrors the input with the solved values (`x`, `y`, `radius`, arc angles, an ellipse's `radmin`, an elliptical arc's `radmin` and angles), alongside `status`, `conflicting`, `redundant`, `dof`, `fullyConstrained` and `stats`.
 
 To drag, add constraints marked `temporary: true` that hold the dragged geometry at the cursor, such as `{ type: "x", id: "gx", point: "p", value: 6, temporary: true }`. A point on a line, dragged off it, slides along the line to the closest point. See [USAGE.md](USAGE.md#drags-soft-goals).
 

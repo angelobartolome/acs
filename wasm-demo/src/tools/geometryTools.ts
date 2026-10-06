@@ -1,5 +1,5 @@
 /**
- * Geometry creation tools (point / line / circle / arc) + pan.
+ * Geometry creation tools (point / line / circle / arc / elliptical arc) + pan.
  *
  * Multi-click tools stage their clicks in the store `draft` so the renderer
  * can show previews; clicking an existing point snaps to it instead of
@@ -8,6 +8,7 @@
 
 import type { EntityId } from "../core/model/types";
 import { isPoint } from "../core/model/types";
+import { ellipseFrame, ellipseThrough, paramAngle } from "../core/model/ellipse";
 import { sketchStore, type DraftClick, type Vec2 } from "../core/sketch/store";
 import type { ITool, ToolPointerEvent } from "./types";
 
@@ -135,6 +136,44 @@ export const addArcTool: ITool = {
       if (radius > 1e-9) {
         const center = resolveOrCreatePoint(c0);
         s.addArc(center, radius, startAngle, endAngle);
+      }
+      clearDraft();
+    }
+  },
+  onPointerMove(e) {
+    updateCursor(e.world);
+  },
+  onPointerUp() {},
+  onCancel: clearDraft,
+};
+
+/**
+ * Four clicks: the center, the end of one axis, the start point (which also
+ * sets the other axis: the ellipse passes through it), and the end point
+ * (projected onto the ellipse along its direction from the center). The arc
+ * runs counter-clockwise from start to end; the center and a focus become
+ * points the solver can move.
+ */
+export const addEllipticalArcTool: ITool = {
+  id: "elliptical_arc",
+  label: "Elliptical Arc",
+  icon: "\u2B2D",
+  hint: "Click center, then an axis end, then arc start (on the ellipse), then arc end",
+  cursor: "crosshair",
+  onPointerDown(e) {
+    if (e.button !== 0) return;
+    const clicks = pushDraftClick(clickAt(e));
+    if (clicks.length === 4) {
+      const s = sketchStore.getState();
+      const [c0, c1, c2, c3] = clicks;
+      const shape = ellipseThrough(c0, c1, c2);
+      if (shape !== null) {
+        const frame = ellipseFrame(c0, shape.focus, shape.radmin);
+        const startAngle = paramAngle(frame, c2);
+        const endAngle = paramAngle(frame, c3);
+        const center = resolveOrCreatePoint(c0);
+        const focus = s.addPoint(shape.focus.x, shape.focus.y);
+        s.addEllipticalArc(center, focus, shape.radmin, startAngle, endAngle);
       }
       clearDraft();
     }

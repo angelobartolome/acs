@@ -1,4 +1,4 @@
-use crate::geometry::{Arc as GeoArc, Circle, Ellipse, Line};
+use crate::geometry::{Arc as GeoArc, Circle, Ellipse, EllipticalArc, Line};
 use crate::sketch_system::{Role, SketchSystem};
 pub use crate::sketch_system::Diagnosis;
 use crate::{
@@ -66,6 +66,10 @@ impl ConstraintSolver {
 
     pub fn add_ellipse(&mut self, ellipse: Ellipse) -> String {
         self.geometry.add_ellipse(ellipse)
+    }
+
+    pub fn add_elliptical_arc(&mut self, arc: EllipticalArc) -> String {
+        self.geometry.add_elliptical_arc(arc)
     }
 
     /// Adds a constraint. Every entity it references must already be added,
@@ -149,6 +153,10 @@ impl ConstraintSolver {
 
     pub fn get_ellipse(&self, id: String) -> Option<&Ellipse> {
         self.geometry.get_ellipse(&id)
+    }
+
+    pub fn get_elliptical_arc(&self, id: String) -> Option<&EllipticalArc> {
+        self.geometry.get_elliptical_arc(&id)
     }
 
     pub fn print_state(&self) {

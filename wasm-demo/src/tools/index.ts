@@ -3,6 +3,7 @@ import { selectTool } from "./SelectTool";
 import {
   addArcTool,
   addCircleTool,
+  addEllipticalArcTool,
   addLineTool,
   addPointTool,
 } from "./geometryTools";
@@ -14,6 +15,7 @@ export const TOOLS: readonly ITool[] = [
   addLineTool,
   addCircleTool,
   addArcTool,
+  addEllipticalArcTool,
 ];
 
 const BY_ID = new Map<ToolId, ITool>(TOOLS.map((t) => [t.id, t]));

@@ -8,7 +8,8 @@
 //!
 //! Besides the sketch's constraints, every Arc brings its own *implicit*
 //! rules (an [`ArcRulesConstraint`] over its center, endpoints, radius and
-//! angles): an arc's endpoints always lie on it. Implicit rules are real
+//! angles): an arc's endpoints always lie on it. Every EllipticalArc
+//! likewise brings an [`EllipticalArcRulesConstraint`]. Implicit rules are real
 //! constraints in every respect (they join the arc's Component, hold exactly
 //! under soft goals, count in degrees of freedom and diagnosis) except that,
 //! having no index, they are never reported Conflicting or Redundant.
@@ -19,6 +20,7 @@ use nalgebra::{DMatrix, DVector, SymmetricEigen};
 
 use crate::component_graph::find_components_of;
 use crate::constraints::arc_rules::ArcRulesConstraint;
+use crate::constraints::elliptical_arc_rules::EllipticalArcRulesConstraint;
 use crate::constraints::{eval_into, reads};
 use crate::dogleg_solver::{System, TOLF};
 use crate::{
@@ -35,7 +37,8 @@ pub(crate) enum Role {
     Temporary,
 }
 
-/// The sketch's constraints followed by the implicit ones (one per Arc).
+/// The sketch's constraints followed by the implicit ones (one per Arc and
+/// per EllipticalArc).
 /// Indices below `explicit.len()` are the sketch's constraint indices.
 struct Constraints<'a> {
     explicit: &'a [Box<dyn Constraint>],
@@ -224,6 +227,9 @@ impl<'a> SketchSystem<'a> {
         }
         for (id, ellipse) in geometry.get_all_ellipses_mut() {
             self.pm.write_entity_values(id, ellipse)?;
+        }
+        for (id, arc) in geometry.get_all_elliptical_arcs_mut() {
+            self.pm.write_entity_values(id, arc)?;
         }
         Ok(())
     }
@@ -792,21 +798,40 @@ fn set_columns(pm: &mut VarRegistry, comp: &Component, x: &DVector<f64>) {
 }
 
 /// Each Arc's implicit rules, in sorted arc order: its start and end Points
-/// at its radius from its center, at its start and end angles. Arcs whose
-/// center or endpoints aren't Points get none (they can't be solved).
+/// at its radius from its center, at its start and end angles; then each
+/// EllipticalArc's, in sorted order: its start and end Points on its ellipse
+/// at their parametric angles. Arcs whose center, focus or endpoints aren't
+/// Points get none (they can't be solved).
 fn implicit_arc_rules(geometry: &GeometrySystem) -> Vec<Box<dyn Constraint>> {
+    let has_points = |ids: &[&String]| ids.iter().all(|p| geometry.get_point(p).is_some());
     let mut arcs: Vec<_> = geometry.get_all_arcs().values().collect();
     arcs.sort_by(|a, b| a.id.cmp(&b.id));
-    arcs.into_iter()
-        .filter(|a| [&a.center, &a.start, &a.end].iter().all(|p| geometry.get_point(p).is_some()))
+    let mut elliptical: Vec<_> = geometry.get_all_elliptical_arcs().values().collect();
+    elliptical.sort_by(|a, b| a.id.cmp(&b.id));
+    let circular = arcs
+        .into_iter()
+        .filter(|a| has_points(&[&a.center, &a.start, &a.end]))
         .map(|a| {
             Box::new(ArcRulesConstraint::new(a.center.clone(), a.start.clone(), a.end.clone(), a.id.clone()))
                 as Box<dyn Constraint>
-        })
-        .collect()
+        });
+    let elliptical = elliptical
+        .into_iter()
+        .filter(|a| has_points(&[&a.center, &a.focus1, &a.start, &a.end]))
+        .map(|a| {
+            Box::new(EllipticalArcRulesConstraint::new(
+                a.center.clone(),
+                a.focus1.clone(),
+                a.start.clone(),
+                a.end.clone(),
+                a.id.clone(),
+            )) as Box<dyn Constraint>
+        });
+    circular.chain(elliptical).collect()
 }
 
-/// Registers every Point, Circle, Arc and Ellipse, in a deterministic (sorted) order.
+/// Registers every Point, Circle, Arc, Ellipse and EllipticalArc, in a
+/// deterministic (sorted) order.
 fn build_var_registry(geometry: &GeometrySystem) -> VarRegistry {
     let mut pm = VarRegistry::new();
 
@@ -832,6 +857,16 @@ fn build_var_registry(geometry: &GeometrySystem) -> VarRegistry {
     ellipse_ids.sort();
     for id in ellipse_ids {
         pm.register_entity(id.clone(), EntityType::Ellipse, &geometry.get_all_ellipses()[id]);
+    }
+
+    let mut elliptical_arc_ids: Vec<&String> = geometry.get_all_elliptical_arcs().keys().collect();
+    elliptical_arc_ids.sort();
+    for id in elliptical_arc_ids {
+        pm.register_entity(
+            id.clone(),
+            EntityType::EllipticalArc,
+            &geometry.get_all_elliptical_arcs()[id],
+        );
     }
 
     pm
