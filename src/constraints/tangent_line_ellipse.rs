@@ -70,36 +70,64 @@ impl Constraint for TangentLineEllipseConstraint {
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
         // x = [cx, cy, fx, fy, ax, ay, bx, by, b]
         let e = EllipseFrame::<9>::new(x, 0, 2, 8);
-        let (a, b) = (V2::point(x, 4), V2::point(x, 6));
-        let d = b.sub(a);
-        let g = d.unit();
-        let nu = g.rot90();
-        let (f1, f2) = (e.focus, e.focus2());
-        let s1 = nu.dot(f1.sub(a));
+        let t = line_ellipse_tangency(&e, V2::point(x, 4), V2::point(x, 6));
+        r[0] = t.tangency.v;
+        t.tangency.write_row(j, 0);
+        r[1] = t.overshoot.v;
+        t.overshoot.write_row(j, 1);
+    }
+}
 
-        let h = e.center.sub(f1).add(nu.scale(s1));
-        let tangency = h.norm() - e.major_radius;
-        r[0] = tangency.v;
-        tangency.write_row(j, 0);
+/// A Line from `a` to `b` against ellipse `e`, as
+/// [`TangentLineEllipseConstraint`] measures it.
+pub(crate) struct LineEllipseTangency<const N: usize> {
+    /// R₀: 0 when the line's Extension is tangent to the ellipse.
+    pub tangency: D<N>,
+    /// R₁: how far the tangency point lies off the segment (0 on it).
+    pub overshoot: D<N>,
+    /// The tangency point (where the line through the far focus and the
+    /// mirror of the near one crosses the line), unless the line passes
+    /// (nearly) through the center or the segment has no length.
+    pub point: Option<V2<N>>,
+}
 
-        let s2 = nu.dot(f2.sub(a));
-        let (sigma1, sigma2) = (g.dot(f1.sub(a)), g.dot(f2.sub(a)));
-        let sum = s1 + s2;
-        let len = d.norm();
-        // A degenerate segment has no direction to overshoot along.
-        let over = if sum.v.abs() < NO_TANGENCY || len.v < NO_TANGENCY {
-            D::cst(0.0)
-        } else {
-            let sigma = (s1 * sigma2 + s2 * sigma1) / sum;
-            if sigma.v < 0.0 {
-                sigma
-            } else if sigma.v > len.v {
-                sigma - len
-            } else {
-                D::cst(0.0)
-            }
+pub(crate) fn line_ellipse_tangency<const N: usize>(
+    e: &EllipseFrame<N>,
+    a: V2<N>,
+    b: V2<N>,
+) -> LineEllipseTangency<N> {
+    let d = b.sub(a);
+    let g = d.unit();
+    let nu = g.rot90();
+    let (f1, f2) = (e.focus, e.focus2());
+    let s1 = nu.dot(f1.sub(a));
+
+    let h = e.center.sub(f1).add(nu.scale(s1));
+    let tangency = h.norm() - e.major_radius;
+
+    let s2 = nu.dot(f2.sub(a));
+    let (sigma1, sigma2) = (g.dot(f1.sub(a)), g.dot(f2.sub(a)));
+    let sum = s1 + s2;
+    let len = d.norm();
+    // A degenerate segment has no direction to overshoot along.
+    if sum.v.abs() < NO_TANGENCY || len.v < NO_TANGENCY {
+        return LineEllipseTangency {
+            tangency,
+            overshoot: D::cst(0.0),
+            point: None,
         };
-        r[1] = over.v;
-        over.write_row(j, 1);
+    }
+    let sigma = (s1 * sigma2 + s2 * sigma1) / sum;
+    let overshoot = if sigma.v < 0.0 {
+        sigma
+    } else if sigma.v > len.v {
+        sigma - len
+    } else {
+        D::cst(0.0)
+    };
+    LineEllipseTangency {
+        tangency,
+        overshoot,
+        point: Some(a.add(g.scale(sigma))),
     }
 }

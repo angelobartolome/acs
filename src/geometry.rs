@@ -249,6 +249,97 @@ impl VarEntity for Ellipse {
     }
 }
 
+/// An arc of an Ellipse: the Ellipse's center Point, focus Point
+/// (`focus1`) and minor radius `radmin`, plus start and end Points and
+/// angles. The angles are the ellipse's own parametric angle `t`, measured
+/// from its major axis (center → focus1) towards its minor axis
+/// (`rot90`): the point at `t` is `c + a·cos t·u + b·sin t·n`. It sweeps
+/// counter-clockwise from `start_angle` to `end_angle`, as an `Arc` does
+/// (sweep `(end − start) mod 2π`, 0 = a full turn). It owns `radmin` and
+/// both angles as Vars; `SketchSystem` adds implicit rules (an
+/// `EllipticalArcRulesConstraint`) holding the endpoints at their angles.
+#[derive(Debug, Clone, PartialEq)]
+#[wasm_bindgen(getter_with_clone)]
+pub struct EllipticalArc {
+    pub id: String,
+    pub center: String, // Point ID
+    pub focus1: String, // Point ID
+    /// Start Point ID; always at `start_angle`.
+    pub start: String,
+    /// End Point ID; always at `end_angle`.
+    pub end: String,
+    pub radmin: f64,
+    pub start_angle: f64, // parametric, in radians
+    pub end_angle: f64,   // parametric, in radians
+    pub fixed: bool,
+}
+
+#[wasm_bindgen]
+impl EllipticalArc {
+    #[wasm_bindgen(constructor)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        id: String,
+        center: String,
+        focus1: String,
+        start: String,
+        end: String,
+        radmin: f64,
+        start_angle: f64,
+        end_angle: f64,
+        fixed: bool,
+    ) -> Self {
+        Self {
+            id,
+            center,
+            focus1,
+            start,
+            end,
+            radmin,
+            start_angle,
+            end_angle,
+            fixed,
+        }
+    }
+}
+
+/// Values in `Var` order: `MinorRadius` (0), `StartAngle` (1), `EndAngle`
+/// (2), so Ellipse kernels read its `radmin` and Arc-style kernels its
+/// angles.
+impl VarEntity for EllipticalArc {
+    fn values(&self) -> Vec<f64> {
+        vec![self.radmin, self.start_angle, self.end_angle]
+    }
+
+    fn set_values(&mut self, params: &[f64]) -> Result<(), String> {
+        if params.len() != 3 {
+            return Err(format!(
+                "EllipticalArc requires exactly 3 values, got {}",
+                params.len()
+            ));
+        }
+        self.radmin = params[0];
+        self.start_angle = params[1];
+        self.end_angle = params[2];
+        Ok(())
+    }
+
+    fn var_names(&self) -> Vec<String> {
+        vec![
+            format!("{}.radmin", self.id),
+            format!("{}.start_angle", self.id),
+            format!("{}.end_angle", self.id),
+        ]
+    }
+
+    fn is_var_fixed(&self, index: usize) -> bool {
+        match index {
+            0..=2 => self.fixed,
+            _ => true,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct GeometrySystem {
     points: HashMap<String, Point>,
@@ -256,6 +347,7 @@ pub struct GeometrySystem {
     circles: HashMap<String, Circle>,
     arcs: HashMap<String, Arc>,
     ellipses: HashMap<String, Ellipse>,
+    elliptical_arcs: HashMap<String, EllipticalArc>,
 }
 
 impl Default for GeometrySystem {
@@ -272,6 +364,7 @@ impl GeometrySystem {
             circles: HashMap::new(),
             arcs: HashMap::new(),
             ellipses: HashMap::new(),
+            elliptical_arcs: HashMap::new(),
         }
     }
 
@@ -359,6 +452,24 @@ impl GeometrySystem {
 
     pub fn get_all_ellipses_mut(&mut self) -> &mut HashMap<String, Ellipse> {
         &mut self.ellipses
+    }
+
+    pub fn add_elliptical_arc(&mut self, arc: EllipticalArc) -> String {
+        let id = arc.id.clone();
+        self.elliptical_arcs.insert(id.clone(), arc);
+        id
+    }
+
+    pub fn get_elliptical_arc(&self, id: &str) -> Option<&EllipticalArc> {
+        self.elliptical_arcs.get(id)
+    }
+
+    pub fn get_all_elliptical_arcs(&self) -> &HashMap<String, EllipticalArc> {
+        &self.elliptical_arcs
+    }
+
+    pub fn get_all_elliptical_arcs_mut(&mut self) -> &mut HashMap<String, EllipticalArc> {
+        &mut self.elliptical_arcs
     }
 
 

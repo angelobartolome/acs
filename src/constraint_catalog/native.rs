@@ -21,7 +21,7 @@ use super::{
 };
 use crate::ConstraintType;
 
-use FieldKind::{Arc, Axis, Circle, Ellipse, Line, Point, Scalar, Value as Val};
+use FieldKind::{Arc, Axis, Circle, Ellipse, EllipticalArc, Line, Point, Scalar, Value as Val};
 
 type Fields = &'static [(&'static str, FieldKind)];
 
@@ -215,6 +215,10 @@ pub(super) static SPECS: &[S] = &[
         let (center, focus, e) = a.e(0);
         ConstraintType::PointOnEllipse(a.p(0), center, focus, e)
     }),
+    S::new("on", &[("point", Point), ("curve", EllipticalArc)], |a| {
+        let (center, focus, e) = a.e(0);
+        ConstraintType::PointOnEllipticalArc(a.p(0), center, focus, e)
+    }),
     S::new(
         "midpoint",
         &[("entities[0]", Point), ("entities[1]", Line)],
@@ -247,6 +251,13 @@ pub(super) static SPECS: &[S] = &[
         let (center, focus, e) = a.e(0);
         ConstraintType::TangentLineEllipse(a.p(0), a.p(1), center, focus, e)
     }),
+    S::new("tangent", &[("a", Line), ("b", EllipticalArc)], |a| {
+        a.tangent_line_elliptical_arc()
+    }),
+    S::new("tangent", &[("a", Arc), ("b", EllipticalArc)], |a| {
+        a.tangent_arc_elliptical_arc()
+    })
+    .check(super::arc_and_elliptical_arc_share_an_endpoint),
     S::new("tangent", CC, |a| {
         ConstraintType::Tangent(a.center(0), a.c(0), a.center(1), a.c(1))
     })
@@ -351,6 +362,27 @@ pub(super) static SPECS: &[S] = &[
         "ellipse_axis",
         &[
             ("ellipse", Ellipse),
+            ("a", Point),
+            ("b", Point),
+            ("which", Axis),
+        ],
+        |a| {
+            let (center, focus, e) = a.e(0);
+            ConstraintType::EllipseDiameter(a.p(0), a.p(1), center, focus, e, a.axis(0))
+        },
+    ),
+    S::new(
+        "ellipse_axis",
+        &[("ellipse", EllipticalArc), ("point", Point), ("which", Axis)],
+        |a| {
+            let (center, focus, e) = a.e(0);
+            ConstraintType::EllipseAxisPoint(a.p(0), center, focus, e, a.axis(0))
+        },
+    ),
+    S::new(
+        "ellipse_axis",
+        &[
+            ("ellipse", EllipticalArc),
             ("a", Point),
             ("b", Point),
             ("which", Axis),

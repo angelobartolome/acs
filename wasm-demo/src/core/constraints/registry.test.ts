@@ -144,6 +144,8 @@ describe("ConstraintRegistry", () => {
       expect(keys).not.toContain("tangent_line_ellipse");
       expect(keys).not.toContain("ellipse_axis");
       expect(keys).not.toContain("ellipse_diameter");
+      expect(keys).not.toContain("on_elliptical_arc");
+      expect(keys).not.toContain("tangent_line_elliptical_arc");
     }
     expect(
       primitiveToConstraint(

@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
-use crate::geometry::{Arc as GeoArc, Circle, Ellipse, Line, Point};
-use crate::constraint_catalog::{self, References};
+use crate::geometry::{Arc as GeoArc, Circle, Ellipse, EllipticalArc, Line, Point};
+use crate::constraint_catalog::{self, EllipticalArcPoints, References};
 use crate::{ConstraintSolver, ConstraintType, SolverResult};
 
 fn as_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
@@ -17,7 +17,7 @@ fn as_string(v: &Value, key: &str) -> Option<String> {
     as_str(v, key).map(String::from)
 }
 
-const GEOMETRY_TYPES: &[&str] = &["point", "line", "circle", "arc", "ellipse"];
+const GEOMETRY_TYPES: &[&str] = &["point", "line", "circle", "arc", "ellipse", "elliptical_arc"];
 
 fn is_geometry(t: &str) -> bool {
     GEOMETRY_TYPES.contains(&t)
@@ -83,6 +83,23 @@ fn build_ellipses(primitives: &[Value]) -> HashMap<String, (String, String)> {
         .collect()
 }
 
+/// EllipticalArc IDs mapped to their Points.
+fn build_elliptical_arcs(primitives: &[Value]) -> HashMap<String, EllipticalArcPoints> {
+    primitives
+        .iter()
+        .filter(|p| as_str(p, "type") == Some("elliptical_arc"))
+        .filter_map(|p| {
+            let points = EllipticalArcPoints {
+                center: as_string(p, "c_id")?,
+                focus: as_string(p, "focus1_id")?,
+                start: as_string(p, "start_id")?,
+                end: as_string(p, "end_id")?,
+            };
+            Some((as_string(p, "id")?, points))
+        })
+        .collect()
+}
+
 fn required_str(p: &Value, key: &str, what: &str) -> Result<String, String> {
     as_string(p, key).ok_or_else(|| format!("{what}: missing field '{key}'"))
 }
@@ -95,7 +112,7 @@ fn required_f64(p: &Value, key: &str, what: &str) -> Result<f64, String> {
 
 /// Whether the solver must hold an entity's own values (a Point's
 /// coordinates, a Circle's radius, an Arc's radius and angles, an Ellipse's
-/// `radmin`): `fixed`, or Reference Geometry (`isReference`), which never
+/// `radmin`, an EllipticalArc's `radmin` and angles): `fixed`, or Reference Geometry (`isReference`), which never
 /// moves.
 fn fixed(p: &Value) -> bool {
     let flag = |key| p.get(key).and_then(Value::as_bool).unwrap_or(false);
@@ -147,6 +164,26 @@ fn register_geometry(cs: &mut ConstraintSolver, t: &str, id: &str, p: &Value) ->
             let radmin = required_f64(p, "radmin", &what)?;
             cs.add_ellipse(Ellipse::new(id, center, focus, radmin, fixed(p)));
         }
+        "elliptical_arc" => {
+            let center = required_str(p, "c_id", &what)?;
+            let focus = required_str(p, "focus1_id", &what)?;
+            let start = required_str(p, "start_id", &what)?;
+            let end = required_str(p, "end_id", &what)?;
+            let radmin = required_f64(p, "radmin", &what)?;
+            let start_angle = required_f64(p, "start_angle", &what)?;
+            let end_angle = required_f64(p, "end_angle", &what)?;
+            cs.add_elliptical_arc(EllipticalArc::new(
+                id,
+                center,
+                focus,
+                start,
+                end,
+                radmin,
+                start_angle,
+                end_angle,
+                fixed(p),
+            ));
+        }
         _ => unreachable!("not a geometry type: {t}"),
     }
     Ok(())
@@ -154,12 +191,13 @@ fn register_geometry(cs: &mut ConstraintSolver, t: &str, id: &str, p: &Value) ->
 
 fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
     for p in out.iter_mut() {
-        let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
+        let Some(t) = p.get("type").and_then(|x| x.as_str()).map(String::from) else {
             continue;
         };
-        let Some(id) = p.get("id").and_then(|x| x.as_str()) else {
+        let Some(id) = p.get("id").and_then(|x| x.as_str()).map(String::from) else {
             continue;
         };
+        let (t, id) = (t.as_str(), id.as_str());
         if t == "point" {
             if let Some(pt) = cs.get_point(id.to_string())
                 && let Some(obj) = p.as_object_mut()
@@ -186,6 +224,13 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
             && let Some(obj) = p.as_object_mut()
         {
             obj.insert("radmin".to_string(), json!(e.radmin));
+        } else if t == "elliptical_arc"
+            && let Some(e) = cs.get_elliptical_arc(id.to_string())
+            && let Some(obj) = p.as_object_mut()
+        {
+            obj.insert("radmin".to_string(), json!(e.radmin));
+            obj.insert("start_angle".to_string(), json!(e.start_angle));
+            obj.insert("end_angle".to_string(), json!(e.end_angle));
         }
     }
 }
@@ -196,7 +241,8 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
 /// ellipses); a `Line` owns no parameters, so it is reported fully constrained when
 /// both of its endpoints (`p1_id`, `p2_id`) are fully constrained. An ellipse's
 /// shape and place also depend on its center and focus Points, so it is reported
-/// only when its `radmin` and both of those Points are.
+/// only when its `radmin` and both of those Points are; an elliptical arc only
+/// when its `radmin`, angles, center, focus and endpoints are.
 fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<String> {
     let mut constrained: std::collections::BTreeSet<String> =
         cs.fully_constrained_entity_ids().into_iter().collect();
@@ -208,6 +254,7 @@ fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<Str
         let (keys, own_vars): (&[&str], bool) = match t {
             "line" => (&["p1_id", "p2_id"], false),
             "ellipse" => (&["c_id", "focus1_id"], true),
+            "elliptical_arc" => (&["c_id", "focus1_id", "start_id", "end_id"], true),
             _ => continue,
         };
         let Some(id) = as_string(p, "id") else {
@@ -339,6 +386,7 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
             .collect(),
         arc_endpoints: build_arc_endpoints(primitives),
         ellipses: build_ellipses(primitives),
+        elliptical_arcs: build_elliptical_arcs(primitives),
     };
 
     for &(t, id, p) in typed.iter().filter(|(t, ..)| is_geometry(t)) {
@@ -408,8 +456,9 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
     .to_string())
 }
 
-/// Lines' endpoints, circles' centers, arcs' centers and endpoints and
-/// ellipses' centers and foci must be Points.
+/// Lines' endpoints, circles' centers, arcs' centers and endpoints,
+/// ellipses' centers and foci and elliptical arcs' centers, foci and
+/// endpoints must be Points.
 fn check_geometry_references(cs: &ConstraintSolver, typed: &[(&str, &str, &Value)]) -> Result<(), String> {
     for &(t, id, p) in typed {
         let keys: &[&str] = match t {
@@ -417,6 +466,7 @@ fn check_geometry_references(cs: &ConstraintSolver, typed: &[(&str, &str, &Value
             "circle" => &["c_id"],
             "arc" => &["c_id", "start_id", "end_id"],
             "ellipse" => &["c_id", "focus1_id"],
+            "elliptical_arc" => &["c_id", "focus1_id", "start_id", "end_id"],
             _ => continue,
         };
         for key in keys {

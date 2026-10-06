@@ -15,11 +15,12 @@ pub enum Var<'a> {
     Y(&'a str),
     /// Radius of a Circle or Arc.
     Radius(&'a str),
-    /// Start angle of an Arc, in radians.
+    /// Start angle of an Arc or EllipticalArc, in radians (an
+    /// EllipticalArc's is parametric).
     StartAngle(&'a str),
-    /// End angle of an Arc, in radians.
+    /// End angle of an Arc or EllipticalArc, in radians.
     EndAngle(&'a str),
-    /// Minor radius (`radmin`) of an Ellipse.
+    /// Minor radius (`radmin`) of an Ellipse or EllipticalArc.
     MinorRadius(&'a str),
 }
 
@@ -229,20 +230,31 @@ pub fn check_vars(constraint: &dyn Constraint, geometry: &GeometrySystem) -> Res
             Var::Radius(id) => {
                 geometry.get_circle(id).is_some() || geometry.get_arc(id).is_some()
             }
-            Var::StartAngle(id) | Var::EndAngle(id) => geometry.get_arc(id).is_some(),
-            Var::MinorRadius(id) => geometry.get_ellipse(id).is_some(),
+            Var::StartAngle(id) | Var::EndAngle(id) => {
+                geometry.get_arc(id).is_some() || geometry.get_elliptical_arc(id).is_some()
+            }
+            Var::MinorRadius(id) => {
+                geometry.get_ellipse(id).is_some() || geometry.get_elliptical_arc(id).is_some()
+            }
         };
         if !ok {
             let kind = match p {
                 Var::X(_) | Var::Y(_) => "a point",
                 Var::Radius(_) => "a circle or arc",
-                Var::StartAngle(_) | Var::EndAngle(_) => "an arc",
-                Var::MinorRadius(_) => "an ellipse",
+                Var::StartAngle(_) | Var::EndAngle(_) => "an arc or elliptical arc",
+                Var::MinorRadius(_) => "an ellipse or elliptical arc",
             };
             return Err(format!("'{}' is not {kind}", p.entity_id()));
         }
     }
     Ok(())
+}
+
+/// One end of an arc: where it starts, or where it ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArcEnd {
+    Start,
+    End,
 }
 
 /// One of an Ellipse's two axes.
@@ -405,6 +417,28 @@ pub enum ConstraintType {
     /// (native two-point `ellipse_axis`).
     /// (p1_id, p2_id, ellipse_center_id, ellipse_focus1_id, ellipse_id, axis)
     EllipseDiameter(String, String, String, String, String, EllipseAxis),
+
+    // ── Elliptical arcs (an ellipse's center, focus and `radmin`, plus
+    //    parametric start and end angles) ──
+    /// A point lies on an elliptical arc's span: on its ellipse, between its
+    /// start and end angles (counter-clockwise, parametric).
+    /// (point_id, center_id, focus1_id, elliptical_arc_id)
+    PointOnEllipticalArc(String, String, String, String),
+
+    /// A Line (the segment) is tangent to an elliptical arc, touching it on
+    /// the segment and on the span.
+    /// (line_pa_id, line_pb_id, center_id, focus1_id, elliptical_arc_id)
+    TangentLineEllipticalArc(String, String, String, String, String),
+
+    /// A Line runs along an elliptical arc's tangent at one of its endpoints
+    /// (the Line's endpoint `point_id` is that endpoint).
+    /// (point_id, other_line_end_id, center_id, focus1_id, elliptical_arc_id, which end)
+    TangentLineEllipticalArcAtPoint(String, String, String, String, String, ArcEnd),
+
+    /// An Arc and an elliptical arc are tangent at an endpoint they share:
+    /// the Arc's radius there is normal to the ellipse.
+    /// (point_id, arc_center_id, center_id, focus1_id, elliptical_arc_id, which end)
+    TangentArcEllipticalArcAtPoint(String, String, String, String, String, ArcEnd),
 
     /// A Line tangent to an arc at a Point they share (a line endpoint that
     /// is an arc endpoint): the line is perpendicular to the radius there.
@@ -666,6 +700,30 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
                 p1, p2, center, focus, e, axis,
             ),
         )),
+        ConstraintType::PointOnEllipticalArc(p, center, focus, e) => Ok(Box::new(
+            crate::constraints::point_on_elliptical_arc::PointOnEllipticalArcConstraint::new(
+                p, center, focus, e,
+            ),
+        )),
+        ConstraintType::TangentLineEllipticalArc(pa, pb, center, focus, e) => Ok(Box::new(
+            crate::constraints::tangent_line_elliptical_arc::TangentLineEllipticalArcConstraint::new(
+                pa, pb, center, focus, e,
+            ),
+        )),
+        ConstraintType::TangentLineEllipticalArcAtPoint(p, other, center, focus, e, end) => {
+            Ok(Box::new(
+                crate::constraints::tangent_line_elliptical_arc_at_point::TangentLineEllipticalArcAtPointConstraint::new(
+                    p, other, center, focus, e, end,
+                ),
+            ))
+        }
+        ConstraintType::TangentArcEllipticalArcAtPoint(p, arc_center, center, focus, e, end) => {
+            Ok(Box::new(
+                crate::constraints::tangent_arc_elliptical_arc_at_point::TangentArcEllipticalArcAtPointConstraint::new(
+                    p, arc_center, center, focus, e, end,
+                ),
+            ))
+        }
         ConstraintType::Collinear(a1, a2, b1, b2) => Ok(Box::new(
             crate::constraints::collinear::CollinearConstraint::new(a1, a2, b1, b2),
         )),

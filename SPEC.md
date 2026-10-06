@@ -740,6 +740,41 @@ arc.
 
 ---
 
+### 24  Elliptical arcs
+
+An **EllipticalArc** is an Ellipse (§21: center `c`, focus `f`, minor radius
+`b`, so `A`, `u`, `n` as there) plus start and end Points `s`, `e` and two
+more variables, its start and end angles `α`, `β` (`Var::StartAngle`,
+`Var::EndAngle`; its values are `[b, α, β]`, so `Var::MinorRadius` reads its
+`b` and every §21 kernel takes it). The angles are *parametric*: the point
+at `t` is `P(t) = c + A·cos t·u + b·sin t·n`, with tangent
+`τ(t) = P'(t) = −A·sin t·u + b·cos t·n`. A point `p`'s parametric angle is
+`t(p) = atan2(A·(d·n), b·(d·u))`, `d = p − c` (both arguments scaled by
+`A·b > 0`, so `b → 0` stays finite). It sweeps counter-clockwise from `α` to
+`β`; `overshoot(t, α, β)` is §20's span measure (`span_overshoot`). A free
+elliptical arc has 7 degrees of freedom.
+
+| Constraint (JSON) | Residuals |
+|-------------------|-----------|
+| `EllipticalArcRules(c, f, s, e, E)` (implicit, one per elliptical arc) | `R₀,₁ = s − P(α)`, `R₂,₃ = e − P(β)` |
+| `PointOnEllipticalArc(p, c, f, E)` (`on`) | `R₀ = \|p − f\| + \|p − f₂\| − 2A` (as `PointOnEllipse`), `R₁ = A · overshoot(t(p), α, β)` |
+| `TangentLineEllipticalArc(a, b, c, f, E)` (`tangent` line–elliptical arc) | `R₀`, `R₁` as `TangentLineEllipse`, `R₂ = A · overshoot(t(T), α, β)` with `T = a + σ_T·g` its tangency point (`R₂ = 0` when `T` is undefined, as `R₁`) |
+| `TangentLineEllipticalArcAtPoint(p, o, c, f, E, end)` (`tangent`, line endpoint = arc endpoint) | `R = ĝ × τ̂(θ)`, `ĝ = (o − p)/\|o − p\|`, `θ` the angle of that end (`α` or `β`) |
+| `TangentArcEllipticalArcAtPoint(p, k, c, f, E, end)` (`tangent` arc–elliptical arc, shared endpoint) | `R = r̂ · τ̂(θ)`, `r̂ = (p − k)/\|p − k\|` the Arc's radius at `p` |
+
+The at-point forms are chosen, as `TangentAtPoint` is for an Arc, when the
+Line's endpoint (or the Arc's) *is* the elliptical arc's endpoint: through a
+point already on the curve the segment-and-span form only changes
+quadratically. They read the end's angle variable rather than the point's
+angle, which the rules tie to it. An Arc and an elliptical arc have no other
+tangency: the catalog row's check rejects a pair with no shared endpoint.
+
+**Jacobians.** Forward mode, as §21, with `∂ sin t = cos t·∂t`,
+`∂ cos t = −sin t·∂t` and `∂ atan2(y, x) = (x·∂y − y·∂x)/(x² + y²)` (zero at
+the origin); `overshoot` contributes `(∂/∂t, ∂/∂α, ∂/∂β)` from
+`span_overshoot`, chained through `t(p)` or `t(T)`. `tests/jacobian_fd_test.rs`
+checks every kernel, the rules included.
+
 ## ConstraintType Enum Summary (updated)
 
 ```rust
@@ -798,6 +833,12 @@ pub enum ConstraintType {
     TangentLineEllipse(String, String, String, String, String), // line_pa, line_pb, center_id, focus1_id, ellipse_id
     EllipseAxisPoint(String, String, String, String, EllipseAxis), // point_id, center_id, focus1_id, ellipse_id, Major|Minor
     EllipseDiameter(String, String, String, String, String, EllipseAxis), // p1_id, p2_id, center_id, focus1_id, ellipse_id, Major|Minor
+
+    // Elliptical arcs (§24)
+    PointOnEllipticalArc(String, String, String, String),                    // point_id, center_id, focus1_id, elliptical_arc_id
+    TangentLineEllipticalArc(String, String, String, String, String),        // line_pa_id, line_pb_id, center_id, focus1_id, elliptical_arc_id
+    TangentLineEllipticalArcAtPoint(String, String, String, String, String, ArcEnd), // point_id, other_id, center_id, focus1_id, elliptical_arc_id, Start|End
+    TangentArcEllipticalArcAtPoint(String, String, String, String, String, ArcEnd),  // point_id, arc_center_id, center_id, focus1_id, elliptical_arc_id, Start|End
 
     // Collinear (native `normal` is PointOnExtension(center, line_pa, line_pb))
     Collinear(String, String, String, String),            // a_p1, a_p2, b_p1, b_p2
