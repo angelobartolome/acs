@@ -611,6 +611,10 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
             Operand::Radius(s("c1")),
             Operand::MinorRadius(s("e1")),
         ),
+        // `horizontal_distance`/`vertical_distance`: a signed coordinate
+        // difference, also between a point and itself.
+        ConstraintType::Difference(Operand::X(s("p0")), Operand::X(s("p1")), Operand::Const(-1.5)),
+        ConstraintType::Difference(Operand::Y(s("p0")), Operand::Y(s("p0")), Operand::Const(0.0)),
     ]
 }
 

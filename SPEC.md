@@ -458,6 +458,18 @@ Only variable operands are columns.
 The same variable may appear twice (its partials add). With no variable
 operand the row is constant: it holds or it is Conflicting.
 
+The horizontal and vertical distance dimensions are built as `Difference`
+over coordinates (no kernel of their own; one row, so diagnosis reports one
+constraint):
+
+| JSON type | Built as | Residual | Partials |
+|-----------|----------|----------|----------|
+| `horizontal_distance` (`a`, `b` or `line` `p1→p2`) | `Difference(X(a), X(b), value)` | `R = b.x − a.x − value` | `∂a.x = −1`, `∂b.x = +1` |
+| `vertical_distance` (`a`, `b` or `line` `p1→p2`) | `Difference(Y(a), Y(b), value)` | `R = b.y − a.y − value` | `∂a.y = −1`, `∂b.y = +1` |
+
+Signed and linear: a negative `value` puts `b` left of (below) `a`, and the
+row never vanishes.
+
 ### 16  PointPointAngle
 
 `PointPointAngle(p1, p2, θ)` (`direction`): the direction of `p1 → p2` is `θ`

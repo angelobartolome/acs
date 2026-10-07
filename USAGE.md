@@ -116,6 +116,7 @@ Every constraint primitive needs a unique `id` and a `type` string. ACS names co
 | `length` | `curve`: line or arc; `value` | A line's length; an arc's length `r · sweep`, sweep `(end_angle − start_angle) mod 2π` (a full turn when 0) |
 | `difference` | `a`, `b`, `value` (value fields) | `b − a = value`, e.g. two radii a Parameter apart |
 | `x` / `y` | `point`: point; `value` | Point pinned to an x / y coordinate |
+| `horizontal_distance` / `vertical_distance` | `a`, `b`: point, or `line`: line; `value` | Signed distance along one axis: `b.x − a.x = value` (vertical: `b.y − a.y`); for a line, `p2 − p1`. A negative `value` puts `b` left of (below) `a`; send the sign the geometry has when the dimension is created. Fixes one axis only (with a point–point `distance` too, `b` is fully placed). `a` and `b` are ordered (swapping them flips the sign) |
 | `mirror` | `source`, `image`: point; `axis`: line | `image` is `source` mirrored across the axis line's Extension (a mirror axis reflects points beside or beyond its ends too) |
 | `rotation` | `source`, `copy`, `center`: point; `angle` | `copy` is `source` rotated `angle` radians counter-clockwise about `center` (one circular array copy) |
 | `translation` | `source`, `copy`, `from`, `to`: point; `distance`, `count` | `copy` is `source` moved `distance × count` along the unit direction `from → to` (copy `count` of a linear array; swap `from`/`to` to flip it) |

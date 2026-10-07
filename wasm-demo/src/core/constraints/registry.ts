@@ -970,6 +970,82 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
       },
     ],
   },
+  // Signed horizontal/vertical dimensions: b − a (a line's p2 − p1) along
+  // one axis, defaulting to the current offset so nothing moves.
+  {
+    key: "horizontal_distance_points",
+    type: "horizontal_distance",
+    label: "Horizontal Distance",
+    badge: "↔x",
+    description: "Signed horizontal distance from the first point to the second (b.x - a.x)",
+    selection: [P(2)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      {
+        key: "value",
+        label: "dX",
+        unit: "length",
+        defaultFrom: (ents) => pointXY(ents[1]).x - pointXY(ents[0]).x,
+      },
+    ],
+  },
+  {
+    key: "horizontal_distance_line",
+    type: "horizontal_distance",
+    label: "Horizontal Distance",
+    badge: "↔x",
+    description: "Signed horizontal extent of the line (p2.x - p1.x)",
+    selection: [L(1)],
+    entityFields: ["line"],
+    scalarParams: [
+      {
+        key: "value",
+        label: "dX",
+        unit: "length",
+        defaultFrom: (ents, resolve) => {
+          const [a, b] = lineEndpoints(ents[0], resolve);
+          return b.x - a.x;
+        },
+      },
+    ],
+  },
+  {
+    key: "vertical_distance_points",
+    type: "vertical_distance",
+    label: "Vertical Distance",
+    badge: "↕y",
+    description: "Signed vertical distance from the first point to the second (b.y - a.y)",
+    selection: [P(2)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      {
+        key: "value",
+        label: "dY",
+        unit: "length",
+        defaultFrom: (ents) => pointXY(ents[1]).y - pointXY(ents[0]).y,
+      },
+    ],
+  },
+  {
+    key: "vertical_distance_line",
+    type: "vertical_distance",
+    label: "Vertical Distance",
+    badge: "↕y",
+    description: "Signed vertical extent of the line (p2.y - p1.y)",
+    selection: [L(1)],
+    entityFields: ["line"],
+    scalarParams: [
+      {
+        key: "value",
+        label: "dY",
+        unit: "length",
+        defaultFrom: (ents, resolve) => {
+          const [a, b] = lineEndpoints(ents[0], resolve);
+          return b.y - a.y;
+        },
+      },
+    ],
+  },
   {
     key: "mirror",
     type: "mirror",

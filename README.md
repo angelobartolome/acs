@@ -53,6 +53,7 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `length` | line or arc | Fixed length of a line, or of an arc (`radius × sweep`) |
 | `difference` | values | `b − a = value` |
 | `x` / `y` | point | Pin a point to a coordinate value |
+| `horizontal_distance` / `vertical_distance` | two points, or line | Signed horizontal / vertical distance: `b.x − a.x = value` (`y` for vertical; a line's `p2 − p1`); negative puts `b` left of / below `a` |
 | `mirror` | point, point, line | A point is another mirrored across a line's Extension |
 | `rotation` | point, point, center point | A point is another rotated about a center by a given angle (circular array copy) |
 | `translation` | point, point, two direction points | A point is another translated `distance × count` along a direction (linear array copy) |
