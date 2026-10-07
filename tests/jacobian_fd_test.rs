@@ -6,7 +6,9 @@
 //! occurrence of each variable, and a variable it doesn't read must have a
 //! zero column.
 
-use acs::constraint_catalog::{Args, ConstraintSpec, EllipseRef, FieldKind, specs};
+use acs::constraint_catalog::{
+    Args, ConstraintSpec, EllipseRef, FieldKind, specs, tangent_at_held_endpoints,
+};
 use acs::constraints::{
     Constraint, ConstraintType, EllipseAxis, Operand, create_constraint, reads,
 };
@@ -155,11 +157,32 @@ const ARCS: [(&str, &str, &str, &str); 2] = [
 /// turn, a radius, a point coordinate and a constant.
 fn all_constraints() -> Vec<ConstraintType> {
     let mut seen = std::collections::HashSet::new();
-    specs()
-        .iter()
-        .flat_map(build_from_spec)
+    let built: Vec<ConstraintType> = specs().iter().flat_map(build_from_spec).collect();
+    let rewritten: Vec<ConstraintType> = built.iter().filter_map(held_endpoint_rewrite).collect();
+    built
+        .into_iter()
+        .chain(rewritten)
         .filter(|ct| seen.insert(variant_name(ct)))
         .collect()
+}
+
+/// A catalog-built Line–ellipse or Line–elliptical arc tangency with its
+/// first endpoint held `on` the curve, as `tangent_at_held_endpoints`
+/// rewrites it in a sketch (the only way to reach the kernel it builds).
+fn held_endpoint_rewrite(ct: &ConstraintType) -> Option<ConstraintType> {
+    let on = match ct {
+        ConstraintType::TangentLineEllipse(p, _, c, f, e) => {
+            ConstraintType::PointOnEllipse(p.clone(), c.clone(), f.clone(), e.clone())
+        }
+        ConstraintType::TangentLineEllipticalArc(p, _, c, f, e) => {
+            ConstraintType::PointOnEllipticalArc(p.clone(), c.clone(), f.clone(), e.clone())
+        }
+        _ => return None,
+    };
+    let mut pair = [(ct.clone(), false), (on, false)];
+    tangent_at_held_endpoints(&mut pair);
+    let [(rewritten, _), _] = pair;
+    Some(rewritten)
 }
 
 fn args_for(spec: &ConstraintSpec) -> Args {
@@ -305,6 +328,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         LinearInstance(..) => "LinearInstance",
         PointOnEllipse(..) => "PointOnEllipse",
         TangentLineEllipse(..) => "TangentLineEllipse",
+        TangentLineEllipseAtPoint(..) => "TangentLineEllipseAtPoint",
         EllipseAxisPoint(..) => "EllipseAxisPoint",
         EllipseDiameter(..) => "EllipseDiameter",
         PointOnEllipticalArc(..) => "PointOnEllipticalArc",
@@ -366,6 +390,7 @@ const ALL_VARIANTS: [&str; 58] = [
     "LinearInstance",
     "PointOnEllipse",
     "TangentLineEllipse",
+    "TangentLineEllipseAtPoint",
     "EllipseAxisPoint",
     "EllipseDiameter",
     "PointOnEllipticalArc",
@@ -590,6 +615,10 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::TangentLineEllipse(s("p0"), s("e1_focus"), s("e1_center"), s("e1_focus"), s("e1")),
         ConstraintType::TangentLineEllipse(s("p0"), s("p1"), s("e2_center"), s("e2_focus"), s("e2")),
         ConstraintType::TangentLineEllipse(s("p2"), s("p3"), s("e1_center"), s("e1_focus"), s("e1")),
+        ConstraintType::TangentLineEllipseAtPoint(s("e1_focus"), s("p1"), s("e1_center"), s("e1_focus"), s("e1")),
+        ConstraintType::TangentLineEllipseAtPoint(s("p0"), s("e1_center"), s("e1_center"), s("e1_focus"), s("e1")),
+        ConstraintType::TangentLineEllipseAtPoint(s("p0"), s("p0"), s("e2_center"), s("e2_focus"), s("e2")),
+        ConstraintType::TangentLineEllipseAtPoint(s("ea1_start"), s("p1"), s("ea1_center"), s("ea1_focus"), s("ea1")),
         ConstraintType::EllipseAxisPoint(s("p0"), s("e1_center"), s("e1_focus"), s("e1"), EllipseAxis::Minor),
         ConstraintType::EllipseAxisPoint(s("e1_focus"), s("e1_center"), s("e1_focus"), s("e1"), EllipseAxis::Major),
         ConstraintType::EllipseAxisPoint(s("e2_focus"), s("e2_center"), s("e2_focus"), s("e2"), EllipseAxis::Minor),

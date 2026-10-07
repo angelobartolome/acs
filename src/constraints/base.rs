@@ -413,6 +413,13 @@ pub enum ConstraintType {
     /// (line_pa_id, line_pb_id, ellipse_center_id, ellipse_focus1_id, ellipse_id)
     TangentLineEllipse(String, String, String, String, String),
 
+    /// A Line runs along an ellipse's tangent at its endpoint `point_id`,
+    /// held on the ellipse (or elliptical arc) by another constraint; built
+    /// only by `constraint_catalog::tangent_at_held_endpoints`.
+    /// (point_id, other_line_end_id, ellipse_center_id, ellipse_focus1_id,
+    /// ellipse_or_elliptical_arc_id)
+    TangentLineEllipseAtPoint(String, String, String, String, String),
+
     /// A point is an endpoint (either one) of an ellipse's major or minor
     /// axis.
     /// (point_id, ellipse_center_id, ellipse_focus1_id, ellipse_id, axis)
@@ -696,6 +703,11 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         ConstraintType::TangentLineEllipse(pa, pb, center, focus, e) => Ok(Box::new(
             crate::constraints::tangent_line_ellipse::TangentLineEllipseConstraint::new(
                 pa, pb, center, focus, e,
+            ),
+        )),
+        ConstraintType::TangentLineEllipseAtPoint(p, other, center, focus, e) => Ok(Box::new(
+            crate::constraints::tangent_line_ellipse_at_point::TangentLineEllipseAtPointConstraint::new(
+                p, other, center, focus, e,
             ),
         )),
         ConstraintType::EllipseAxisPoint(p, center, focus, e, axis) => Ok(Box::new(
