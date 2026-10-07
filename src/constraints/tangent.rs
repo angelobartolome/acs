@@ -1,3 +1,5 @@
+//! [`TangentConstraint`]: external tangency between two circles.
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -14,13 +16,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// Residual: (cx2−cx1)² + (cy2−cy1)² − (r1+r2)² = 0
 pub struct TangentConstraint {
+    /// Center point of circle 1.
     pub c1_center_id: String,
+    /// Circle 1 entity (radius at param 0).
     pub c1_id: String,
+    /// Center point of circle 2.
     pub c2_center_id: String,
+    /// Circle 2 entity (radius at param 0).
     pub c2_id: String,
 }
 
 impl TangentConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         c1_center_id: String,
         c1_id: String,

@@ -1,3 +1,7 @@
+//! [`DistancePointExtensionConstraint`]: constrains the perpendicular
+//! distance from a point to a Line's Extension (the infinite line through its
+//! endpoints) to equal `distance`.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::line_signed_distance;
@@ -17,13 +21,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// d = 0 the signed distance C / L is used instead (identical to
 /// PointOnExtension), since |·| has no usable gradient at 0.
 pub struct DistancePointExtensionConstraint {
+    /// The free point p.
     pub point_id: String,
+    /// First point of the line (a).
     pub line_pa_id: String,
+    /// Second point of the line (b).
     pub line_pb_id: String,
+    /// Target distance d from p to the line through a, b.
     pub distance: f64,
 }
 
 impl DistancePointExtensionConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(point_id: String, line_pa_id: String, line_pb_id: String, distance: f64) -> Self {
         Self {
             point_id,

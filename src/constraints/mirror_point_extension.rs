@@ -1,3 +1,7 @@
+//! [`MirrorPointExtensionConstraint`]: constrains `pB` to be the mirror image
+//! of `pA` across a Line's Extension (the infinite line through the axis
+//! endpoints).
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -26,13 +30,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// The axis points are Guides (see `Constraint::guides`): moving the axis
 /// moves the image, and the solve moves a free axis as needed.
 pub struct MirrorPointExtensionConstraint {
+    /// Source point A.
     pub pA_id: String,
+    /// Mirrored point B.
     pub pB_id: String,
+    /// First point of the axis (a).
     pub axis_pa_id: String,
+    /// Second point of the axis (b).
     pub axis_pb_id: String,
 }
 
 impl MirrorPointExtensionConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(pA_id: String, pB_id: String, axis_pa_id: String, axis_pb_id: String) -> Self {
         Self {
             pA_id,

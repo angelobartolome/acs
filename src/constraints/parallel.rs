@@ -1,17 +1,26 @@
+//! [`ParallelConstraint`]: two lines are parallel.
+
 #![allow(non_snake_case)] // Makes sense for mathematical variables
 
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
 
+/// Two lines, p1 → p2 and p3 → p4, are parallel: the cross product of
+/// their directions is 0.
 pub struct ParallelConstraint {
-    pub p1: String, // Index of the first point (L1P1)
-    pub p2: String, // Index of the second point (L1P2)
-    pub p3: String, // Index of the third point (L2P1)
-    pub p4: String, // Index of the fourth point (L2P2)
+    /// Start of line L1.
+    pub p1: String,
+    /// End of line L1.
+    pub p2: String,
+    /// Start of line L2.
+    pub p3: String,
+    /// End of line L2.
+    pub p4: String,
 }
 
 impl ParallelConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, p2: String, p3: String, p4: String) -> Self {
         Self { p1, p2, p3, p4 }
     }

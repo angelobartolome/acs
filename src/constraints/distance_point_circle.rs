@@ -1,3 +1,6 @@
+//! [`DistancePointCircleConstraint`]: fixes the gap between a point and a
+//! circle, signed so the residual crosses zero linearly.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
@@ -14,14 +17,20 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// Residual: R = σ · (|p − c| − r) − distance, σ = −1 if `internal`, else +1
 pub struct DistancePointCircleConstraint {
+    /// The point (px, py).
     pub point_id: String,
+    /// Center point of the circle (cx, cy).
     pub circle_center_id: String,
+    /// The circle (radius r).
     pub circle_id: String,
+    /// The gap between the point and the circle.
     pub distance: f64,
+    /// The inside variant (`internal: true`).
     pub internal: bool,
 }
 
 impl DistancePointCircleConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         point_id: String,
         circle_center_id: String,

@@ -1,3 +1,7 @@
+//! `acsSolveSketch` and `acsConstraintCatalog`: the JSON API
+//! ([`crate::sketch_solve::solve_sketch_json`]) and the constraint catalog
+//! ([`crate::constraint_catalog::catalog_json`]) for JavaScript.
+
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::constraint_catalog::catalog_json;

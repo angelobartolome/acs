@@ -1,3 +1,5 @@
+//! [`PointOnEllipseConstraint`]: constrains a point to lie on an ellipse.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{EllipseFrame, V2};
@@ -15,13 +17,18 @@ use crate::constraints::{Constraint, Var, xy};
 /// to the two foci is the major diameter,
 ///   |p − f| + |p − (2c − f)| − 2a = 0,   a = sqrt(b² + |f − c|²).
 pub struct PointOnEllipseConstraint {
+    /// The point p.
     pub point_id: String,
+    /// The ellipse's center c.
     pub center_id: String,
+    /// The ellipse's focus f.
     pub focus_id: String,
+    /// The ellipse (minor radius b).
     pub ellipse_id: String,
 }
 
 impl PointOnEllipseConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(point_id: String, center_id: String, focus_id: String, ellipse_id: String) -> Self {
         Self {
             point_id,

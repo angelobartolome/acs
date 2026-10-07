@@ -1,3 +1,8 @@
+//! [`EllipticalArcRulesConstraint`]: ties an elliptical arc's start and end
+//! Points to its ellipse and angles, as
+//! [`ArcRulesConstraint`](crate::constraints::arc_rules::ArcRulesConstraint)
+//! does for an Arc.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{D, EllipseFrame, V2};
@@ -22,14 +27,20 @@ use crate::constraints::{Constraint, Var, xy};
 /// a = sqrt(b² + |f − c|²), u = (f − c)/|f − c|, n = rot90(u)):
 ///   R₀,₁ = s − P(α)     R₂,₃ = e − P(β)
 pub struct EllipticalArcRulesConstraint {
+    /// The ellipse's center c.
     pub center_id: String,
+    /// Its focus f (the major axis points from c to f).
     pub focus_id: String,
+    /// The start point s.
     pub start_id: String,
+    /// The end point e.
     pub end_id: String,
+    /// The elliptical arc (minor radius b, start angle α, end.
     pub arc_id: String,
 }
 
 impl EllipticalArcRulesConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         center_id: String,
         focus_id: String,

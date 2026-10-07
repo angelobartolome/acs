@@ -1,3 +1,6 @@
+//! [`DistancePointLineConstraint`]: constrains the distance from a point to a
+//! Line (the segment between its endpoints) to equal `distance`.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::{segment_distance, segment_signed_distance};
@@ -16,13 +19,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// the signed distance is used instead (identical to PointOnLine), since |·|
 /// has no usable gradient at 0.
 pub struct DistancePointLineConstraint {
+    /// The free point p.
     pub point_id: String,
+    /// First point of the line (a).
     pub line_pa_id: String,
+    /// Second point of the line (b).
     pub line_pb_id: String,
+    /// Target distance d from p to the closest point of ab.
     pub distance: f64,
 }
 
 impl DistancePointLineConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         point_id: String,
         line_pa_id: String,

@@ -1,3 +1,7 @@
+//! [`ArcRulesConstraint`]: ties an arc's start and end Points to its center,
+//! radius and angles, so other geometry (lines sharing an endpoint) follows
+//! the arc and vice versa.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
@@ -18,13 +22,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///   R₀ = sx − cx − r·cos α     R₁ = sy − cy − r·sin α
 ///   R₂ = ex − cx − r·cos β     R₃ = ey − cy − r·sin β
 pub struct ArcRulesConstraint {
+    /// The arc's center point (cx, cy).
     pub center_id: String,
+    /// The arc's start point (sx, sy).
     pub start_id: String,
+    /// The arc's end point (ex, ey).
     pub end_id: String,
+    /// The arc (radius r, start angle α, end angle β).
     pub arc_id: String,
 }
 
 impl ArcRulesConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(center_id: String, start_id: String, end_id: String, arc_id: String) -> Self {
         Self {
             center_id,

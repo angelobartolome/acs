@@ -1,3 +1,7 @@
+//! Splits a sketch into Components: groups of constraints that share
+//! entities (directly or through others), each solved on its own small
+//! system.
+
 use std::collections::HashMap;
 
 use crate::Constraint;
@@ -52,6 +56,7 @@ impl UnionFind {
     }
 }
 
+/// The Components of a set of constraints.
 pub struct ConnectedComponents {
     /// Each inner Vec holds constraint indices (into the original constraint slice) for one component.
     pub components: Vec<Vec<usize>>,

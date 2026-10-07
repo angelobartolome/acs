@@ -168,6 +168,7 @@ pub fn tangent_at_held_endpoints(constraints: &mut [(ConstraintType, bool)]) {
 /// What a JSON constraint field refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldKind {
+    /// A Point.
     Point,
     /// Expands to the Line's two endpoint Points.
     Line,
@@ -195,6 +196,7 @@ impl FieldKind {
         !matches!(self, FieldKind::Scalar | FieldKind::Value | FieldKind::Axis)
     }
 
+    /// The kind's name in the catalog JSON (`point`, `line`, …).
     pub fn as_str(self) -> &'static str {
         match self {
             FieldKind::Point => "point",
@@ -219,10 +221,15 @@ impl FieldKind {
 /// one to `elliptical_arc_ends`.
 #[derive(Debug, Default, Clone)]
 pub struct Args {
+    /// Point IDs: one per Point field, two (start, end) per Line field.
     pub points: Vec<String>,
+    /// Circle or Arc IDs, one per Circle or Arc field.
     pub circles: Vec<String>,
+    /// Their center Point IDs, in the same order.
     pub centers: Vec<String>,
+    /// Scalar field values (Parameters resolved).
     pub scalars: Vec<f64>,
+    /// Value fields: constants or entity properties.
     pub operands: Vec<Operand>,
     /// (start Point ID, end Point ID) of each Arc field, in field order.
     pub arc_ends: Vec<(String, String)>,
@@ -238,8 +245,11 @@ pub struct Args {
 /// An Ellipse field resolved: the ellipse and its center and focus Points.
 #[derive(Debug, Clone)]
 pub struct EllipseRef {
+    /// The Ellipse's (or EllipticalArc's) ID.
     pub id: String,
+    /// Its center Point's ID.
     pub center: String,
+    /// Its focus Point's ID.
     pub focus: String,
 }
 
@@ -389,9 +399,13 @@ pub struct References {
 /// The Point IDs an EllipticalArc references.
 #[derive(Debug, Clone)]
 pub struct EllipticalArcPoints {
+    /// Its center Point's ID.
     pub center: String,
+    /// Its focus Point's ID.
     pub focus: String,
+    /// Its start Point's ID.
     pub start: String,
+    /// Its end Point's ID.
     pub end: String,
 }
 
@@ -496,10 +510,13 @@ pub type Check = fn(&Args) -> Result<(), String>;
 
 /// One row of a catalog: a JSON `type` with one set of field kinds.
 pub struct ConstraintSpec {
+    /// The JSON `type`, shared by a type's rows (its variants).
     pub json_type: &'static str,
     /// (JSON field name, kind), in order.
     pub fields: &'static [(&'static str, FieldKind)],
+    /// Whether the row takes `extension`, and which value selects it.
     pub extension: ExtensionFlag,
+    /// Whether the row takes `internal`, and which value selects it.
     pub internal: InternalFlag,
     /// A test of the resolved fields a row can only pass or fail once it
     /// sees which entities they are (e.g. a shared endpoint), run before
@@ -509,6 +526,8 @@ pub struct ConstraintSpec {
 }
 
 impl ConstraintSpec {
+    /// A row of type `json_type` with these fields, built by `build`, taking
+    /// neither flag.
     pub const fn new(
         json_type: &'static str,
         fields: &'static [(&'static str, FieldKind)],
@@ -565,6 +584,7 @@ impl ConstraintSpec {
         }
     }
 
+    /// Builds the constraint from already-resolved fields.
     pub fn build(&self, args: &Args) -> ConstraintType {
         (self.build)(args)
     }

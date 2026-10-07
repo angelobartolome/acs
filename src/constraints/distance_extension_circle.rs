@@ -1,3 +1,6 @@
+//! [`DistanceExtensionCircleConstraint`]: fixes the gap between a Line's
+//! Extension (the infinite line through its endpoints) and a circle.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::line_signed_distance;
@@ -16,14 +19,20 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// Residual: R = |C / L| − r − distance
 pub struct DistanceExtensionCircleConstraint {
+    /// First point of the line (ax, ay).
     pub line_pa_id: String,
+    /// Second point of the line (bx, by).
     pub line_pb_id: String,
+    /// Center point of the circle (cx, cy).
     pub circle_center_id: String,
+    /// The circle (radius r).
     pub circle_id: String,
+    /// The gap between the Line's Extension and the circle.
     pub distance: f64,
 }
 
 impl DistanceExtensionCircleConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         line_pa_id: String,
         line_pb_id: String,

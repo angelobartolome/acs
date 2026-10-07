@@ -1,3 +1,6 @@
+//! [`EllipseAxisPointConstraint`]: constrains a point to be an endpoint
+//! (either one) of an ellipse's major or minor axis.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{EllipseFrame, V2};
@@ -19,14 +22,20 @@ use crate::constraints::{Constraint, EllipseAxis, Var, xy};
 /// Together they hold p at c ± a·u (major) or c ± b·n (minor), whichever end
 /// it is nearer: the solver keeps it at the end it starts by.
 pub struct EllipseAxisPointConstraint {
+    /// The point p.
     pub point_id: String,
+    /// The ellipse's center c.
     pub center_id: String,
+    /// The ellipse's focus f.
     pub focus_id: String,
+    /// The ellipse (minor radius b).
     pub ellipse_id: String,
+    /// Which axis the point is an end of.
     pub axis: EllipseAxis,
 }
 
 impl EllipseAxisPointConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         point_id: String,
         center_id: String,

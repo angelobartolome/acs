@@ -1,3 +1,6 @@
+//! [`ConcentricConstraint`]: forces two circles to share the same center
+//! (concentric).
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -13,11 +16,14 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///   R₀ = cx1 − cx2 = 0
 ///   R₁ = cy1 − cy2 = 0
 pub struct ConcentricConstraint {
+    /// The first circle's or arc's center point.
     pub center1_id: String,
+    /// The second circle's or arc's center point.
     pub center2_id: String,
 }
 
 impl ConcentricConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(center1_id: String, center2_id: String) -> Self {
         Self {
             center1_id,

@@ -1,3 +1,7 @@
+//! [`SignedDistancePointExtensionConstraint`]: constrains the signed
+//! perpendicular distance from a point to a Line's Extension (the infinite
+//! line through its endpoints), so the point stays on one side of it.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::line_signed_distance;
@@ -18,14 +22,20 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// Residual: side · C / L − d, with C = cross(b − a, p − a) and L = |b − a|.
 pub struct SignedDistancePointExtensionConstraint {
+    /// The point p.
     pub point_id: String,
+    /// First point of the line (a).
     pub line_pa_id: String,
+    /// Second point of the line (b).
     pub line_pb_id: String,
+    /// Target distance d.
     pub distance: f64,
+    /// +1 for the left of a→b, −1 for the right (any negative.
     pub side: f64,
 }
 
 impl SignedDistancePointExtensionConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         point_id: String,
         line_pa_id: String,

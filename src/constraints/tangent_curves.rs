@@ -1,3 +1,6 @@
+//! [`TangentCurvesConstraint`]: tangency (or a gap) between two circles or
+//! arcs, each side a [`TangentCurve`].
+
 use nalgebra::DMatrix;
 
 use crate::constraints::arc_span::span_overshoot;
@@ -6,16 +9,21 @@ use crate::constraints::{Constraint, Var};
 /// One side of a curve–curve tangency: a Circle, or an Arc whose span the
 /// tangency point must lie on.
 pub struct TangentCurve {
+    /// The circle's or arc's center point.
     pub center_id: String,
+    /// The circle or arc.
     pub id: String,
+    /// Whether it is an Arc, whose span holds the tangency point.
     pub arc: bool,
 }
 
 impl TangentCurve {
+    /// A circle, by its center point's and its own IDs.
     pub fn circle(center_id: String, id: String) -> Self {
         Self { center_id, id, arc: false }
     }
 
+    /// An arc, by its center point's and its own IDs.
     pub fn arc(center_id: String, id: String) -> Self {
         Self { center_id, id, arc: true }
     }
@@ -52,13 +60,18 @@ impl TangentCurve {
 ///
 /// ∂φ/∂w = (−w_y, w_x)/d² for either direction ±w.
 pub struct TangentCurvesConstraint {
+    /// The first circle or arc.
     pub a: TangentCurve,
+    /// The second circle or arc.
     pub b: TangentCurve,
+    /// The inside variant (`internal: true`).
     pub internal: bool,
+    /// How far apart they are held (0: tangent).
     pub gap: f64,
 }
 
 impl TangentCurvesConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(a: TangentCurve, b: TangentCurve, internal: bool) -> Self {
         Self { a, b, internal, gap: 0.0 }
     }

@@ -34,3 +34,7 @@ serde_json = { version = "1.0", features = ["float_roundtrip"] }
 [profile.release]
 # Tell `rustc` to optimize for small code size.
 opt-level = "s"
+
+# docs.rs documents every feature, so the C ABI (`c-abi`) shows too.
+[package.metadata.docs.rs]
+all-features = true

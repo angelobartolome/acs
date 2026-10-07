@@ -1,3 +1,5 @@
+//! [`DistanceLineArcConstraint`]: fixes the gap between a Line and an arc.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::arc_span::span_overshoot;
@@ -28,15 +30,22 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///   R₁ = r · overshoot(φ, α, β)               (the nearest point lies on
 ///                                             the span)
 pub struct DistanceLineArcConstraint {
+    /// First point of the line (a).
     pub line_pa_id: String,
+    /// Second point of the line (b).
     pub line_pb_id: String,
+    /// The arc's center point (c).
     pub center_id: String,
+    /// The arc (radius r, start angle α, end angle β).
     pub arc_id: String,
+    /// The gap between the Line and the arc.
     pub distance: f64,
+    /// Measure against the Line's Extension rather than its segment.
     pub extension: bool,
 }
 
 impl DistanceLineArcConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         line_pa_id: String,
         line_pb_id: String,

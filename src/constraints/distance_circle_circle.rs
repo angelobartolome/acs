@@ -1,3 +1,6 @@
+//! [`DistanceCircleCircleConstraint`]: fixes the gap between two circles,
+//! signed so the residual crosses zero linearly.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
@@ -17,15 +20,22 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// Residual: R = |c1 − c2| − r1 − r2 − distance, or (internal)
 ///           R = |r1 − r2| − |c1 − c2| − distance
 pub struct DistanceCircleCircleConstraint {
+    /// Center point of circle 1 (x1, y1).
     pub c1_center_id: String,
+    /// Circle 1 (radius r1).
     pub c1_id: String,
+    /// Center point of circle 2 (x2, y2).
     pub c2_center_id: String,
+    /// Circle 2 (radius r2).
     pub c2_id: String,
+    /// The gap between the circles.
     pub distance: f64,
+    /// The inside variant (`internal: true`).
     pub internal: bool,
 }
 
 impl DistanceCircleCircleConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         c1_center_id: String,
         c1_id: String,

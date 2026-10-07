@@ -1,3 +1,5 @@
+//! [`DistancePointArcConstraint`]: fixes the gap between a point and an arc.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::arc_span::span_overshoot;
@@ -20,14 +22,20 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///   R₀ = σ · (ρ − r) − distance,  σ = −1 if `internal`, else +1
 ///   R₁ = r · overshoot(φ, α, β)   (the nearest point lies on the span)
 pub struct DistancePointArcConstraint {
+    /// The point (px, py).
     pub point_id: String,
+    /// The arc's center point (cx, cy).
     pub center_id: String,
+    /// The arc (radius r, start angle α, end angle β).
     pub arc_id: String,
+    /// The gap between the point and the arc.
     pub distance: f64,
+    /// The inside variant (`internal: true`).
     pub internal: bool,
 }
 
 impl DistancePointArcConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         point_id: String,
         center_id: String,

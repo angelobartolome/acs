@@ -1,3 +1,5 @@
+//! [`EqualConstraint`]: constrains two scalars to be equal.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Operand, Var, operand_values};
@@ -8,11 +10,14 @@ use crate::constraints::{Constraint, Operand, Var, operand_values};
 /// Residual: param1 − param2. Partials: +1, −1 for the operands that are
 /// variables.
 pub struct EqualConstraint {
+    /// The first operand.
     pub param1: Operand,
+    /// The second operand.
     pub param2: Operand,
 }
 
 impl EqualConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(param1: Operand, param2: Operand) -> Self {
         Self { param1, param2 }
     }

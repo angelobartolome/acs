@@ -1,3 +1,5 @@
+//! [`DistanceLineLineConstraint`]: fixes the distance between two Lines.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::line_signed_distance;
@@ -19,14 +21,20 @@ use crate::constraints::{Constraint, Var, xy};
 ///   R₁ = σ · C(b₂) / L − distance
 /// with C(p) / L the signed distance from p to the line through a₁, a₂.
 pub struct DistanceLineLineConstraint {
+    /// Endpoints of line a.
     pub a1_id: String,
+    /// Endpoints of line a.
     pub a2_id: String,
+    /// Endpoints of line b.
     pub b1_id: String,
+    /// Endpoints of line b.
     pub b2_id: String,
+    /// The distance of line B's endpoints from line A's Extension (positive).
     pub distance: f64,
 }
 
 impl DistanceLineLineConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(a1_id: String, a2_id: String, b1_id: String, b2_id: String, distance: f64) -> Self {
         Self {
             a1_id,

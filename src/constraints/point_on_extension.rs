@@ -1,3 +1,7 @@
+//! [`PointOnExtensionConstraint`]: constrains a point to lie on a Line's
+//! Extension (the infinite line through its endpoints), so it may sit beyond
+//! either end.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::line_signed_distance;
@@ -10,12 +14,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// Residual: the signed perpendicular distance from the point to the
 /// Extension (see `segment::line_signed_distance`).
 pub struct PointOnExtensionConstraint {
-    pub p1: String,       // ID of the point to constrain
-    pub p_line_a: String, // ID of the line's point A
-    pub p_line_b: String, // ID of the line's point B
+    /// The point.
+    pub p1: String,
+    /// The Line's start.
+    pub p_line_a: String,
+    /// The Line's end.
+    pub p_line_b: String,
 }
 
 impl PointOnExtensionConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, p_line_a: String, p_line_b: String) -> Self {
         Self {
             p1,

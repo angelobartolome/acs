@@ -1,3 +1,6 @@
+//! [`DistancePointPointConstraint`]: constrains the Euclidean distance
+//! between two points to a fixed value.
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -9,12 +12,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// Residual (squared form, smooth everywhere):
 ///   R = (x2−x1)² + (y2−y1)² − d² = 0
 pub struct DistancePointPointConstraint {
+    /// The first point.
     pub p1_id: String,
+    /// The second point.
     pub p2_id: String,
+    /// The distance between them.
     pub distance: f64,
 }
 
 impl DistancePointPointConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1_id: String, p2_id: String, distance: f64) -> Self {
         Self {
             p1_id,

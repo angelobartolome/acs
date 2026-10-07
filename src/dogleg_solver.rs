@@ -1,3 +1,7 @@
+//! The numeric core: a Dog-Leg trust-region least-squares solver
+//! ([`ParametricDogLegSolver`]) over a plain parameter vector, with the
+//! convergence tolerance the whole crate uses (`TOLF`, 1e-10).
+
 #![allow(non_snake_case)]
 
 use nalgebra::{DMatrix, DVector};
@@ -30,6 +34,8 @@ impl Default for ParametricDogLegSolver {
 }
 
 impl ParametricDogLegSolver {
+    /// A solver with the default limits: 100 iterations, residual tolerance
+    /// 1e-10.
     pub fn new() -> Self {
         Self {
             max_iterations: 100,
@@ -39,6 +45,7 @@ impl ParametricDogLegSolver {
         }
     }
 
+    /// Caps the iterations of one solve (at least 1).
     pub fn set_max_iterations(&mut self, max_iterations: usize) {
         self.max_iterations = max_iterations.max(1);
     }

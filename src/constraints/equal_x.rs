@@ -1,15 +1,21 @@
+//! [`EqualXConstraint`]: a point is held at an x coordinate.
+
 #![allow(non_snake_case)] // Makes sense for mathematical variables
 
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row};
 
+/// A point is held at an x coordinate: `R = x − x₀`.
 pub struct EqualXConstraint {
-    pub p1: String, // Index of the first point
-    pub x: f64,     // The x-coordinate to which the point should be equal
+    /// The point.
+    pub p1: String,
+    /// The x coordinate it is held at.
+    pub x: f64,
 }
 
 impl EqualXConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, x: f64) -> Self {
         Self { p1, x }
     }

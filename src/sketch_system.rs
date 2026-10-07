@@ -74,10 +74,14 @@ struct Component {
 }
 
 /// Constraints found Conflicting or Redundant, as sorted indices into the
-/// sketch's constraint list. See [`SketchSystem::diagnose`] for the rule.
+/// sketch's constraint list (see `ConstraintSolver::diagnose` for the rule).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Diagnosis {
+    /// Constraints that can't all hold: dependent ones carrying residual in
+    /// a Component that didn't solve.
     pub conflicting: Vec<usize>,
+    /// Constraints that add nothing: a minimal set, latest first, whose
+    /// removal changes neither the solution nor the degrees of freedom.
     pub redundant: Vec<usize>,
 }
 

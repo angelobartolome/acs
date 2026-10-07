@@ -41,6 +41,7 @@ Touch all of these (grep an existing constraint like `Concentric` as a template)
 
 ## Conventions
 
+- Every public item has docs: `src/lib.rs` sets `#![warn(missing_docs)]`, so clippy flags an undocumented one. A kernel module opens with `//! [`XConstraint`]: what it holds.`, its fields carry `///` docs (the struct doc's "Entities:" list is the convention for what each ID is). `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --lib --all-features` must pass (no broken or private intra-doc links; docs.rs builds all features).
 - Rust edition 2024. Jacobians are analytical (derived in `SPEC.md`), not numeric — new constraints must include exact partial derivatives. Verify them by adding the constraint to `tests/jacobian_fd_test.rs`. Wrong product-rule terms have shipped before, including in `SPEC.md` tables, so derive from the code or check numerically rather than copying the spec.
 - Geometry entities are referenced by string IDs; constraints on lines/circles usually take the underlying point IDs, not the line ID (see `ConstraintType` variant comments).
 - The JSON API contract (input/output shapes, constraint type strings) is documented in `USAGE.md`; keep it in sync with `sketch_solve.rs`. Docs have drifted from code before — trust the code.

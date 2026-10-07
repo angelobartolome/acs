@@ -1,15 +1,23 @@
+//! [`CoincidentConstraint`]: two points coincide.
+
 #![allow(non_snake_case)] // Makes sense for mathematical variables
 
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
 
+/// Two points coincide.
+///
+/// Residuals: `R₀ = x2 − x1`, `R₁ = y2 − y1`.
 pub struct CoincidentConstraint {
-    pub p1: String, // Index of the first point
-    pub p2: String, // Index of the second point
+    /// The first point.
+    pub p1: String,
+    /// The second point.
+    pub p2: String,
 }
 
 impl CoincidentConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, p2: String) -> Self {
         Self { p1, p2 }
     }

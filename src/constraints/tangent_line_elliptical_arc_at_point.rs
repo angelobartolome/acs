@@ -1,3 +1,7 @@
+//! [`TangentLineEllipticalArcAtPointConstraint`]: a Line tangent to an
+//! elliptical arc at one of the arc's endpoints, which is also the Line's
+//! endpoint.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{D, EllipseFrame, V2};
@@ -23,15 +27,22 @@ use crate::constraints::{ArcEnd, Constraint, Var, xy};
 /// Residual, with τ(θ) = −a·sin θ·u + b·cos θ·n the ellipse's tangent at θ:
 ///   R = (o − p)/|o − p| × τ/|τ|   (the sine of the angle between them)
 pub struct TangentLineEllipticalArcAtPointConstraint {
+    /// The shared point p (a Line endpoint and an arc endpoint).
     pub point_id: String,
+    /// The Line's other endpoint o.
     pub other_id: String,
+    /// The ellipse's center and focus.
     pub center_id: String,
+    /// The ellipse's center and focus.
     pub focus_id: String,
+    /// The elliptical arc (minor radius b, and the angle θ of.
     pub arc_id: String,
+    /// Which end of the arc the shared point is.
     pub end: ArcEnd,
 }
 
 impl TangentLineEllipticalArcAtPointConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         point_id: String,
         other_id: String,

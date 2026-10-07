@@ -1,3 +1,8 @@
+//! The constraints: one module per kernel, each implementing
+//! [`Constraint`] (residuals and their exact partials over the variables it
+//! reads). [`ConstraintType`] names them, and [`create_constraint`] builds
+//! one; `base` holds the trait and the shared plumbing.
+
 pub mod angle;
 pub mod base;
 pub mod coincident;
