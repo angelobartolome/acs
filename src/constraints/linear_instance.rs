@@ -1,3 +1,6 @@
+//! [`LinearInstanceConstraint`]: constrains `pk` to be `p0` translated
+//! `base_distance · n` along the direction from `dir_p1` to `dir_p2`.
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -24,15 +27,22 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// The direction points are Guides (see `Constraint::guides`): the copy
 /// follows them, and the solve moves them, if free, as needed.
 pub struct LinearInstanceConstraint {
+    /// Source point p0.
     pub p0_id: String,
+    /// Instance point pk.
     pub pk_id: String,
+    /// Start of the direction (d1).
     pub dir_p1_id: String,
+    /// End of the direction (d2).
     pub dir_p2_id: String,
+    /// Spacing between consecutive instances.
     pub base_distance: f64,
+    /// Instance index (1 for the first copy).
     pub n: f64,
 }
 
 impl LinearInstanceConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         p0_id: String,
         pk_id: String,

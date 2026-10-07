@@ -1,3 +1,5 @@
+//! [`DifferenceConstraint`]: constrains two scalars to differ by a third.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Operand, Var, operand_values};
@@ -10,12 +12,16 @@ use crate::constraints::{Constraint, Operand, Var, operand_values};
 /// Residual: param2 − param1 − difference. Partials: −1, +1, −1 for the
 /// operands that are variables.
 pub struct DifferenceConstraint {
+    /// The operand subtracted.
     pub param1: Operand,
+    /// The operand subtracted from.
     pub param2: Operand,
+    /// Their difference, `param2 − param1`.
     pub difference: Operand,
 }
 
 impl DifferenceConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(param1: Operand, param2: Operand, difference: Operand) -> Self {
         Self {
             param1,

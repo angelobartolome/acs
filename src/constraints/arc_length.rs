@@ -1,3 +1,5 @@
+//! [`ArcLengthConstraint`]: fixes an arc's length, `r · sweep`.
+
 use std::f64::consts::TAU;
 
 use nalgebra::DMatrix;
@@ -16,11 +18,14 @@ use crate::constraints::{Constraint, Var, set_row};
 ///
 /// Residual: R = r · sweep − length
 pub struct ArcLengthConstraint {
+    /// The arc (radius r, start angle α, end angle β).
     pub arc_id: String,
+    /// The arc length `r · sweep`.
     pub length: f64,
 }
 
 impl ArcLengthConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(arc_id: String, length: f64) -> Self {
         Self { arc_id, length }
     }

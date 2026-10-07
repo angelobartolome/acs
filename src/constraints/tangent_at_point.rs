@@ -1,3 +1,6 @@
+//! [`TangentAtPointConstraint`]: a Line tangent to an arc at a Point they
+//! share.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
@@ -26,12 +29,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// tangency). For a degenerate line or radius (|u| or |v| ≈ 0) the
 /// unnormalized u·v is used.
 pub struct TangentAtPointConstraint {
+    /// The shared point p (a line endpoint and an arc endpoint).
     pub point_id: String,
+    /// The line's other endpoint o.
     pub other_id: String,
+    /// The arc's center c.
     pub center_id: String,
 }
 
 impl TangentAtPointConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(point_id: String, other_id: String, center_id: String) -> Self {
         Self {
             point_id,

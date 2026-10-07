@@ -1,3 +1,15 @@
+//! The numeric core: a Dog-Leg trust-region least-squares solver
+//! ([`ParametricDogLegSolver`]) over a plain parameter vector, with the
+//! convergence tolerance the whole crate uses (`TOLF`, 1e-10).
+//!
+//! It solves [non-linear least squares](https://en.wikipedia.org/wiki/Non-linear_least_squares)
+//! by [Powell's dog leg method](https://en.wikipedia.org/wiki/Powell%27s_dog_leg_method): each
+//! step mixes the [Gauss–Newton](https://en.wikipedia.org/wiki/Gauss%E2%80%93Newton_algorithm)
+//! step and the [steepest descent](https://en.wikipedia.org/wiki/Gradient_descent) step, kept
+//! within a [trust region](https://en.wikipedia.org/wiki/Trust_region) that grows or shrinks with
+//! how well the linear model predicted the last step. Convergence is
+//! measured by the [L-inf norm](https://en.wikipedia.org/wiki/Uniform_norm) of the residuals.
+
 #![allow(non_snake_case)]
 
 use nalgebra::{DMatrix, DVector};
@@ -11,7 +23,8 @@ pub(crate) const TOLF: f64 = 1e-10;
 /// Residuals and their Jacobian with respect to the parameter vector.
 pub(crate) type System = (DVector<f64>, DMatrix<f64>);
 
-/// Dog-Leg trust-region least-squares core. Knows nothing about sketches:
+/// Dog-Leg trust-region least-squares core ([Powell's dog leg
+/// method](https://en.wikipedia.org/wiki/Powell%27s_dog_leg_method)). Knows nothing about sketches:
 /// it moves a parameter vector `x` to drive `eval(x)`'s residuals to zero.
 pub struct ParametricDogLegSolver {
     max_iterations: usize,
@@ -30,6 +43,8 @@ impl Default for ParametricDogLegSolver {
 }
 
 impl ParametricDogLegSolver {
+    /// A solver with the default limits: 100 iterations, residual tolerance
+    /// 1e-10.
     pub fn new() -> Self {
         Self {
             max_iterations: 100,
@@ -39,6 +54,7 @@ impl ParametricDogLegSolver {
         }
     }
 
+    /// Caps the iterations of one solve (at least 1).
     pub fn set_max_iterations(&mut self, max_iterations: usize) {
         self.max_iterations = max_iterations.max(1);
     }

@@ -1,6 +1,6 @@
 [package]
 name = "acs-solver"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 authors = ["Angelo Bartolome <angelo.m.bartolome@gmail.com>"]
 description = "A geometric constraint solver written in Rust with WebAssembly bindings for web applications."
@@ -34,3 +34,7 @@ serde_json = { version = "1.0", features = ["float_roundtrip"] }
 [profile.release]
 # Tell `rustc` to optimize for small code size.
 opt-level = "s"
+
+# docs.rs documents every feature, so the C ABI (`c-abi`) shows too.
+[package.metadata.docs.rs]
+all-features = true

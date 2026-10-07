@@ -1,3 +1,7 @@
+//! [`ArcSweepConstraint`]: fixes an arc's sweep, the counter-clockwise angle
+//! from its start angle to its end angle, to `sweep` (`0 < sweep < 2π`,
+//! checked by `create_constraint`).
+
 use std::f64::consts::{PI, TAU};
 
 use nalgebra::DMatrix;
@@ -19,11 +23,14 @@ use crate::constraints::{Constraint, Var, set_row};
 ///
 /// Residual: R = wrap(β − α − sweep), wrap(t) = ((t + π) mod 2π) − π
 pub struct ArcSweepConstraint {
+    /// The arc (start angle α, end angle β).
     pub arc_id: String,
+    /// The sweep, in radians, `0 < sweep < 2π`.
     pub sweep: f64,
 }
 
 impl ArcSweepConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(arc_id: String, sweep: f64) -> Self {
         Self { arc_id, sweep }
     }

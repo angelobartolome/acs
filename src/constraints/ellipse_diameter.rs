@@ -1,3 +1,6 @@
+//! [`EllipseDiameterConstraint`]: constrains two points to be the two
+//! endpoints of an ellipse's major or minor axis.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{D, EllipseFrame, V2};
@@ -22,15 +25,22 @@ use crate::constraints::{Constraint, EllipseAxis, Var, xy};
 /// is nearer when the constraint is added), the pair is unordered, so the
 /// points keep whichever ends they're nearest.
 pub struct EllipseDiameterConstraint {
+    /// The two points.
     pub p1_id: String,
+    /// The two points.
     pub p2_id: String,
+    /// The ellipse's center c.
     pub center_id: String,
+    /// The ellipse's focus f.
     pub focus_id: String,
+    /// The ellipse (minor radius b).
     pub ellipse_id: String,
+    /// Which axis the points are the ends of.
     pub axis: EllipseAxis,
 }
 
 impl EllipseDiameterConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         p1_id: String,
         p2_id: String,

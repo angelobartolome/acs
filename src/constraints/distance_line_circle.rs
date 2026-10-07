@@ -1,3 +1,6 @@
+//! [`DistanceLineCircleConstraint`]: fixes the gap between a Line (the
+//! segment) and a circle.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::segment_distance;
@@ -15,14 +18,20 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// Residual: R = dist(c, segment ab) − r − distance
 pub struct DistanceLineCircleConstraint {
+    /// First point of the line (ax, ay).
     pub line_pa_id: String,
+    /// Second point of the line (bx, by).
     pub line_pb_id: String,
+    /// Center point of the circle (cx, cy).
     pub circle_center_id: String,
+    /// The circle (radius r).
     pub circle_id: String,
+    /// The gap between the segment and the circle.
     pub distance: f64,
 }
 
 impl DistanceLineCircleConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         line_pa_id: String,
         line_pb_id: String,

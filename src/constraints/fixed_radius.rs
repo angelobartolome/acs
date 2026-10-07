@@ -1,3 +1,6 @@
+//! [`FixedRadiusConstraint`]: forces a circle or arc to maintain a specific
+//! radius.
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -8,11 +11,14 @@ use crate::constraints::{Constraint, Var, set_row};
 ///
 /// Residual: r − r₀ = 0
 pub struct FixedRadiusConstraint {
+    /// The circle or arc.
     pub circle_id: String,
+    /// The radius it is held at.
     pub target_radius: f64,
 }
 
 impl FixedRadiusConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(circle_id: String, target_radius: f64) -> Self {
         Self {
             circle_id,

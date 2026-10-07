@@ -1,3 +1,6 @@
+//! [`MidpointOfLineOnExtensionConstraint`]: the midpoint of Line L1 (l1a,
+//! l1b) lies on Line L2's Extension (the infinite line through l2a and l2b).
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::line_signed_distance;
@@ -9,13 +12,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// R = line_signed_distance(m, l2a, l2b), with m = (l1a + l1b) / 2.
 pub struct MidpointOfLineOnExtensionConstraint {
+    /// Start of Line 1 (whose midpoint is held).
     pub l1_a: String,
+    /// End of Line 1.
     pub l1_b: String,
+    /// Start of Line 2 (whose Extension holds it).
     pub l2_a: String,
+    /// End of Line 2.
     pub l2_b: String,
 }
 
 impl MidpointOfLineOnExtensionConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(l1_a: String, l1_b: String, l2_a: String, l2_b: String) -> Self {
         Self {
             l1_a,

@@ -1,3 +1,6 @@
+//! [`EqualLengthConstraint`]: constrains two line segments to have the same
+//! length.
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -13,13 +16,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// where dx1 = x2−x1, dy1 = y2−y1, dx2 = x4−x3, dy2 = y4−y3.
 pub struct EqualLengthConstraint {
+    /// Start of segment 1.
     pub p1: String,
+    /// End of segment 1.
     pub p2: String,
+    /// Start of segment 2.
     pub p3: String,
+    /// End of segment 2.
     pub p4: String,
 }
 
 impl EqualLengthConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, p2: String, p3: String, p4: String) -> Self {
         Self { p1, p2, p3, p4 }
     }

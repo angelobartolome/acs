@@ -1,3 +1,6 @@
+//! [`ConstraintSolver`], the Rust API: geometry and constraints by string
+//! ID, solved in place.
+
 use crate::geometry::{Arc as GeoArc, Circle, Ellipse, EllipticalArc, Line};
 use crate::sketch_system::{Role, SketchSystem};
 pub use crate::sketch_system::Diagnosis;
@@ -6,20 +9,37 @@ use crate::{
     create_constraint,
 };
 
+/// How a solve ended. Errors are the largest residual (L-inf) over the real
+/// (non-temporary) constraints; iterations are summed over Components.
 #[derive(Debug)]
 pub enum SolverResult {
+    /// Every real constraint holds: the largest residual is below
+    /// `TOLF` (1e-10).
     Converged {
+        /// Iterations taken.
         iterations: usize,
+        /// Largest residual at the end.
         final_error: f64,
+        /// Largest residual at the start.
         initial_error: f64,
     },
+    /// Some real constraint doesn't hold: the iterations ran out, or the
+    /// solve stalled in a local minimum (the sketch may be conflicting).
     MaxIterationsReached {
+        /// Iterations taken.
         iterations: usize,
+        /// Largest residual at the end.
         final_error: f64,
+        /// Largest residual at the start.
         initial_error: f64,
     },
 }
 
+/// A sketch's geometry and constraints, by string ID: add [`Point`]s and
+/// the entities referencing them, then constraints ([`ConstraintType`]),
+/// then [`Self::solve`], which moves the geometry in place; read the
+/// results back with the getters, [`Self::dof`] and [`Self::diagnose`].
+/// The JSON API ([`crate::sketch_solve::solve_sketch_json`]) runs on it.
 pub struct ConstraintSolver {
     geometry: GeometrySystem,
     constraints: Vec<Box<dyn Constraint>>,
@@ -35,6 +55,7 @@ impl Default for ConstraintSolver {
 }
 
 impl ConstraintSolver {
+    /// An empty sketch.
     pub fn new() -> Self {
         Self {
             geometry: GeometrySystem::new(),
@@ -44,30 +65,39 @@ impl ConstraintSolver {
         }
     }
 
+    /// Caps the iterations of each Component's solve (default 100).
     pub fn set_max_iterations(&mut self, max_iterations: usize) {
         self.solver.set_max_iterations(max_iterations);
     }
 
+    /// Adds a point and returns its ID.
     pub fn add_point(&mut self, point: crate::geometry::Point) -> String {
         self.geometry.add_point(point)
     }
 
+    /// Adds a circle (its center point first) and returns its ID.
     pub fn add_circle(&mut self, circle: crate::geometry::Circle) -> String {
         self.geometry.add_circle(circle)
     }
 
+    /// Adds a line (its endpoints first) and returns its ID.
     pub fn add_line(&mut self, line: Line) -> String {
         self.geometry.add_line(line)
     }
 
+    /// Adds an arc (its center and endpoints first) and returns its ID. The
+    /// solver keeps the endpoints on it.
     pub fn add_arc(&mut self, arc: GeoArc) -> String {
         self.geometry.add_arc(arc)
     }
 
+    /// Adds an ellipse (its center and focus first) and returns its ID.
     pub fn add_ellipse(&mut self, ellipse: Ellipse) -> String {
         self.geometry.add_ellipse(ellipse)
     }
 
+    /// Adds an elliptical arc (its center, focus and endpoints first) and
+    /// returns its ID. The solver keeps the endpoints on it.
     pub fn add_elliptical_arc(&mut self, arc: EllipticalArc) -> String {
         self.geometry.add_elliptical_arc(arc)
     }
@@ -139,26 +169,32 @@ impl ConstraintSolver {
         self.system().diagnose()
     }
 
+    /// The point with this ID.
     pub fn get_point(&self, id: String) -> Option<&Point> {
         self.geometry.get_point(&id)
     }
 
+    /// The circle with this ID.
     pub fn get_circle(&self, id: String) -> Option<&Circle> {
         self.geometry.get_circle(&id)
     }
 
+    /// The arc with this ID.
     pub fn get_arc(&self, id: String) -> Option<&GeoArc> {
         self.geometry.get_arc(&id)
     }
 
+    /// The ellipse with this ID.
     pub fn get_ellipse(&self, id: String) -> Option<&Ellipse> {
         self.geometry.get_ellipse(&id)
     }
 
+    /// The elliptical arc with this ID.
     pub fn get_elliptical_arc(&self, id: String) -> Option<&EllipticalArc> {
         self.geometry.get_elliptical_arc(&id)
     }
 
+    /// Prints the points and lines (for debugging).
     pub fn print_state(&self) {
         println!("Geometry System State:");
         for (id, point) in self.geometry.get_all_points() {
@@ -169,6 +205,7 @@ impl ConstraintSolver {
         }
     }
 
+    /// The points and lines as text (for debugging).
     pub fn get_state_as_string(&self) -> String {
         let mut state = String::new();
         state.push_str("Geometry System State:\n");

@@ -1,3 +1,5 @@
+//! [`DiameterConstraint`]: fixes a circle's or arc's diameter.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var};
@@ -10,11 +12,14 @@ use crate::constraints::{Constraint, Var};
 ///
 /// Residual: R = 2r − diameter
 pub struct DiameterConstraint {
+    /// The circle or arc (radius r).
     pub circle_id: String,
+    /// The diameter, `2r`.
     pub diameter: f64,
 }
 
 impl DiameterConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(circle_id: String, diameter: f64) -> Self {
         Self {
             circle_id,

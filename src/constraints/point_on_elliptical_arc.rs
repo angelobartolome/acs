@@ -1,3 +1,6 @@
+//! [`PointOnEllipticalArcConstraint`]: constrains a point to lie on an
+//! elliptical arc's span.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{D, EllipseFrame, V2, span_overshoot_d};
@@ -22,13 +25,18 @@ use crate::constraints::{Constraint, Var, xy};
 ///                                         it, else the angle past the
 ///                                         nearer end, scaled to a length)
 pub struct PointOnEllipticalArcConstraint {
+    /// The point p.
     pub point_id: String,
+    /// The ellipse's center c.
     pub center_id: String,
+    /// Its focus f.
     pub focus_id: String,
+    /// The elliptical arc (minor radius b, start angle α, end.
     pub arc_id: String,
 }
 
 impl PointOnEllipticalArcConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(point_id: String, center_id: String, focus_id: String, arc_id: String) -> Self {
         Self {
             point_id,

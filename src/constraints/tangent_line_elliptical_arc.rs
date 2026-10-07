@@ -1,3 +1,6 @@
+//! [`TangentLineEllipticalArcConstraint`]: a Line (the segment) tangent to an
+//! elliptical arc, touching it on the segment and on the arc's span.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{D, EllipseFrame, V2, span_overshoot_d};
@@ -20,14 +23,20 @@ use crate::constraints::{Constraint, Var, xy};
 ///   R₂ = a · overshoot(t_T, α, β)
 /// with t_T the parametric angle of T (0 while T is within the span).
 pub struct TangentLineEllipticalArcConstraint {
+    /// The Line's endpoints.
     pub line_pa_id: String,
+    /// The Line's endpoints.
     pub line_pb_id: String,
+    /// The ellipse's center c and focus f.
     pub center_id: String,
+    /// The ellipse's center c and focus f.
     pub focus_id: String,
+    /// The elliptical arc (minor radius b,.
     pub arc_id: String,
 }
 
 impl TangentLineEllipticalArcConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         line_pa_id: String,
         line_pb_id: String,

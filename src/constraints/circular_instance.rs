@@ -1,3 +1,6 @@
+//! [`CircularInstanceConstraint`]: constrains `pk` to be `p0` rotated about
+//! `center` by a fixed angle.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
@@ -18,13 +21,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// The center is a Guide (see `Constraint::guides`): the copy follows it, and
 /// the solve moves it, if it's free, as the constraints and drags need.
 pub struct CircularInstanceConstraint {
+    /// Source point p0.
     pub p0_id: String,
+    /// Instance point pk.
     pub pk_id: String,
+    /// Rotation center c.
     pub center_id: String,
+    /// Rotation θ in radians, counter-clockwise.
     pub angle: f64,
 }
 
 impl CircularInstanceConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p0_id: String, pk_id: String, center_id: String, angle: f64) -> Self {
         Self {
             p0_id,

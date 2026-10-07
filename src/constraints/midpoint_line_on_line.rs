@@ -1,3 +1,6 @@
+//! [`MidpointOfLineOnLineConstraint`]: the midpoint of Line L1 (l1a, l1b)
+//! lies on Line L2 (the segment l2a–l2b).
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::segment_signed_distance;
@@ -7,13 +10,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// R = segment_signed_distance(m, l2a, l2b), with m = (l1a + l1b) / 2.
 pub struct MidpointOfLineOnLineConstraint {
+    /// Start of Line 1 (whose midpoint is held).
     pub l1_a: String,
+    /// End of Line 1.
     pub l1_b: String,
+    /// Start of Line 2 (whose segment holds it).
     pub l2_a: String,
+    /// End of Line 2.
     pub l2_b: String,
 }
 
 impl MidpointOfLineOnLineConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(l1_a: String, l1_b: String, l2_a: String, l2_b: String) -> Self {
         Self {
             l1_a,

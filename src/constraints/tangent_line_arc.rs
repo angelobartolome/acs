@@ -1,3 +1,7 @@
+//! [`TangentLineArcConstraint`]: constrains a Line (the segment between its
+//! endpoints) to be tangent to an arc, touching it on both the segment and
+//! the arc's span.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::arc_span::span_overshoot;
@@ -22,13 +26,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///                                 from c to the foot, the line's direction
 ///                                 turned ∓90° by the side c is on)
 pub struct TangentLineArcConstraint {
+    /// First point of the line (a).
     pub line_pa_id: String,
+    /// Second point of the line (b).
     pub line_pb_id: String,
+    /// The arc's center point (c).
     pub center_id: String,
+    /// The arc (radius r, start angle α, end angle β).
     pub arc_id: String,
 }
 
 impl TangentLineArcConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(line_pa_id: String, line_pb_id: String, center_id: String, arc_id: String) -> Self {
         Self {
             line_pa_id,

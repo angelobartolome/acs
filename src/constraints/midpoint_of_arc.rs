@@ -1,3 +1,6 @@
+//! [`MidpointOfArcConstraint`]: constrains a point to be the midpoint of an
+//! arc's span.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::arc_length::arc_sweep;
@@ -24,12 +27,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// none. Everywhere else the residual is smooth; unlike `(α + β) / 2`, m is
 /// on the span even when it crosses ±π.
 pub struct MidpointOfArcConstraint {
+    /// The point (px, py).
     pub point_id: String,
+    /// The arc's center point (cx, cy).
     pub center_id: String,
+    /// The arc (radius r, start angle α, end angle β).
     pub arc_id: String,
 }
 
 impl MidpointOfArcConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(point_id: String, center_id: String, arc_id: String) -> Self {
         Self {
             point_id,

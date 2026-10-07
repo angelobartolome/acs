@@ -1,3 +1,7 @@
+//! [`TangentLineEllipseAtPointConstraint`]: a Line tangent to an ellipse (or
+//! an elliptical arc's ellipse) at its endpoint p, a point held on the curve
+//! by another constraint.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{EllipseFrame, V2};
@@ -30,14 +34,20 @@ use crate::constraints::{Constraint, Var, xy};
 ///   R = (o − p)/|o − p| × τ(t(p))/|τ(t(p))|   (the sine of the angle
 ///                                              between them)
 pub struct TangentLineEllipseAtPointConstraint {
+    /// The held Line endpoint p.
     pub point_id: String,
+    /// The Line's other endpoint o.
     pub other_id: String,
+    /// The ellipse's center c and focus f.
     pub center_id: String,
+    /// The ellipse's center c and focus f.
     pub focus_id: String,
+    /// The ellipse or elliptical arc (minor radius b; an.
     pub ellipse_id: String,
 }
 
 impl TangentLineEllipseAtPointConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         point_id: String,
         other_id: String,

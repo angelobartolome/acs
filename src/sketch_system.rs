@@ -74,10 +74,14 @@ struct Component {
 }
 
 /// Constraints found Conflicting or Redundant, as sorted indices into the
-/// sketch's constraint list. See [`SketchSystem::diagnose`] for the rule.
+/// sketch's constraint list (see `ConstraintSolver::diagnose` for the rule).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Diagnosis {
+    /// Constraints that can't all hold: dependent ones carrying residual in
+    /// a Component that didn't solve.
     pub conflicting: Vec<usize>,
+    /// Constraints that add nothing: a minimal set, latest first, whose
+    /// removal changes neither the solution nor the degrees of freedom.
     pub redundant: Vec<usize>,
 }
 
@@ -238,7 +242,7 @@ impl<'a> SketchSystem<'a> {
     /// current variables, sorted. Meaningful only at a solved configuration.
     ///
     /// A free variable is locked when no motion in its Component's Jacobian
-    /// null space moves it; fixed variables are always locked; free
+    /// [null space](https://en.wikipedia.org/wiki/Kernel_(linear_algebra)) moves it; fixed variables are always locked; free
     /// variables no constraint reads are not. An entity is fully constrained
     /// when all of its variables are locked. Lines have no variables of
     /// their own; callers decide them from their endpoints.
@@ -281,7 +285,8 @@ impl<'a> SketchSystem<'a> {
     }
 
     /// Degrees of freedom the constraints leave at the current values: free
-    /// variables minus the rank of each Component's Jacobian. Free variables
+    /// variables minus the [rank](https://en.wikipedia.org/wiki/Rank_(linear_algebra)) of each
+    /// Component's [Jacobian](https://en.wikipedia.org/wiki/Jacobian_matrix_and_determinant). Free variables
     /// no constraint reads count in full. Temporary constraints don't count,
     /// here or in `fully_constrained_entity_ids`.
     pub(crate) fn dof(&self) -> usize {
@@ -307,8 +312,9 @@ impl<'a> SketchSystem<'a> {
     ///
     /// Per Component, over the Jacobian J and residuals r of its diagnosed
     /// constraints. Rows are *dependent* when some combination of them
-    /// vanishes, i.e. they have weight in a vector w with wᵀJ = 0 (the left
-    /// null space of J, from the zero eigenvalues of JJᵀ).
+    /// vanishes, i.e. they have weight in a vector w with wᵀJ = 0 (the [left
+    /// null space](https://en.wikipedia.org/wiki/Kernel_(linear_algebra)#Left_null_space) of J, from the
+    /// zero eigenvalues of JJᵀ).
     ///
     /// - Component not Solved (some |rᵢ| > TOLF): r_N, the part of r in the
     ///   left null space, is residual that no motion reduces (to first
@@ -402,7 +408,7 @@ impl<'a> SketchSystem<'a> {
     }
 
     /// A Component's Jacobian J (diagnosed constraints only) and the
-    /// eigen-decomposition of JᵀJ, whose zero eigenvalues span the motions
+    /// [eigen-decomposition](https://en.wikipedia.org/wiki/Eigendecomposition_of_a_matrix) of JᵀJ, whose zero eigenvalues span the motions
     /// the constraints allow. `None` for a Component with no free variables.
     fn normal_eigen(&self, comp: &Component) -> Option<(DMatrix<f64>, SymmetricEigen<f64, nalgebra::Dyn>)> {
         if comp.columns.is_empty() {
@@ -474,8 +480,8 @@ fn values(pm: &VarRegistry, comp: &Component) -> DVector<f64> {
 /// Solves a Component that has soft goals (temporary constraints): minimizes
 /// ‖goal residuals‖² subject to the real constraints' residuals being zero.
 /// GCS does this with an SQP (`System::solve(subsysA, subsysB)`); here it is
-/// a feasible trust-region SQP whose feasibility step is the existing
-/// Dog-Leg:
+/// a feasible trust-region [SQP](https://en.wikipedia.org/wiki/Sequential_quadratic_programming)
+/// whose feasibility step is the existing Dog-Leg:
 ///
 /// 1. *Restore*: Dog-Leg on the real constraints alone, from the current
 ///    values. If it doesn't converge the real constraints can't be solved
@@ -483,11 +489,14 @@ fn values(pm: &VarRegistry, comp: &Component) -> DVector<f64> {
 /// 2. *Model*: at a feasible x, with J_A the real constraints' Jacobian and
 ///    Z an orthonormal basis of its null space (the motions they allow, to
 ///    first order), the goal error f = ½‖r_B‖² along x + Z·u is modelled by
-///    m(u) = gᵀu + ½uᵀHu: g = Zᵀ·J_Bᵀ·r_B and H = Zᵀ·∇²L·Z, the Hessian of
-///    the Lagrangian L = f + λᵀr_A (least-squares multipliers λ), by central
-///    differences of ∇L = J_Bᵀr_B + J_Aᵀλ along each column of Z (the
-///    analytical Jacobians; two evaluations per column).
-/// 3. *Step*: the Newton step when it fits the trust radius Δ and earns at
+///    m(u) = gᵀu + ½uᵀHu: g = Zᵀ·J_Bᵀ·r_B and H = Zᵀ·∇²L·Z, the
+///    [Hessian](https://en.wikipedia.org/wiki/Hessian_matrix) of the Lagrangian L = f + λᵀr_A
+///    (least-squares [multipliers](https://en.wikipedia.org/wiki/Lagrange_multiplier) λ), by
+///    [central differences](https://en.wikipedia.org/wiki/Finite_difference#Basic_types) of
+///    ∇L = J_Bᵀr_B + J_Aᵀλ along each column of Z (the analytical
+///    Jacobians; two evaluations per column).
+/// 3. *Step*: the [Newton step](https://en.wikipedia.org/wiki/Newton%27s_method_in_optimization)
+///    when it fits the trust radius Δ and earns at
 ///    least half the predicted decrease, else argmin m(u) over ‖u‖ ≤ Δ
 ///    (exact, by H's eigen-decomposition, `ReducedModel::trust_region_step`).
 /// 4. *Re-project*: Dog-Leg on the real constraints from x + Z·u, which

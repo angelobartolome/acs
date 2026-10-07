@@ -1,15 +1,21 @@
+//! [`EqualRadiusConstraint`]: two circles or arcs have equal radii.
+
 #![allow(non_snake_case)] // Makes sense for mathematical variables
 
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row};
 
+/// Two circles or arcs have equal radii: `R = r1 − r2`.
 pub struct EqualRadiusConstraint {
-    pub circle1_id: String, // ID of the first circle
-    pub circle2_id: String, // ID of the second circle
+    /// The first circle or arc.
+    pub circle1_id: String,
+    /// The second circle or arc.
+    pub circle2_id: String,
 }
 
 impl EqualRadiusConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(circle1_id: String, circle2_id: String) -> Self {
         Self {
             circle1_id,

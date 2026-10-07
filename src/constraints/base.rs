@@ -1,3 +1,7 @@
+//! The [`Constraint`] trait, the variables a constraint reads ([`Var`],
+//! [`Operand`]), the [`ConstraintType`] enum naming every constraint and
+//! [`create_constraint`], which builds one.
+
 #![allow(non_snake_case)]
 
 use nalgebra::{DMatrix, DVector};
@@ -57,6 +61,7 @@ impl Var<'_> {
 /// Circle's radius.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
+    /// A constant.
     Const(f64),
     /// x coordinate of a Point.
     X(String),
@@ -113,7 +118,9 @@ pub(crate) fn set_row(j: &mut DMatrix<f64>, row: usize, g: &[f64]) {
 ///
 /// A constraint declares the variables it drives (`vars`), optionally the
 /// Guides it follows (`guides`), and evaluates residuals and their partials
-/// over those local values (`eval`). Gathering values from the global vector
+/// over those local values (`eval`): a row of the
+/// [Jacobian](https://en.wikipedia.org/wiki/Jacobian_matrix_and_determinant) per residual, with
+/// exact (analytical) partials. Gathering values from the global vector
 /// and scattering partials into the global Jacobian happen once, in the
 /// provided `residual` / `jacobian` methods and `eval_into`, which accumulate
 /// so a variable listed twice (two lines sharing a point) gets the sum of its
@@ -135,6 +142,7 @@ pub trait Constraint {
         Vec::new()
     }
 
+    /// How many residuals (Jacobian rows) it has.
     fn num_residuals(&self) -> usize;
 
     /// Writes residuals into `r` (`num_residuals()` long) and their partials
@@ -143,6 +151,7 @@ pub trait Constraint {
     /// `guides()`; column `k` of `j` is the partial w.r.t. `x[k]`.
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>);
 
+    /// Its residuals at the variables in `pm` (0 where it holds).
     fn residual(&self, pm: &VarRegistry) -> DVector<f64> {
         let (r, _, _) = eval_local(self, pm);
         DVector::from(r)
@@ -253,7 +262,9 @@ pub fn check_vars(constraint: &dyn Constraint, geometry: &GeometrySystem) -> Res
 /// One end of an arc: where it starts, or where it ends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArcEnd {
+    /// The start Point, at the start angle.
     Start,
+    /// The end Point, at the end angle.
     End,
 }
 
@@ -278,17 +289,37 @@ impl EllipseAxis {
     }
 }
 
+/// Every constraint the solver knows, by the IDs of the entities it reads
+/// (points for lines, centers for circles; see each variant) and its
+/// constant values. [`create_constraint`] builds the kernel; the JSON API
+/// builds these from the native vocabulary (`constraint_catalog`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConstraintType {
     // ── Existing ──────────────────────────────────────────────────────────────
-    Vertical(String, String),                 // p1_id, p2_id
-    Horizontal(String, String),               // p1_id, p2_id
-    Parallel(String, String, String, String), // L1P1, L1P2, L2P1, L2P2
-    EqualX(String, f64),                      // point_id, x-value
-    EqualY(String, f64),                      // point_id, y-value
-    Coincident(String, String),               // p1_id, p2_id
-    PointOnLine(String, String, String),      // point_id, line_pa_id, line_pb_id
-    EqualRadius(String, String),              // circle1_id, circle2_id
+    /// Two points are plumb (a Line's endpoints: the line is vertical).
+    /// (p1_id, p2_id)
+    Vertical(String, String),
+    /// Two points are level (a Line's endpoints: the line is horizontal).
+    /// (p1_id, p2_id)
+    Horizontal(String, String),
+    /// Two lines are parallel.
+    /// (L1P1, L1P2, L2P1, L2P2)
+    Parallel(String, String, String, String),
+    /// A point's x coordinate.
+    /// (point_id, x)
+    EqualX(String, f64),
+    /// A point's y coordinate.
+    /// (point_id, y)
+    EqualY(String, f64),
+    /// Two points coincide.
+    /// (p1_id, p2_id)
+    Coincident(String, String),
+    /// A point lies on a Line (the segment).
+    /// (point_id, line_pa_id, line_pb_id)
+    PointOnLine(String, String, String),
+    /// Two circles or arcs have equal radii.
+    /// (circle1_id, circle2_id)
+    EqualRadius(String, String),
 
     // ── New ───────────────────────────────────────────────────────────────────
     /// Force two lines to be perpendicular (dot product of directions = 0).
@@ -552,6 +583,9 @@ pub enum ConstraintType {
     DistanceLineLine(String, String, String, String, f64),
 }
 
+/// The kernel for `constraint_type`. Fails for values a kernel can't take
+/// (an arc sweep outside `(0, 2π)`, a line–line distance that isn't
+/// positive).
 pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Constraint>, String> {
     match constraint_type {
         // ── Existing ──────────────────────────────────────────────────────────

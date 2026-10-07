@@ -9,7 +9,7 @@
 //! variant: inside tangency between circles and arcs, or a distance measured
 //! inside a circle (never inferred from the geometry, and rejected where no
 //! circle or arc takes it). Rows are tried in order; for the
-//! [`COMMUTATIVE`] types, `a` and `b` may come in either order. A
+//! `COMMUTATIVE` types, `a` and `b` may come in either order. A
 //! combination no row takes is rejected, naming the kinds given and the ones
 //! the type accepts.
 

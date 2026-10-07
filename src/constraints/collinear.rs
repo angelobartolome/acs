@@ -1,3 +1,5 @@
+//! [`CollinearConstraint`]: two Lines lie on one infinite line.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::line_signed_distance;
@@ -11,13 +13,18 @@ use crate::constraints::{Constraint, Var, xy};
 /// endpoint with A, that residual is identically 0 (a zero Jacobian row),
 /// and the constraint still removes one degree of freedom as a unit.
 pub struct CollinearConstraint {
-    pub a1: String, // ID of Line A's first point
-    pub a2: String, // ID of Line A's second point
-    pub b1: String, // ID of Line B's first point
-    pub b2: String, // ID of Line B's second point
+    /// Start of Line A.
+    pub a1: String,
+    /// End of Line A.
+    pub a2: String,
+    /// Start of Line B.
+    pub b1: String,
+    /// End of Line B.
+    pub b2: String,
 }
 
 impl CollinearConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(a1: String, a2: String, b1: String, b2: String) -> Self {
         Self { a1, a2, b1, b2 }
     }

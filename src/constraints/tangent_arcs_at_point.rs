@@ -1,3 +1,6 @@
+//! [`TangentArcsAtPointConstraint`]: two arcs (`TangentArcs`) tangent at a
+//! Point they share, one endpoint of each.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
@@ -28,13 +31,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// solve can't flip the join. For a degenerate radius (|v₁| or |v₂| ≈ 0)
 /// the cross product v₁ × v₂ is used.
 pub struct TangentArcsAtPointConstraint {
+    /// The shared point p.
     pub point_id: String,
+    /// The first arc's center c₁.
     pub center1_id: String,
+    /// The second arc's center c₂.
     pub center2_id: String,
+    /// The inside variant (`internal: true`).
     pub internal: bool,
 }
 
 impl TangentArcsAtPointConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(point_id: String, center1_id: String, center2_id: String, internal: bool) -> Self {
         Self {
             point_id,

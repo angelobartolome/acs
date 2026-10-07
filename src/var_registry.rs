@@ -1,3 +1,8 @@
+//! The solver's variables: every entity's own numbers (a point's x and y, a
+//! radius, an arc's angles, an ellipse's `radmin`) laid out in one global
+//! vector, with which ones are fixed. [`VarEntity`] is how an entity exposes
+//! its numbers; [`VarRegistry`] holds the vector.
+
 use std::collections::HashMap;
 
 /// Trait for geometric entities that can provide variables to the solver
@@ -23,20 +28,32 @@ pub trait VarEntity {
 /// Information about a variable in the global variable vector
 #[derive(Debug, Clone)]
 pub struct VarInfo {
+    /// ID of the entity that owns it.
     pub entity_id: String,
+    /// Kind of that entity.
     pub entity_type: EntityType,
-    pub index_in_entity: usize,  // Index within the entity
-    pub global_index: usize, // Index in the global vector
+    /// Its index among the entity's values ([`VarEntity::values`]).
+    pub index_in_entity: usize,
+    /// Its index in the global vector.
+    pub global_index: usize,
+    /// A readable name, such as `p1.x` or `a1.start_angle`.
     pub name: String,
+    /// Whether the solver must hold it.
     pub is_fixed: bool,
 }
 
+/// The kinds of entity that own variables (a Line owns none).
 #[derive(Debug, Clone, PartialEq)]
 pub enum EntityType {
+    /// `x`, `y`.
     Point,
+    /// `radius`.
     Circle,
+    /// `radius`, `start_angle`, `end_angle`.
     Arc,
+    /// `radmin`.
     Ellipse,
+    /// `radmin`, `start_angle`, `end_angle`.
     EllipticalArc,
 }
 
@@ -62,6 +79,7 @@ impl Default for VarRegistry {
 }
 
 impl VarRegistry {
+    /// An empty registry.
     pub fn new() -> Self {
         Self {
             entity_to_global_index: HashMap::new(),

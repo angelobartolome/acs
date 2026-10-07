@@ -1,3 +1,6 @@
+//! [`MidpointConstraint`]: constrains a point to be the midpoint of a line
+//! segment.
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -10,12 +13,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///   R₀ = mx − (ax + bx)/2 = 0
 ///   R₁ = my − (ay + by)/2 = 0
 pub struct MidpointConstraint {
+    /// The point held at the middle.
     pub midpoint_id: String,
+    /// The segment's first endpoint.
     pub endpoint_a_id: String,
+    /// The segment's second endpoint.
     pub endpoint_b_id: String,
 }
 
 impl MidpointConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(midpoint_id: String, endpoint_a_id: String, endpoint_b_id: String) -> Self {
         Self {
             midpoint_id,

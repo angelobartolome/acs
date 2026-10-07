@@ -1,3 +1,5 @@
+//! [`PointOnArcConstraint`]: constrains a point to lie on an arc's span.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::arc_span::span_overshoot;
@@ -16,12 +18,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///   R₁ = r · overshoot(φ, α, β)  (on the span: 0 while φ is within it,
 ///                                 else the arc length past the nearer end)
 pub struct PointOnArcConstraint {
+    /// The point (px, py).
     pub point_id: String,
+    /// The arc's center point (cx, cy).
     pub center_id: String,
+    /// The arc (radius r, start angle α, end angle β).
     pub arc_id: String,
 }
 
 impl PointOnArcConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(point_id: String, center_id: String, arc_id: String) -> Self {
         Self {
             point_id,

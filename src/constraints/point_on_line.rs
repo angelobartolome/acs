@@ -1,3 +1,6 @@
+//! [`PointOnLineConstraint`]: constrains a point to lie on a Line (the
+//! segment between its endpoints).
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::segment_signed_distance;
@@ -8,12 +11,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// Residual: the signed distance from the point to the closest point of the
 /// segment (see `segment::segment_signed_distance`).
 pub struct PointOnLineConstraint {
-    pub p1: String,       // ID of the point to constrain
-    pub p_line_a: String, // ID of the line's point A
-    pub p_line_b: String, // ID of the line's point B
+    /// The point.
+    pub p1: String,
+    /// The Line's start.
+    pub p_line_a: String,
+    /// The Line's end.
+    pub p_line_b: String,
 }
 
 impl PointOnLineConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, p_line_a: String, p_line_b: String) -> Self {
         Self {
             p1,

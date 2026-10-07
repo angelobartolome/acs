@@ -1,3 +1,6 @@
+//! [`PerpendicularConstraint`]: forces two lines to be perpendicular (dot
+//! product of direction vectors = 0).
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -10,13 +13,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// Line 2: p3 → p4, direction d2 = (x4−x3, y4−y3)
 /// Residual: d1·d2 = dx1·dx2 + dy1·dy2 = 0
 pub struct PerpendicularConstraint {
+    /// Start of line L1.
     pub p1: String,
+    /// End of line L1.
     pub p2: String,
+    /// Start of line L2.
     pub p3: String,
+    /// End of line L2.
     pub p4: String,
 }
 
 impl PerpendicularConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, p2: String, p3: String, p4: String) -> Self {
         Self { p1, p2, p3, p4 }
     }

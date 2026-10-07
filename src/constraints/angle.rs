@@ -1,3 +1,6 @@
+//! [`AngleConstraint`]: constrains the directed angle from line L1 to line L2
+//! to a specific value.
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -18,14 +21,20 @@ use crate::constraints::{Constraint, Var, xy};
 ///
 /// This encodes atan2(cross, dot) = θ, i.e. the angle from d1 to d2 is θ.
 pub struct AngleConstraint {
+    /// Start of line L1.
     pub p1: String,
+    /// End of line L1.
     pub p2: String,
+    /// Start of line L2.
     pub p3: String,
+    /// End of line L2.
     pub p4: String,
+    /// The directed angle from L1 to L2, in radians.
     pub angle: f64,
 }
 
 impl AngleConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, p2: String, p3: String, p4: String, angle: f64) -> Self {
         Self {
             p1,

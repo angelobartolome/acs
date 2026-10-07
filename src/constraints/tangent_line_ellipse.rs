@@ -1,3 +1,7 @@
+//! [`TangentLineEllipseConstraint`]: constrains a Line (the segment between
+//! its endpoints) to be tangent to an ellipse, touching it on the segment, as
+//! a Line is tangent to a circle.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{D, EllipseFrame, V2};
@@ -22,14 +26,20 @@ use crate::constraints::{Constraint, Var, xy};
 ///        (σ_T is the tangency point's position along the line: where the
 ///        segment f₂ f₁' crosses it; 0 while it's on the segment)
 pub struct TangentLineEllipseConstraint {
+    /// The Line's endpoints a, b.
     pub line_pa_id: String,
+    /// The Line's endpoints a, b.
     pub line_pb_id: String,
+    /// The ellipse's center c.
     pub center_id: String,
+    /// The ellipse's focus f₁ (f₂ = 2c − f₁).
     pub focus_id: String,
+    /// The ellipse (minor radius b).
     pub ellipse_id: String,
 }
 
 impl TangentLineEllipseConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         line_pa_id: String,
         line_pb_id: String,

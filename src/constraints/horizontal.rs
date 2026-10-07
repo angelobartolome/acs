@@ -1,15 +1,21 @@
+//! [`HorizontalConstraint`]: two points (a Line's endpoints) are level.
+
 #![allow(non_snake_case)] // Makes sense for mathematical variables
 
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row};
 
+/// Two points (a Line's endpoints) are level: `R = y2 − y1`.
 pub struct HorizontalConstraint {
-    pub p1: String, // Index of the first point
-    pub p2: String, // Index of the second point
+    /// The first point (a Line's start).
+    pub p1: String,
+    /// The second point (a Line's end).
+    pub p2: String,
 }
 
 impl HorizontalConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1: String, p2: String) -> Self {
         Self { p1, p2 }
     }

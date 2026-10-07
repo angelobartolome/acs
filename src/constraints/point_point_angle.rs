@@ -1,3 +1,6 @@
+//! [`PointPointAngleConstraint`]: constrains the direction from one point to
+//! another.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::{Constraint, Var, set_row, xy};
@@ -19,12 +22,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 /// θ + π. Partials: ∂/∂dx = −dy / |d|², ∂/∂dy = dx / |d|²; zero when the
 /// points coincide (the residual is then 0).
 pub struct PointPointAngleConstraint {
+    /// Start point.
     pub p1_id: String,
+    /// End point.
     pub p2_id: String,
+    /// Target direction θ in radians.
     pub angle: f64,
 }
 
 impl PointPointAngleConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(p1_id: String, p2_id: String, angle: f64) -> Self {
         Self {
             p1_id,

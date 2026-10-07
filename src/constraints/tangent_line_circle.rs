@@ -1,3 +1,6 @@
+//! [`TangentLineCircleConstraint`]: constrains a Line (the segment between
+//! its endpoints) to be tangent to a circle.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::segment::{foot_overshoot, line_signed_distance};
@@ -18,13 +21,18 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///                       perpendicular from the center, lies on the segment;
 ///                       0 while it does, else how far past an endpoint it is)
 pub struct TangentLineCircleConstraint {
+    /// First point of the line.
     pub line_pa_id: String,
+    /// Second point of the line.
     pub line_pb_id: String,
+    /// Center point of the circle.
     pub circle_center_id: String,
+    /// Circle entity (radius at param 0).
     pub circle_id: String,
 }
 
 impl TangentLineCircleConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         line_pa_id: String,
         line_pb_id: String,

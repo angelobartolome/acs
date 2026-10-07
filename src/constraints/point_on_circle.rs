@@ -1,3 +1,6 @@
+//! [`PointOnCircleConstraint`]: constrains a point to lie on the
+//! circumference of a circle.
+
 #![allow(non_snake_case)]
 
 use nalgebra::DMatrix;
@@ -13,12 +16,16 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///
 /// Residual: (px − cx)² + (py − cy)² − r² = 0
 pub struct PointOnCircleConstraint {
+    /// The free point (x, y).
     pub point_id: String,
+    /// The circle's center point (cx, cy).
     pub circle_center_id: String,
+    /// The circle entity (radius r at param index 0).
     pub circle_id: String,
 }
 
 impl PointOnCircleConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(point_id: String, circle_center_id: String, circle_id: String) -> Self {
         Self {
             point_id,

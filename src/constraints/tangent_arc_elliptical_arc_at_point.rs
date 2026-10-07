@@ -1,3 +1,6 @@
+//! [`TangentArcEllipticalArcAtPointConstraint`]: an Arc tangent to an
+//! elliptical arc at an endpoint they share.
+
 use nalgebra::DMatrix;
 
 use crate::constraints::ellipse::{D, EllipseFrame, V2};
@@ -19,15 +22,22 @@ use crate::constraints::{ArcEnd, Constraint, Var, xy};
 ///   R = (p − k)/|p − k| · τ/|τ|   (the cosine of the angle between the
 ///                                  Arc's radius and the tangent)
 pub struct TangentArcEllipticalArcAtPointConstraint {
+    /// The shared point p (an endpoint of both).
     pub point_id: String,
+    /// The Arc's center k.
     pub arc_center_id: String,
+    /// The ellipse's center and focus.
     pub center_id: String,
+    /// The ellipse's center and focus.
     pub focus_id: String,
+    /// The elliptical arc (minor radius b, and the angle θ of.
     pub arc_id: String,
+    /// Which end of the arc the shared point is.
     pub end: ArcEnd,
 }
 
 impl TangentArcEllipticalArcAtPointConstraint {
+    /// The constraint over these entities, by ID (see the fields).
     pub fn new(
         point_id: String,
         arc_center_id: String,
