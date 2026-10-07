@@ -226,7 +226,7 @@ impl VarEntity for Arc {
     }
 }
 
-/// An Ellipse: a center Point, a focus Point (`focus1`, which sets the
+/// An [Ellipse](https://en.wikipedia.org/wiki/Ellipse): a center Point, a focus Point (`focus1`, which sets the
 /// major axis direction) and its minor radius `radmin`, which it owns as a
 /// Var. Its major radius is derived: `a = sqrt(radmin² + |focus1 − center|²)`.
 #[derive(Debug, Clone, PartialEq)]
@@ -289,7 +289,8 @@ impl VarEntity for Ellipse {
 
 /// An arc of an Ellipse: the Ellipse's center Point, focus Point
 /// (`focus1`) and minor radius `radmin`, plus start and end Points and
-/// angles. The angles are the ellipse's own parametric angle `t`, measured
+/// angles. The angles are the ellipse's own parametric angle `t` (its
+/// [eccentric anomaly](https://en.wikipedia.org/wiki/Eccentric_anomaly), not the polar angle), measured
 /// from its major axis (center → focus1) towards its minor axis
 /// (`rot90`): the point at `t` is `c + a·cos t·u + b·sin t·n`. It sweeps
 /// counter-clockwise from `start_angle` to `end_angle`, as an `Arc` does

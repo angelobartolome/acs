@@ -118,7 +118,9 @@ pub(crate) fn set_row(j: &mut DMatrix<f64>, row: usize, g: &[f64]) {
 ///
 /// A constraint declares the variables it drives (`vars`), optionally the
 /// Guides it follows (`guides`), and evaluates residuals and their partials
-/// over those local values (`eval`). Gathering values from the global vector
+/// over those local values (`eval`): a row of the
+/// [Jacobian](https://en.wikipedia.org/wiki/Jacobian_matrix_and_determinant) per residual, with
+/// exact (analytical) partials. Gathering values from the global vector
 /// and scattering partials into the global Jacobian happen once, in the
 /// provided `residual` / `jacobian` methods and `eval_into`, which accumulate
 /// so a variable listed twice (two lines sharing a point) gets the sum of its

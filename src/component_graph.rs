@@ -1,6 +1,10 @@
 //! Splits a sketch into Components: groups of constraints that share
 //! entities (directly or through others), each solved on its own small
 //! system.
+//!
+//! The groups are the [connected components](https://en.wikipedia.org/wiki/Component_(graph_theory))
+//! of the graph linking constraints through the entities they read, found
+//! with a [union-find](https://en.wikipedia.org/wiki/Disjoint-set_data_structure).
 
 use std::collections::HashMap;
 

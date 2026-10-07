@@ -6,7 +6,9 @@
 //! direction `u = (f − c) / k`, the unit minor direction `n = rot90(u)` and
 //! the second focus `2c − f`.
 //!
-//! The quantities are computed in forward mode, like GCS's `DeriVector2`:
+//! The quantities are computed in [forward
+//! mode](https://en.wikipedia.org/wiki/Automatic_differentiation#Forward_accumulation), like GCS's
+//! `DeriVector2`:
 //! each [`D`] carries its value and its exact partials w.r.t. a kernel's `N`
 //! local variables, and every operation applies the chain rule. A kernel's
 //! Jacobian row is then the partials of its residual, analytical rather than
@@ -264,7 +266,10 @@ impl<const N: usize> EllipseFrame<N> {
         self.major_dir.rot90()
     }
 
-    /// The point at parametric angle `t`: `c + a·cos t·u + b·sin t·n`.
+    /// The point at parametric angle `t` (the [eccentric
+    /// anomaly](https://en.wikipedia.org/wiki/Eccentric_anomaly); the ellipse's [parametric
+    /// representation](https://en.wikipedia.org/wiki/Ellipse#Parametric_representation)):
+    /// `c + a·cos t·u + b·sin t·n`.
     pub fn point_at(&self, t: D<N>) -> V2<N> {
         let along = self.major_dir.scale(self.major_radius * t.cos());
         let across = self.minor_dir().scale(self.minor_radius * t.sin());

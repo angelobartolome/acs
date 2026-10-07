@@ -2,9 +2,21 @@
 //!
 //! A sketch is geometry (points, lines, circles, arcs, ellipses and
 //! elliptical arcs) and constraints between it (coincident, tangent,
-//! distance, …). ACS moves the geometry until every constraint holds, and
-//! reports what it couldn't satisfy (Conflicting), what was unnecessary
-//! (Redundant) and how many degrees of freedom are left. Lines are segments
+//! distance, …): [geometric constraint
+//! solving](https://en.wikipedia.org/wiki/Geometric_constraint_solving). ACS moves the geometry until
+//! every constraint holds, and reports what it couldn't satisfy
+//! (Conflicting), what was unnecessary (Redundant) and how many degrees of
+//! freedom are left.
+//!
+//! Each constraint is a set of residuals with exact partial derivatives.
+//! The sketch splits into independent groups ([`component_graph`]), each
+//! solved by [Powell's dog leg method](https://en.wikipedia.org/wiki/Powell%27s_dog_leg_method)
+//! ([`dogleg_solver`]); drags (temporary constraints) are minimized within
+//! the real ones by a trust-region
+//! [SQP](https://en.wikipedia.org/wiki/Sequential_quadratic_programming). Degrees of freedom and the
+//! Conflicting/Redundant diagnosis come from the
+//! [rank](https://en.wikipedia.org/wiki/Rank_(linear_algebra)) and [null
+//! space](https://en.wikipedia.org/wiki/Kernel_(linear_algebra)) of each group's Jacobian. Lines are segments
 //! and arcs are their spans: a point `on` a line stays between its ends
 //! unless the constraint names the line's Extension.
 //!
