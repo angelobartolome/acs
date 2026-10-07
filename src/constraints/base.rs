@@ -376,6 +376,11 @@ pub enum ConstraintType {
     /// (point_id, arc_center_point_id, arc_id)
     PointOnArc(String, String, String),
 
+    /// A point is the midpoint of an arc's span: on its circle, halfway by
+    /// angle from its start to its end, counter-clockwise.
+    /// (point_id, arc_center_point_id, arc_id)
+    MidpointOfArc(String, String, String),
+
     /// A Line (the segment) is tangent to an arc, touching it on both the
     /// segment and the arc's span.
     /// (line_pa_id, line_pb_id, arc_center_point_id, arc_id)
@@ -624,6 +629,9 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         )),
         ConstraintType::PointOnArc(p, center, arc) => Ok(Box::new(
             crate::constraints::point_on_arc::PointOnArcConstraint::new(p, center, arc),
+        )),
+        ConstraintType::MidpointOfArc(p, center, arc) => Ok(Box::new(
+            crate::constraints::midpoint_of_arc::MidpointOfArcConstraint::new(p, center, arc),
         )),
         ConstraintType::TangentLineArc(pa, pb, center, arc) => Ok(Box::new(
             crate::constraints::tangent_line_arc::TangentLineArcConstraint::new(

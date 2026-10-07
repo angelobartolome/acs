@@ -552,6 +552,7 @@ row is 0, so like the segment's `O` it removes no degree of freedom there.
 | `ArcRules(c, s, e, arc)` (implicit, every arc) | `R₀ = sx − cx − r·cos α`, `R₁ = sy − cy − r·sin α`, `R₂ = ex − cx − r·cos β`, `R₃ = ey − cy − r·sin β` |
 | `PointOnArc(p, c, arc)` (`on`) | `R₀ = ρ − r`, `R₁ = r·A(φ; α, β)`, with `v = p − c`, `ρ = \|v\|`, `φ = atan2(vy, vx)` |
 | `TangentLineArc(a, b, c, arc)` (`tangent`) | `R₀ = \|S∞(c; a, b)\| − r`, `R₁ = O(c; a, b)`, `R₂ = r·A(φ; α, β)`, `φ` the direction from `c` to the tangency point |
+| `MidpointOfArc(p, c, arc)` (`midpoint` `[point, arc]`) | `R₀ = px − cx − r·cos m`, `R₁ = py − cy − r·sin m`, `m = α + w/2`, `w` the sweep |
 
 **ArcRules Jacobian:** `∂R₀/∂(cx, sx, r, α) = (−1, 1, −cos α, r·sin α)`,
 `∂R₁/∂(cy, sy, r, α) = (−1, 1, −sin α, −r·cos α)`, and the same for `R₂`, `R₃`
@@ -567,6 +568,17 @@ points, `∂R₁/∂r = A`, `∂R₁/∂(α, β) = r·∂A/∂(α, β)`. At `ρ 
 `∂R₀/∂r` is set. The circle residual is unsquared (unlike PointOnCircle) and
 is a point-to-center distance of `r`; `R₁` is
 ACS's addition, since an Arc is its span, as a Line is its segment.
+
+**MidpointOfArc Jacobian:** the middle of the span by angle, so `p` is on
+the circle (2 equations: a free point at the middle of a free arc loses 2
+DOF). Between wraps `w = β − α + 2πk` for a fixed integer `k`, so
+`m = (α + β)/2 + πk` and `∂m/∂α = ∂m/∂β = ½`:
+`∂R₀/∂(px, cx, r, α, β) = (1, −1, −cos m, ½r·sin m, ½r·sin m)`,
+`∂R₁/∂(py, cy, r, α, β) = (1, −1, −sin m, −½r·cos m, −½r·cos m)`.
+Where the sweep wraps (`β` passing `α`, between a full turn and none) `m`
+jumps by `π` and the middle flips to the opposite side, as the arc itself
+jumps there; `(α + β)/2` alone would be the wrong side whenever the span
+crosses `±π` (`α = 1`, `β = −1`: the middle is at `π`, not `0`).
 
 **TangentLineArc Jacobian:** `R₀`, `R₁` as TangentLineCircle. The tangency
 point is the foot of the perpendicular from `c`, in direction
@@ -815,6 +827,7 @@ pub enum ConstraintType {
     Equal(Operand, Operand),                              // param1, param2
     // Arcs
     PointOnArc(String, String, String),             // point_id, arc_center_id, arc_id
+    MidpointOfArc(String, String, String),          // point_id, arc_center_id, arc_id
     TangentLineArc(String, String, String, String), // line_pa, line_pb, arc_center_id, arc_id
     TangentAtPoint(String, String, String),         // shared_point_id, other_line_end_id, arc_center_id
     TangentCirclesInternal(String, String, String, String), // c1_center_id, c1_id, c2_center_id, c2_id

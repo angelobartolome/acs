@@ -236,6 +236,11 @@ pub(super) static SPECS: &[S] = &[
         |a| ConstraintType::MidpointOfLineOnExtension(a.p(0), a.p(1), a.p(2), a.p(3)),
     )
     .extension(),
+    S::new(
+        "midpoint",
+        &[("entities[0]", Point), ("entities[1]", Arc)],
+        |a| ConstraintType::MidpointOfArc(a.p(0), a.center(0), a.c(0)),
+    ),
     S::new("tangent", &[("a", Line), ("b", Circle)], |a| {
         ConstraintType::TangentLineCircle(a.p(0), a.p(1), a.center(0), a.c(0))
     })

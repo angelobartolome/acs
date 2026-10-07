@@ -670,6 +670,15 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     entityFields: ["entities[0]", "entities[1]"],
   },
   {
+    key: "midpoint_arc",
+    type: "midpoint",
+    label: "Midpoint of Arc",
+    badge: "MA",
+    description: "Point is the middle of the arc, halfway from its start to its end",
+    selection: [P(1), A(1)],
+    entityFields: ["entities[0]", "entities[1]"],
+  },
+  {
     key: "tangent_line_circle",
     type: "tangent",
     extension: false,
