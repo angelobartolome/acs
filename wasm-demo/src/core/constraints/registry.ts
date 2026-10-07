@@ -450,6 +450,28 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     scalarParams: [pointCircleGap(true)],
   },
   {
+    key: "distance_point_arc",
+    type: "distance",
+    internal: false,
+    label: "Distance",
+    badge: "↔",
+    description: "Gap between a point and an arc, outside it, within the arc",
+    selection: [P(1), A(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [pointCircleGap(false)],
+  },
+  {
+    key: "distance_point_arc_internal",
+    type: "distance",
+    internal: true,
+    label: "Distance Inside",
+    badge: "↔i",
+    description: "Gap between a point and an arc, inside it, within the arc",
+    selection: [P(1), A(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [pointCircleGap(true)],
+  },
+  {
     key: "distance_line_circle",
     type: "distance",
     extension: false,
@@ -473,6 +495,38 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     badge: "↔E",
     description: "Gap between the line's Extension and a circle",
     selection: [L(1), C(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      lengthParam("Distance", (ents, resolve) => {
+        const [a, b] = lineEndpoints(ents[0], resolve);
+        return pointExtensionDistance(centerXY(ents[1], resolve), a, b) - currentRadius(ents[1]);
+      }),
+    ],
+  },
+  {
+    key: "distance_line_arc",
+    type: "distance",
+    extension: false,
+    label: "Distance",
+    badge: "↔",
+    description: "Gap between a line segment and an arc, within the arc",
+    selection: [L(1), A(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      lengthParam("Distance", (ents, resolve) => {
+        const [a, b] = lineEndpoints(ents[0], resolve);
+        return pointLineDistance(centerXY(ents[1], resolve), a, b) - currentRadius(ents[1]);
+      }),
+    ],
+  },
+  {
+    key: "distance_extension_arc",
+    type: "distance",
+    extension: true,
+    label: "Distance to Extension",
+    badge: "↔E",
+    description: "Gap between the line's Extension and an arc, within the arc",
+    selection: [L(1), A(1)],
     entityFields: ["a", "b"],
     scalarParams: [
       lengthParam("Distance", (ents, resolve) => {

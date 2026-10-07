@@ -516,6 +516,24 @@ pub enum ConstraintType {
     /// (arc1_center_point_id, arc1_id, arc2_center_point_id, arc2_id, distance, internal)
     DistanceArcs(String, String, String, String, f64, bool),
 
+    /// Gap between a point and an arc: `DistancePointCircle`'s gap, with the
+    /// nearest point (on the ray from the center through the point) on the
+    /// arc's span.
+    /// (point_id, arc_center_point_id, arc_id, distance, internal)
+    DistancePointArc(String, String, String, f64, bool),
+
+    /// Gap between a Line (the segment) and an arc: `DistanceLineCircle`'s
+    /// gap, with the nearest point (on the ray from the center through the
+    /// segment's nearest point) on the arc's span.
+    /// (line_pa_id, line_pb_id, arc_center_point_id, arc_id, distance)
+    DistanceLineArc(String, String, String, String, f64),
+
+    /// Gap between a Line's Extension and an arc: `DistanceExtensionCircle`'s
+    /// gap, with the nearest point (on the ray from the center through the
+    /// foot of the perpendicular) on the arc's span.
+    /// (line_pa_id, line_pb_id, arc_center_point_id, arc_id, distance)
+    DistanceExtensionArc(String, String, String, String, f64),
+
     /// Both endpoints of line b are `distance` from line a's Extension, on
     /// one side: b is parallel to a, `distance` away.
     /// (a_p1_id, a_p2_id, b_p1_id, b_p2_id, distance)
@@ -785,6 +803,21 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
                 .with_gap(d),
             ))
         }
+        ConstraintType::DistancePointArc(p, center, arc, d, internal) => Ok(Box::new(
+            crate::constraints::distance_point_arc::DistancePointArcConstraint::new(
+                p, center, arc, d, internal,
+            ),
+        )),
+        ConstraintType::DistanceLineArc(pa, pb, center, arc, d) => Ok(Box::new(
+            crate::constraints::distance_line_arc::DistanceLineArcConstraint::new(
+                pa, pb, center, arc, d, false,
+            ),
+        )),
+        ConstraintType::DistanceExtensionArc(pa, pb, center, arc, d) => Ok(Box::new(
+            crate::constraints::distance_line_arc::DistanceLineArcConstraint::new(
+                pa, pb, center, arc, d, true,
+            ),
+        )),
         ConstraintType::DistanceLineLine(a1, a2, b1, b2, d) => {
             // At 0 the side-free residual |d| − value only touches zero:
             // two Lines at distance 0 are `collinear`.

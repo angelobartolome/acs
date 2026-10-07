@@ -722,6 +722,9 @@ of touching it from one side. `σ = −1` for `internal`, else `+1`.
 | `DistancePointCircle(p, c, C, d, internal)` (`distance` point–circle) | `R = σ(\|p − c\| − r) − d` | `∂p = σu`, `∂c = −σu`, `∂r = −σ` |
 | `DistanceLineCircle(a, b, c, C, d)` (`distance` line–circle) | `R = D(c, ab) − r − d`, `D` the unsigned segment distance (Segment geometry) | `∂(c, a, b)` from `segment_distance`, `∂r = −1` |
 | `DistanceExtensionCircle(a, b, c, C, d)` (`distance` line–circle, `extension`) | `R = \|C/L\| − r − d` (as `TangentExtensionCircle`) | `sign(C)·∂(C/L)`, `∂r = −1` |
+| `DistancePointArc(p, c, A, d, internal)` (`distance` point–arc) | `R₀ = σ(\|p − c\| − r) − d`; `R₁ = r·overshoot(φ; α, β)`, `φ = atan2(p − c)` (as `PointOnArc`) | `R₀` as `DistancePointCircle`; `R₁`: `∂p = r·o′·(−v_y, v_x)/ρ²`, `∂c = −∂p`, `∂r = overshoot`, `∂α, ∂β = r·∂overshoot` |
+| `DistanceLineArc(a, b, c, A, d)` (`distance` line–arc) | `R₀ = D(c, ab) − r − d`; `R₁ = r·overshoot(φ; α, β)`, `φ` the direction of `q − c`, `q` the segment's nearest point to `c` | `R₀` as `DistanceLineCircle`; `R₁`: foot (`0 ≤ t ≤ 1`) `∂(a, b) = r·o′·(dy, −dx, −dy, dx)/L²`, `∂c = 0`; past an end `q = e`: `∂e = r·o′·(−v_y, v_x)/\|v\|²`, `∂c = −∂e`, `v = e − c` |
+| `DistanceExtensionArc(a, b, c, A, d)` (`distance` line–arc, `extension`) | `R₀ = \|C/L\| − r − d`; `R₁` with `q` always the foot (as `TangentLineArc`'s span row) | `R₀` as `DistanceExtensionCircle`; `R₁` the foot case above |
 | `DistanceCircleCircle(c₁, C₁, c₂, C₂, d, false)` | `R = \|c₂ − c₁\| − r₁ − r₂ − d` | with `w = (c₂ − c₁)/\|c₂ − c₁\|`: `∂c₁ = −w`, `∂c₂ = w`, `∂r₁ = ∂r₂ = −1` |
 | `DistanceCircleCircle(…, d, true)` (`internal`) | `R = \|r₁ − r₂\| − \|c₂ − c₁\| − d` | `∂c₁ = w`, `∂c₂ = −w`, `∂r₁ = τ`, `∂r₂ = −τ`, `τ = +1` if `r₁ ≥ r₂` else `−1` |
 | `DistanceLineLine(a₁, a₂, b₁, b₂, d)` (`distance` line–line) | `R₀ = ς·C(b₁)/L − d`, `R₁ = ς·C(b₂)/L − d`, signed distances to the line through `a₁, a₂`; `ς = +1` if `C(b₁) + C(b₂) ≥ 0` else `−1` | `ς·∂(C/L)` per row (Segment geometry), `p` = `b₁` or `b₂` |
@@ -736,7 +739,14 @@ symmetric in its circles; it is kinked only at `r₁ = r₂` (where the gap is
 `−|c₂ − c₁| ≤ 0`). Distances to arcs (circle–arc and arc–arc) don't clamp
 the gap to the span (that residual would be kinked); like curve–curve
 tangency (§ above), they keep the gap row smooth and add one span row per
-arc.
+arc. Point–arc and line–arc do the same: `R₀` is the point–circle or
+line–circle gap, smooth, and `R₁` (`o′ = ∂overshoot/∂φ`) keeps the ray from
+the center through the nearest point `q` on the span. Off the span the gap
+isn't measured to the arc's endpoint (with a signed gap that residual would
+jump sign there, for a point inside the circle); the solve turns the ray
+back onto the span instead. `R₁` is 0 with a zero row on the span (like
+`PointOnArc`'s), and continuous where `q` switches from the foot to an
+endpoint (its partials jump there).
 
 ---
 
@@ -852,6 +862,9 @@ pub enum ConstraintType {
     DistanceCircleCircle(String, String, String, String, f64, bool), // c1_center_id, c1_id, c2_center_id, c2_id, gap, internal
     DistanceCircleArc(String, String, String, String, f64, bool), // circle_center_id, circle_id, arc_center_id, arc_id, gap, internal
     DistanceArcs(String, String, String, String, f64, bool), // arc1_center_id, arc1_id, arc2_center_id, arc2_id, gap, internal
+    DistancePointArc(String, String, String, f64, bool), // point_id, arc_center_id, arc_id, gap, internal
+    DistanceLineArc(String, String, String, String, f64), // line_pa, line_pb, arc_center_id, arc_id, gap
+    DistanceExtensionArc(String, String, String, String, f64), // line_pa, line_pb, arc_center_id, arc_id, gap
     DistanceLineLine(String, String, String, String, f64),  // a_p1, a_p2, b_p1, b_p2, distance
 }
 ```

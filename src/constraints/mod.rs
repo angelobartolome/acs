@@ -56,6 +56,8 @@ pub mod distance_point_circle;
 pub mod distance_line_circle;
 pub mod distance_extension_circle;
 pub mod distance_circle_circle;
+pub mod distance_point_arc;
+pub mod distance_line_arc;
 pub mod distance_line_line;
 
 pub use angle::*;
@@ -113,4 +115,6 @@ pub use distance_point_circle::*;
 pub use distance_line_circle::*;
 pub use distance_extension_circle::*;
 pub use distance_circle_circle::*;
+pub use distance_point_arc::*;
+pub use distance_line_arc::*;
 pub use distance_line_line::*;

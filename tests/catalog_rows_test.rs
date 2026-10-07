@@ -233,13 +233,14 @@ fn acs_constraint_catalog_describes_every_row() {
     // Rows without an Extension variant carry no flag.
     let coincident = rows.iter().find(|r| r["type"] == "coincident").unwrap();
     assert!(coincident.get("extension").is_none());
-    // Point–circle, circle–circle, circle–arc and arc–arc distance have an
-    // outside row (`internal: false`) and an inside one (`internal: true`).
+    // Point–circle, point–arc, circle–circle, circle–arc and arc–arc
+    // distance have an outside row (`internal: false`) and an inside one
+    // (`internal: true`).
     let distance_internal: Vec<&Value> = rows
         .iter()
         .filter(|r| r["type"] == "distance" && r.get("internal").is_some())
         .collect();
-    assert_eq!(distance_internal.len(), 8);
+    assert_eq!(distance_internal.len(), 10);
     for pair in distance_internal.chunks(2) {
         assert_eq!(pair[0]["internal"], false);
         assert_eq!(pair[1]["internal"], true);
