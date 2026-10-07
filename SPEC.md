@@ -650,6 +650,21 @@ A free ellipse has 5 degrees of freedom.
 | `EllipseAxisPoint(p, c, f, E, axis)` (`ellipse_axis`) | with `d = p − c`: major `R₀ = u × d`, `R₁ = \|d\| − A`; minor `R₀ = u · d`, `R₁ = \|d\| − b` |
 | `EllipseDiameter(p₁, p₂, c, f, E, axis)` (`ellipse_axis` with `a`, `b`) | with `m = (p₁ + p₂)/2`, `h = (p₂ − p₁)/2`: `R₀,₁ = m − c`; major `R₂ = u × h`, `R₃ = \|h\| − A`; minor `R₂ = u · h`, `R₃ = \|h\| − b` |
 | `TangentLineEllipse(a, b, c, f, E)` (`tangent`) | with `L = \|b − a\|`, `g = (b − a)/L`, `ν = rot90(g)`, `sᵢ = ν·(fᵢ − a)`, `σᵢ = g·(fᵢ − a)` (`f₁ = f`): `R₀ = \|c − f + s₁ν\| − A`, `R₁ = overshoot of σ_T = (s₁σ₂ + s₂σ₁)/(s₁ + s₂)` past `[0, L]` |
+| `TangentLineEllipseAtPoint(p, o, c, f, E)` (`tangent` whose line endpoint `p` an `on` holds on the curve) | `R = ĝ × τ̂(t(p))`, `ĝ = (o − p)/\|o − p\|`, `τ̂` the unit tangent at `p`'s parametric angle `t(p)` (§24's `τ` and `t(p)`) |
+
+**Tangency at a held endpoint** (`TangentLineEllipseAtPoint`). When a real
+`on` holds a Line endpoint `p` on the same ellipse (or elliptical arc, §24)
+that the Line is `tangent` to, `constraint_catalog::tangent_at_held_endpoints`
+builds this instead of `TangentLineEllipse` (or `TangentLineEllipticalArc`),
+as it builds `TangentAtPoint` for a circle or arc (§20). Through a point
+already on the curve, `R₀` only changes quadratically as `p` slides along
+the line: `p` drifts from the tangent point (~2e-5 on a 5 × 4 ellipse) and
+diagnosis reports the `tangent` Redundant with `dof` one too high. The angle
+between the line and the tangent at `p` changes linearly. It reads `p`'s
+angle `t(p)`, not a variable; the `on` keeps `p` on the curve (and an
+elliptical arc's span), and `p` is on the segment, so both forms have the
+same solutions. Its `E` is the ellipse's or the elliptical arc's id (both
+own `b` as `Var::MinorRadius`). Temporary `on`/`tangent` are left alone.
 
 All are unsquared and match GCS's semantics: `PointOnEllipse` is GCS's
 residual (the focal-distance sum); `R₀` of the tangent is half of GCS's
@@ -766,7 +781,10 @@ The at-point forms are chosen, as `TangentAtPoint` is for an Arc, when the
 Line's endpoint (or the Arc's) *is* the elliptical arc's endpoint: through a
 point already on the curve the segment-and-span form only changes
 quadratically. They read the end's angle variable rather than the point's
-angle, which the rules tie to it. An Arc and an elliptical arc have no other
+angle, which the rules tie to it. A Line endpoint that is not the arc's
+endpoint but that a real `on` holds on the elliptical arc gets §21's
+`TangentLineEllipseAtPoint` instead (`R = ĝ × τ̂(t(p))`, the point's own
+angle `t(p)`), for the same reason. An Arc and an elliptical arc have no other
 tangency: the catalog row's check rejects a pair with no shared endpoint.
 
 **Jacobians.** Forward mode, as §21, with `∂ sin t = cos t·∂t`,
