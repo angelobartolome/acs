@@ -352,7 +352,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         DistanceLineLine(..) => "DistanceLineLine",
     }
 }
-const ALL_VARIANTS: [&str; 58] = [
+const ALL_VARIANTS: [&str; 59] = [
     "Vertical",
     "Horizontal",
     "Parallel",
