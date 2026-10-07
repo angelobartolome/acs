@@ -296,6 +296,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         Difference(..) => "Difference",
         Equal(..) => "Equal",
         PointOnArc(..) => "PointOnArc",
+        MidpointOfArc(..) => "MidpointOfArc",
         TangentLineArc(..) => "TangentLineArc",
         TangentAtPoint(..) => "TangentAtPoint",
         PointPointAngle(..) => "PointPointAngle",
@@ -327,7 +328,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         DistanceLineLine(..) => "DistanceLineLine",
     }
 }
-const ALL_VARIANTS: [&str; 57] = [
+const ALL_VARIANTS: [&str; 58] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -356,6 +357,7 @@ const ALL_VARIANTS: [&str; 57] = [
     "Difference",
     "Equal",
     "PointOnArc",
+    "MidpointOfArc",
     "TangentLineArc",
     "TangentAtPoint",
     "PointPointAngle",
@@ -545,6 +547,12 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::Equal(Operand::Const(1.5), Operand::Y(s("p0"))),
         ConstraintType::PointOnArc(s("a1_start"), s("a1_center"), s("a1")),
         ConstraintType::PointOnArc(s("p0"), s("a1_center"), s("a1")),
+        // Midpoint of an arc: the point being the arc's own start, end or
+        // center, and the other arc.
+        ConstraintType::MidpointOfArc(s("a1_start"), s("a1_center"), s("a1")),
+        ConstraintType::MidpointOfArc(s("a1_end"), s("a1_center"), s("a1")),
+        ConstraintType::MidpointOfArc(s("a1_center"), s("a1_center"), s("a1")),
+        ConstraintType::MidpointOfArc(s("p0"), s("a2_center"), s("a2")),
         ConstraintType::TangentLineArc(s("a1_center"), s("p1"), s("a1_center"), s("a1")),
         ConstraintType::TangentLineArc(s("a1_start"), s("p1"), s("a1_center"), s("a1")),
         ConstraintType::TangentLineArc(s("p0"), s("p1"), s("a2_center"), s("a2")),
