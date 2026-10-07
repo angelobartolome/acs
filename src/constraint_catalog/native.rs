@@ -114,6 +114,18 @@ pub(super) static SPECS: &[S] = &[
     .internal(),
     S::new(
         "distance",
+        &[("a", Point), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistancePointArc(a.p(0), a.center(0), a.c(0), a.s(0), false),
+    )
+    .external(),
+    S::new(
+        "distance",
+        &[("a", Point), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistancePointArc(a.p(0), a.center(0), a.c(0), a.s(0), true),
+    )
+    .internal(),
+    S::new(
+        "distance",
         &[("a", Line), ("b", Circle), ("value", Scalar)],
         |a| ConstraintType::DistanceLineCircle(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
     )
@@ -122,6 +134,18 @@ pub(super) static SPECS: &[S] = &[
         "distance",
         &[("a", Line), ("b", Circle), ("value", Scalar)],
         |a| ConstraintType::DistanceExtensionCircle(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
+    )
+    .extension(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistanceLineArc(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
+    )
+    .segment(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistanceExtensionArc(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
     )
     .extension(),
     S::new(
