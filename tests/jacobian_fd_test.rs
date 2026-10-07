@@ -6,7 +6,9 @@
 //! occurrence of each variable, and a variable it doesn't read must have a
 //! zero column.
 
-use acs::constraint_catalog::{Args, ConstraintSpec, EllipseRef, FieldKind, specs};
+use acs::constraint_catalog::{
+    Args, ConstraintSpec, EllipseRef, FieldKind, specs, tangent_at_held_endpoints,
+};
 use acs::constraints::{
     Constraint, ConstraintType, EllipseAxis, Operand, create_constraint, reads,
 };
@@ -155,11 +157,32 @@ const ARCS: [(&str, &str, &str, &str); 2] = [
 /// turn, a radius, a point coordinate and a constant.
 fn all_constraints() -> Vec<ConstraintType> {
     let mut seen = std::collections::HashSet::new();
-    specs()
-        .iter()
-        .flat_map(build_from_spec)
+    let built: Vec<ConstraintType> = specs().iter().flat_map(build_from_spec).collect();
+    let rewritten: Vec<ConstraintType> = built.iter().filter_map(held_endpoint_rewrite).collect();
+    built
+        .into_iter()
+        .chain(rewritten)
         .filter(|ct| seen.insert(variant_name(ct)))
         .collect()
+}
+
+/// A catalog-built Line–ellipse or Line–elliptical arc tangency with its
+/// first endpoint held `on` the curve, as `tangent_at_held_endpoints`
+/// rewrites it in a sketch (the only way to reach the kernel it builds).
+fn held_endpoint_rewrite(ct: &ConstraintType) -> Option<ConstraintType> {
+    let on = match ct {
+        ConstraintType::TangentLineEllipse(p, _, c, f, e) => {
+            ConstraintType::PointOnEllipse(p.clone(), c.clone(), f.clone(), e.clone())
+        }
+        ConstraintType::TangentLineEllipticalArc(p, _, c, f, e) => {
+            ConstraintType::PointOnEllipticalArc(p.clone(), c.clone(), f.clone(), e.clone())
+        }
+        _ => return None,
+    };
+    let mut pair = [(ct.clone(), false), (on, false)];
+    tangent_at_held_endpoints(&mut pair);
+    let [(rewritten, _), _] = pair;
+    Some(rewritten)
 }
 
 fn args_for(spec: &ConstraintSpec) -> Args {
@@ -296,6 +319,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         Difference(..) => "Difference",
         Equal(..) => "Equal",
         PointOnArc(..) => "PointOnArc",
+        MidpointOfArc(..) => "MidpointOfArc",
         TangentLineArc(..) => "TangentLineArc",
         TangentAtPoint(..) => "TangentAtPoint",
         PointPointAngle(..) => "PointPointAngle",
@@ -304,6 +328,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         LinearInstance(..) => "LinearInstance",
         PointOnEllipse(..) => "PointOnEllipse",
         TangentLineEllipse(..) => "TangentLineEllipse",
+        TangentLineEllipseAtPoint(..) => "TangentLineEllipseAtPoint",
         EllipseAxisPoint(..) => "EllipseAxisPoint",
         EllipseDiameter(..) => "EllipseDiameter",
         PointOnEllipticalArc(..) => "PointOnEllipticalArc",
@@ -322,12 +347,15 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         DistanceLineCircle(..) => "DistanceLineCircle",
         DistanceExtensionCircle(..) => "DistanceExtensionCircle",
         DistanceCircleCircle(..) => "DistanceCircleCircle",
+        DistancePointArc(..) => "DistancePointArc",
+        DistanceLineArc(..) => "DistanceLineArc",
+        DistanceExtensionArc(..) => "DistanceExtensionArc",
         DistanceCircleArc(..) => "DistanceCircleArc",
         DistanceArcs(..) => "DistanceArcs",
         DistanceLineLine(..) => "DistanceLineLine",
     }
 }
-const ALL_VARIANTS: [&str; 57] = [
+const ALL_VARIANTS: [&str; 62] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -356,6 +384,7 @@ const ALL_VARIANTS: [&str; 57] = [
     "Difference",
     "Equal",
     "PointOnArc",
+    "MidpointOfArc",
     "TangentLineArc",
     "TangentAtPoint",
     "PointPointAngle",
@@ -364,6 +393,7 @@ const ALL_VARIANTS: [&str; 57] = [
     "LinearInstance",
     "PointOnEllipse",
     "TangentLineEllipse",
+    "TangentLineEllipseAtPoint",
     "EllipseAxisPoint",
     "EllipseDiameter",
     "PointOnEllipticalArc",
@@ -382,6 +412,9 @@ const ALL_VARIANTS: [&str; 57] = [
     "DistanceLineCircle",
     "DistanceExtensionCircle",
     "DistanceCircleCircle",
+    "DistancePointArc",
+    "DistanceLineArc",
+    "DistanceExtensionArc",
     "DistanceCircleArc",
     "DistanceArcs",
     "DistanceLineLine",
@@ -545,6 +578,12 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::Equal(Operand::Const(1.5), Operand::Y(s("p0"))),
         ConstraintType::PointOnArc(s("a1_start"), s("a1_center"), s("a1")),
         ConstraintType::PointOnArc(s("p0"), s("a1_center"), s("a1")),
+        // Midpoint of an arc: the point being the arc's own start, end or
+        // center, and the other arc.
+        ConstraintType::MidpointOfArc(s("a1_start"), s("a1_center"), s("a1")),
+        ConstraintType::MidpointOfArc(s("a1_end"), s("a1_center"), s("a1")),
+        ConstraintType::MidpointOfArc(s("a1_center"), s("a1_center"), s("a1")),
+        ConstraintType::MidpointOfArc(s("p0"), s("a2_center"), s("a2")),
         ConstraintType::TangentLineArc(s("a1_center"), s("p1"), s("a1_center"), s("a1")),
         ConstraintType::TangentLineArc(s("a1_start"), s("p1"), s("a1_center"), s("a1")),
         ConstraintType::TangentLineArc(s("p0"), s("p1"), s("a2_center"), s("a2")),
@@ -582,6 +621,10 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::TangentLineEllipse(s("p0"), s("e1_focus"), s("e1_center"), s("e1_focus"), s("e1")),
         ConstraintType::TangentLineEllipse(s("p0"), s("p1"), s("e2_center"), s("e2_focus"), s("e2")),
         ConstraintType::TangentLineEllipse(s("p2"), s("p3"), s("e1_center"), s("e1_focus"), s("e1")),
+        ConstraintType::TangentLineEllipseAtPoint(s("e1_focus"), s("p1"), s("e1_center"), s("e1_focus"), s("e1")),
+        ConstraintType::TangentLineEllipseAtPoint(s("p0"), s("e1_center"), s("e1_center"), s("e1_focus"), s("e1")),
+        ConstraintType::TangentLineEllipseAtPoint(s("p0"), s("p0"), s("e2_center"), s("e2_focus"), s("e2")),
+        ConstraintType::TangentLineEllipseAtPoint(s("ea1_start"), s("p1"), s("ea1_center"), s("ea1_focus"), s("ea1")),
         ConstraintType::EllipseAxisPoint(s("p0"), s("e1_center"), s("e1_focus"), s("e1"), EllipseAxis::Minor),
         ConstraintType::EllipseAxisPoint(s("e1_focus"), s("e1_center"), s("e1_focus"), s("e1"), EllipseAxis::Major),
         ConstraintType::EllipseAxisPoint(s("e2_focus"), s("e2_center"), s("e2_focus"), s("e2"), EllipseAxis::Minor),
@@ -599,6 +642,16 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::DistanceCircleCircle(s("c1_center"), s("c1"), s("c1_center"), s("c2"), 0.5, false),
         ConstraintType::DistanceCircleArc(s("c1_center"), s("c1"), s("a1_center"), s("a1"), 0.5, true),
         ConstraintType::DistanceArcs(s("a1_center"), s("a1"), s("a2_center"), s("a2"), 0.5, true),
+        ConstraintType::DistancePointArc(s("p0"), s("a1_center"), s("a1"), 0.5, true),
+        ConstraintType::DistancePointArc(s("a1_start"), s("a1_center"), s("a1"), 0.5, false),
+        ConstraintType::DistancePointArc(s("a1_end"), s("a1_center"), s("a1"), 0.5, true),
+        ConstraintType::DistancePointArc(s("a1_center"), s("a1_center"), s("a1"), 0.5, false),
+        ConstraintType::DistancePointArc(s("a2_center"), s("a1_center"), s("a1"), 0.5, false),
+        ConstraintType::DistanceLineArc(s("a1_center"), s("p1"), s("a1_center"), s("a1"), 1.0),
+        ConstraintType::DistanceLineArc(s("a1_end"), s("a1_start"), s("a1_center"), s("a1"), 1.0),
+        ConstraintType::DistanceLineArc(s("p0"), s("p1"), s("a2_center"), s("a2"), 1.0),
+        ConstraintType::DistanceExtensionArc(s("a1_start"), s("p1"), s("a1_center"), s("a1"), 1.0),
+        ConstraintType::DistanceExtensionArc(s("p0"), s("p1"), s("a2_center"), s("a2"), 1.0),
         ConstraintType::DistanceLineCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1"), 1.0),
         ConstraintType::DistanceLineCircle(s("p0"), s("p1"), s("c1_center"), s("c1"), 1.0),
         ConstraintType::DistanceExtensionCircle(s("c1_center"), s("p1"), s("c1_center"), s("c1"), 1.0),
@@ -611,6 +664,10 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
             Operand::Radius(s("c1")),
             Operand::MinorRadius(s("e1")),
         ),
+        // `horizontal_distance`/`vertical_distance`: a signed coordinate
+        // difference, also between a point and itself.
+        ConstraintType::Difference(Operand::X(s("p0")), Operand::X(s("p1")), Operand::Const(-1.5)),
+        ConstraintType::Difference(Operand::Y(s("p0")), Operand::Y(s("p0")), Operand::Const(0.0)),
     ]
 }
 

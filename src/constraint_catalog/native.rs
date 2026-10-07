@@ -19,7 +19,7 @@ use super::{
     ConstraintSpec as S, ExtensionFlag, FieldKind, InternalFlag, References, field_path,
     field_value,
 };
-use crate::ConstraintType;
+use crate::{ConstraintType, Operand};
 
 use FieldKind::{Arc, Axis, Circle, Ellipse, EllipticalArc, Line, Point, Scalar, Value as Val};
 
@@ -114,6 +114,18 @@ pub(super) static SPECS: &[S] = &[
     .internal(),
     S::new(
         "distance",
+        &[("a", Point), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistancePointArc(a.p(0), a.center(0), a.c(0), a.s(0), false),
+    )
+    .external(),
+    S::new(
+        "distance",
+        &[("a", Point), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistancePointArc(a.p(0), a.center(0), a.c(0), a.s(0), true),
+    )
+    .internal(),
+    S::new(
+        "distance",
         &[("a", Line), ("b", Circle), ("value", Scalar)],
         |a| ConstraintType::DistanceLineCircle(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
     )
@@ -122,6 +134,18 @@ pub(super) static SPECS: &[S] = &[
         "distance",
         &[("a", Line), ("b", Circle), ("value", Scalar)],
         |a| ConstraintType::DistanceExtensionCircle(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
+    )
+    .extension(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistanceLineArc(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
+    )
+    .segment(),
+    S::new(
+        "distance",
+        &[("a", Line), ("b", Arc), ("value", Scalar)],
+        |a| ConstraintType::DistanceExtensionArc(a.p(0), a.p(1), a.center(0), a.c(0), a.s(0)),
     )
     .extension(),
     S::new(
@@ -236,6 +260,11 @@ pub(super) static SPECS: &[S] = &[
         |a| ConstraintType::MidpointOfLineOnExtension(a.p(0), a.p(1), a.p(2), a.p(3)),
     )
     .extension(),
+    S::new(
+        "midpoint",
+        &[("entities[0]", Point), ("entities[1]", Arc)],
+        |a| ConstraintType::MidpointOfArc(a.p(0), a.center(0), a.c(0)),
+    ),
     S::new("tangent", &[("a", Line), ("b", Circle)], |a| {
         ConstraintType::TangentLineCircle(a.p(0), a.p(1), a.center(0), a.c(0))
     })
@@ -323,6 +352,46 @@ pub(super) static SPECS: &[S] = &[
     S::new("y", &[("point", Point), ("value", Scalar)], |a| {
         ConstraintType::EqualY(a.p(0), a.s(0))
     }),
+    // Horizontal/vertical distance dimensions, signed: b.x − a.x = value
+    // (a Line's p2.x − p1.x), so a negative value puts `b` left of `a`;
+    // `y` for vertical. Not commutative. Built as `Difference` over the
+    // coordinates: its residual is exactly that, linear.
+    S::new(
+        "horizontal_distance",
+        &[("a", Point), ("b", Point), ("value", Scalar)],
+        |a| ConstraintType::Difference(
+            Operand::X(a.p(0)),
+            Operand::X(a.p(1)),
+            Operand::Const(a.s(0)),
+        ),
+    ),
+    S::new(
+        "horizontal_distance",
+        &[("line", Line), ("value", Scalar)],
+        |a| ConstraintType::Difference(
+            Operand::X(a.p(0)),
+            Operand::X(a.p(1)),
+            Operand::Const(a.s(0)),
+        ),
+    ),
+    S::new(
+        "vertical_distance",
+        &[("a", Point), ("b", Point), ("value", Scalar)],
+        |a| ConstraintType::Difference(
+            Operand::Y(a.p(0)),
+            Operand::Y(a.p(1)),
+            Operand::Const(a.s(0)),
+        ),
+    ),
+    S::new(
+        "vertical_distance",
+        &[("line", Line), ("value", Scalar)],
+        |a| ConstraintType::Difference(
+            Operand::Y(a.p(0)),
+            Operand::Y(a.p(1)),
+            Operand::Const(a.s(0)),
+        ),
+    ),
     S::new(
         "mirror",
         &[("source", Point), ("image", Point), ("axis", Line)],

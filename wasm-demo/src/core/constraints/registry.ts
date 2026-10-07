@@ -450,6 +450,28 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     scalarParams: [pointCircleGap(true)],
   },
   {
+    key: "distance_point_arc",
+    type: "distance",
+    internal: false,
+    label: "Distance",
+    badge: "↔",
+    description: "Gap between a point and an arc, outside it, within the arc",
+    selection: [P(1), A(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [pointCircleGap(false)],
+  },
+  {
+    key: "distance_point_arc_internal",
+    type: "distance",
+    internal: true,
+    label: "Distance Inside",
+    badge: "↔i",
+    description: "Gap between a point and an arc, inside it, within the arc",
+    selection: [P(1), A(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [pointCircleGap(true)],
+  },
+  {
     key: "distance_line_circle",
     type: "distance",
     extension: false,
@@ -473,6 +495,38 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     badge: "↔E",
     description: "Gap between the line's Extension and a circle",
     selection: [L(1), C(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      lengthParam("Distance", (ents, resolve) => {
+        const [a, b] = lineEndpoints(ents[0], resolve);
+        return pointExtensionDistance(centerXY(ents[1], resolve), a, b) - currentRadius(ents[1]);
+      }),
+    ],
+  },
+  {
+    key: "distance_line_arc",
+    type: "distance",
+    extension: false,
+    label: "Distance",
+    badge: "↔",
+    description: "Gap between a line segment and an arc, within the arc",
+    selection: [L(1), A(1)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      lengthParam("Distance", (ents, resolve) => {
+        const [a, b] = lineEndpoints(ents[0], resolve);
+        return pointLineDistance(centerXY(ents[1], resolve), a, b) - currentRadius(ents[1]);
+      }),
+    ],
+  },
+  {
+    key: "distance_extension_arc",
+    type: "distance",
+    extension: true,
+    label: "Distance to Extension",
+    badge: "↔E",
+    description: "Gap between the line's Extension and an arc, within the arc",
+    selection: [L(1), A(1)],
     entityFields: ["a", "b"],
     scalarParams: [
       lengthParam("Distance", (ents, resolve) => {
@@ -667,6 +721,15 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     badge: "ME",
     description: "Midpoint of the first line lies on the second line's Extension",
     selection: [L(2)],
+    entityFields: ["entities[0]", "entities[1]"],
+  },
+  {
+    key: "midpoint_arc",
+    type: "midpoint",
+    label: "Midpoint of Arc",
+    badge: "MA",
+    description: "Point is the middle of the arc, halfway from its start to its end",
+    selection: [P(1), A(1)],
     entityFields: ["entities[0]", "entities[1]"],
   },
   {
@@ -967,6 +1030,82 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
         label: "Y",
         unit: "coordinate",
         defaultFrom: (ents) => pointXY(ents[0]).y,
+      },
+    ],
+  },
+  // Signed horizontal/vertical dimensions: b − a (a line's p2 − p1) along
+  // one axis, defaulting to the current offset so nothing moves.
+  {
+    key: "horizontal_distance_points",
+    type: "horizontal_distance",
+    label: "Horizontal Distance",
+    badge: "↔x",
+    description: "Signed horizontal distance from the first point to the second (b.x - a.x)",
+    selection: [P(2)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      {
+        key: "value",
+        label: "dX",
+        unit: "length",
+        defaultFrom: (ents) => pointXY(ents[1]).x - pointXY(ents[0]).x,
+      },
+    ],
+  },
+  {
+    key: "horizontal_distance_line",
+    type: "horizontal_distance",
+    label: "Horizontal Distance",
+    badge: "↔x",
+    description: "Signed horizontal extent of the line (p2.x - p1.x)",
+    selection: [L(1)],
+    entityFields: ["line"],
+    scalarParams: [
+      {
+        key: "value",
+        label: "dX",
+        unit: "length",
+        defaultFrom: (ents, resolve) => {
+          const [a, b] = lineEndpoints(ents[0], resolve);
+          return b.x - a.x;
+        },
+      },
+    ],
+  },
+  {
+    key: "vertical_distance_points",
+    type: "vertical_distance",
+    label: "Vertical Distance",
+    badge: "↕y",
+    description: "Signed vertical distance from the first point to the second (b.y - a.y)",
+    selection: [P(2)],
+    entityFields: ["a", "b"],
+    scalarParams: [
+      {
+        key: "value",
+        label: "dY",
+        unit: "length",
+        defaultFrom: (ents) => pointXY(ents[1]).y - pointXY(ents[0]).y,
+      },
+    ],
+  },
+  {
+    key: "vertical_distance_line",
+    type: "vertical_distance",
+    label: "Vertical Distance",
+    badge: "↕y",
+    description: "Signed vertical extent of the line (p2.y - p1.y)",
+    selection: [L(1)],
+    entityFields: ["line"],
+    scalarParams: [
+      {
+        key: "value",
+        label: "dY",
+        unit: "length",
+        defaultFrom: (ents, resolve) => {
+          const [a, b] = lineEndpoints(ents[0], resolve);
+          return b.y - a.y;
+        },
       },
     ],
   },

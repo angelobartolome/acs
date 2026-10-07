@@ -104,14 +104,21 @@ pub fn field_value<'v>(c: &'v Value, name: &str) -> Option<&'v Value> {
 /// the endpoint drifts micrometres from the tangent point and diagnosis
 /// reports spurious Redundant constraints (issue #14). Both forms have the
 /// same solutions, segment or Extension. If both endpoints are held, the
-/// Line's first endpoint is used. `constraints` pairs each constraint with
-/// whether it is temporary; temporaries neither trigger nor get the rewrite.
+/// Line's first endpoint is used. Likewise a Line–ellipse or Line–elliptical
+/// arc tangency whose endpoint a real `on` holds on that same ellipse or
+/// elliptical arc becomes `TangentLineEllipseAtPoint` (the Line along the
+/// ellipse's tangent at that endpoint). `constraints` pairs each constraint
+/// with whether it is temporary; temporaries neither trigger nor get the
+/// rewrite.
 pub fn tangent_at_held_endpoints(constraints: &mut [(ConstraintType, bool)]) {
     let held: std::collections::HashSet<(String, String)> = constraints
         .iter()
         .filter(|(_, temporary)| !temporary)
         .filter_map(|(ct, _)| match ct {
-            ConstraintType::PointOnCircle(p, _, curve) | ConstraintType::PointOnArc(p, _, curve) => {
+            ConstraintType::PointOnCircle(p, _, curve)
+            | ConstraintType::PointOnArc(p, _, curve)
+            | ConstraintType::PointOnEllipse(p, _, _, curve)
+            | ConstraintType::PointOnEllipticalArc(p, _, _, curve) => {
                 Some((p.clone(), curve.clone()))
             }
             _ => None,
@@ -120,6 +127,25 @@ pub fn tangent_at_held_endpoints(constraints: &mut [(ConstraintType, bool)]) {
     let is_held = |p: &String, curve: &String| held.contains(&(p.clone(), curve.clone()));
     for (ct, temporary) in constraints.iter_mut() {
         if *temporary {
+            continue;
+        }
+        if let ConstraintType::TangentLineEllipse(a, b, center, focus, curve)
+        | ConstraintType::TangentLineEllipticalArc(a, b, center, focus, curve) = &*ct
+        {
+            let (p, other) = if is_held(a, curve) {
+                (a, b)
+            } else if is_held(b, curve) {
+                (b, a)
+            } else {
+                continue;
+            };
+            *ct = ConstraintType::TangentLineEllipseAtPoint(
+                p.clone(),
+                other.clone(),
+                center.clone(),
+                focus.clone(),
+                curve.clone(),
+            );
             continue;
         }
         let (a, b, center, curve) = match &*ct {

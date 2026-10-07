@@ -458,6 +458,18 @@ Only variable operands are columns.
 The same variable may appear twice (its partials add). With no variable
 operand the row is constant: it holds or it is Conflicting.
 
+The horizontal and vertical distance dimensions are built as `Difference`
+over coordinates (no kernel of their own; one row, so diagnosis reports one
+constraint):
+
+| JSON type | Built as | Residual | Partials |
+|-----------|----------|----------|----------|
+| `horizontal_distance` (`a`, `b` or `line` `p1→p2`) | `Difference(X(a), X(b), value)` | `R = b.x − a.x − value` | `∂a.x = −1`, `∂b.x = +1` |
+| `vertical_distance` (`a`, `b` or `line` `p1→p2`) | `Difference(Y(a), Y(b), value)` | `R = b.y − a.y − value` | `∂a.y = −1`, `∂b.y = +1` |
+
+Signed and linear: a negative `value` puts `b` left of (below) `a`, and the
+row never vanishes.
+
 ### 16  PointPointAngle
 
 `PointPointAngle(p1, p2, θ)` (`direction`): the direction of `p1 → p2` is `θ`
@@ -552,6 +564,7 @@ row is 0, so like the segment's `O` it removes no degree of freedom there.
 | `ArcRules(c, s, e, arc)` (implicit, every arc) | `R₀ = sx − cx − r·cos α`, `R₁ = sy − cy − r·sin α`, `R₂ = ex − cx − r·cos β`, `R₃ = ey − cy − r·sin β` |
 | `PointOnArc(p, c, arc)` (`on`) | `R₀ = ρ − r`, `R₁ = r·A(φ; α, β)`, with `v = p − c`, `ρ = \|v\|`, `φ = atan2(vy, vx)` |
 | `TangentLineArc(a, b, c, arc)` (`tangent`) | `R₀ = \|S∞(c; a, b)\| − r`, `R₁ = O(c; a, b)`, `R₂ = r·A(φ; α, β)`, `φ` the direction from `c` to the tangency point |
+| `MidpointOfArc(p, c, arc)` (`midpoint` `[point, arc]`) | `R₀ = px − cx − r·cos m`, `R₁ = py − cy − r·sin m`, `m = α + w/2`, `w` the sweep |
 
 **ArcRules Jacobian:** `∂R₀/∂(cx, sx, r, α) = (−1, 1, −cos α, r·sin α)`,
 `∂R₁/∂(cy, sy, r, α) = (−1, 1, −sin α, −r·cos α)`, and the same for `R₂`, `R₃`
@@ -567,6 +580,17 @@ points, `∂R₁/∂r = A`, `∂R₁/∂(α, β) = r·∂A/∂(α, β)`. At `ρ 
 `∂R₀/∂r` is set. The circle residual is unsquared (unlike PointOnCircle) and
 is a point-to-center distance of `r`; `R₁` is
 ACS's addition, since an Arc is its span, as a Line is its segment.
+
+**MidpointOfArc Jacobian:** the middle of the span by angle, so `p` is on
+the circle (2 equations: a free point at the middle of a free arc loses 2
+DOF). Between wraps `w = β − α + 2πk` for a fixed integer `k`, so
+`m = (α + β)/2 + πk` and `∂m/∂α = ∂m/∂β = ½`:
+`∂R₀/∂(px, cx, r, α, β) = (1, −1, −cos m, ½r·sin m, ½r·sin m)`,
+`∂R₁/∂(py, cy, r, α, β) = (1, −1, −sin m, −½r·cos m, −½r·cos m)`.
+Where the sweep wraps (`β` passing `α`, between a full turn and none) `m`
+jumps by `π` and the middle flips to the opposite side, as the arc itself
+jumps there; `(α + β)/2` alone would be the wrong side whenever the span
+crosses `±π` (`α = 1`, `β = −1`: the middle is at `π`, not `0`).
 
 **TangentLineArc Jacobian:** `R₀`, `R₁` as TangentLineCircle. The tangency
 point is the foot of the perpendicular from `c`, in direction
@@ -650,6 +674,21 @@ A free ellipse has 5 degrees of freedom.
 | `EllipseAxisPoint(p, c, f, E, axis)` (`ellipse_axis`) | with `d = p − c`: major `R₀ = u × d`, `R₁ = \|d\| − A`; minor `R₀ = u · d`, `R₁ = \|d\| − b` |
 | `EllipseDiameter(p₁, p₂, c, f, E, axis)` (`ellipse_axis` with `a`, `b`) | with `m = (p₁ + p₂)/2`, `h = (p₂ − p₁)/2`: `R₀,₁ = m − c`; major `R₂ = u × h`, `R₃ = \|h\| − A`; minor `R₂ = u · h`, `R₃ = \|h\| − b` |
 | `TangentLineEllipse(a, b, c, f, E)` (`tangent`) | with `L = \|b − a\|`, `g = (b − a)/L`, `ν = rot90(g)`, `sᵢ = ν·(fᵢ − a)`, `σᵢ = g·(fᵢ − a)` (`f₁ = f`): `R₀ = \|c − f + s₁ν\| − A`, `R₁ = overshoot of σ_T = (s₁σ₂ + s₂σ₁)/(s₁ + s₂)` past `[0, L]` |
+| `TangentLineEllipseAtPoint(p, o, c, f, E)` (`tangent` whose line endpoint `p` an `on` holds on the curve) | `R = ĝ × τ̂(t(p))`, `ĝ = (o − p)/\|o − p\|`, `τ̂` the unit tangent at `p`'s parametric angle `t(p)` (§24's `τ` and `t(p)`) |
+
+**Tangency at a held endpoint** (`TangentLineEllipseAtPoint`). When a real
+`on` holds a Line endpoint `p` on the same ellipse (or elliptical arc, §24)
+that the Line is `tangent` to, `constraint_catalog::tangent_at_held_endpoints`
+builds this instead of `TangentLineEllipse` (or `TangentLineEllipticalArc`),
+as it builds `TangentAtPoint` for a circle or arc (§20). Through a point
+already on the curve, `R₀` only changes quadratically as `p` slides along
+the line: `p` drifts from the tangent point (~2e-5 on a 5 × 4 ellipse) and
+diagnosis reports the `tangent` Redundant with `dof` one too high. The angle
+between the line and the tangent at `p` changes linearly. It reads `p`'s
+angle `t(p)`, not a variable; the `on` keeps `p` on the curve (and an
+elliptical arc's span), and `p` is on the segment, so both forms have the
+same solutions. Its `E` is the ellipse's or the elliptical arc's id (both
+own `b` as `Var::MinorRadius`). Temporary `on`/`tangent` are left alone.
 
 All are unsquared and match GCS's semantics: `PointOnEllipse` is GCS's
 residual (the focal-distance sum); `R₀` of the tangent is half of GCS's
@@ -722,6 +761,9 @@ of touching it from one side. `σ = −1` for `internal`, else `+1`.
 | `DistancePointCircle(p, c, C, d, internal)` (`distance` point–circle) | `R = σ(\|p − c\| − r) − d` | `∂p = σu`, `∂c = −σu`, `∂r = −σ` |
 | `DistanceLineCircle(a, b, c, C, d)` (`distance` line–circle) | `R = D(c, ab) − r − d`, `D` the unsigned segment distance (Segment geometry) | `∂(c, a, b)` from `segment_distance`, `∂r = −1` |
 | `DistanceExtensionCircle(a, b, c, C, d)` (`distance` line–circle, `extension`) | `R = \|C/L\| − r − d` (as `TangentExtensionCircle`) | `sign(C)·∂(C/L)`, `∂r = −1` |
+| `DistancePointArc(p, c, A, d, internal)` (`distance` point–arc) | `R₀ = σ(\|p − c\| − r) − d`; `R₁ = r·overshoot(φ; α, β)`, `φ = atan2(p − c)` (as `PointOnArc`) | `R₀` as `DistancePointCircle`; `R₁`: `∂p = r·o′·(−v_y, v_x)/ρ²`, `∂c = −∂p`, `∂r = overshoot`, `∂α, ∂β = r·∂overshoot` |
+| `DistanceLineArc(a, b, c, A, d)` (`distance` line–arc) | `R₀ = D(c, ab) − r − d`; `R₁ = r·overshoot(φ; α, β)`, `φ` the direction of `q − c`, `q` the segment's nearest point to `c` | `R₀` as `DistanceLineCircle`; `R₁`: foot (`0 ≤ t ≤ 1`) `∂(a, b) = r·o′·(dy, −dx, −dy, dx)/L²`, `∂c = 0`; past an end `q = e`: `∂e = r·o′·(−v_y, v_x)/\|v\|²`, `∂c = −∂e`, `v = e − c` |
+| `DistanceExtensionArc(a, b, c, A, d)` (`distance` line–arc, `extension`) | `R₀ = \|C/L\| − r − d`; `R₁` with `q` always the foot (as `TangentLineArc`'s span row) | `R₀` as `DistanceExtensionCircle`; `R₁` the foot case above |
 | `DistanceCircleCircle(c₁, C₁, c₂, C₂, d, false)` | `R = \|c₂ − c₁\| − r₁ − r₂ − d` | with `w = (c₂ − c₁)/\|c₂ − c₁\|`: `∂c₁ = −w`, `∂c₂ = w`, `∂r₁ = ∂r₂ = −1` |
 | `DistanceCircleCircle(…, d, true)` (`internal`) | `R = \|r₁ − r₂\| − \|c₂ − c₁\| − d` | `∂c₁ = w`, `∂c₂ = −w`, `∂r₁ = τ`, `∂r₂ = −τ`, `τ = +1` if `r₁ ≥ r₂` else `−1` |
 | `DistanceLineLine(a₁, a₂, b₁, b₂, d)` (`distance` line–line) | `R₀ = ς·C(b₁)/L − d`, `R₁ = ς·C(b₂)/L − d`, signed distances to the line through `a₁, a₂`; `ς = +1` if `C(b₁) + C(b₂) ≥ 0` else `−1` | `ς·∂(C/L)` per row (Segment geometry), `p` = `b₁` or `b₂` |
@@ -736,7 +778,14 @@ symmetric in its circles; it is kinked only at `r₁ = r₂` (where the gap is
 `−|c₂ − c₁| ≤ 0`). Distances to arcs (circle–arc and arc–arc) don't clamp
 the gap to the span (that residual would be kinked); like curve–curve
 tangency (§ above), they keep the gap row smooth and add one span row per
-arc.
+arc. Point–arc and line–arc do the same: `R₀` is the point–circle or
+line–circle gap, smooth, and `R₁` (`o′ = ∂overshoot/∂φ`) keeps the ray from
+the center through the nearest point `q` on the span. Off the span the gap
+isn't measured to the arc's endpoint (with a signed gap that residual would
+jump sign there, for a point inside the circle); the solve turns the ray
+back onto the span instead. `R₁` is 0 with a zero row on the span (like
+`PointOnArc`'s), and continuous where `q` switches from the foot to an
+endpoint (its partials jump there).
 
 ---
 
@@ -766,7 +815,10 @@ The at-point forms are chosen, as `TangentAtPoint` is for an Arc, when the
 Line's endpoint (or the Arc's) *is* the elliptical arc's endpoint: through a
 point already on the curve the segment-and-span form only changes
 quadratically. They read the end's angle variable rather than the point's
-angle, which the rules tie to it. An Arc and an elliptical arc have no other
+angle, which the rules tie to it. A Line endpoint that is not the arc's
+endpoint but that a real `on` holds on the elliptical arc gets §21's
+`TangentLineEllipseAtPoint` instead (`R = ĝ × τ̂(t(p))`, the point's own
+angle `t(p)`), for the same reason. An Arc and an elliptical arc have no other
 tangency: the catalog row's check rejects a pair with no shared endpoint.
 
 **Jacobians.** Forward mode, as §21, with `∂ sin t = cos t·∂t`,
@@ -815,6 +867,7 @@ pub enum ConstraintType {
     Equal(Operand, Operand),                              // param1, param2
     // Arcs
     PointOnArc(String, String, String),             // point_id, arc_center_id, arc_id
+    MidpointOfArc(String, String, String),          // point_id, arc_center_id, arc_id
     TangentLineArc(String, String, String, String), // line_pa, line_pb, arc_center_id, arc_id
     TangentAtPoint(String, String, String),         // shared_point_id, other_line_end_id, arc_center_id
     TangentCirclesInternal(String, String, String, String), // c1_center_id, c1_id, c2_center_id, c2_id
@@ -852,6 +905,9 @@ pub enum ConstraintType {
     DistanceCircleCircle(String, String, String, String, f64, bool), // c1_center_id, c1_id, c2_center_id, c2_id, gap, internal
     DistanceCircleArc(String, String, String, String, f64, bool), // circle_center_id, circle_id, arc_center_id, arc_id, gap, internal
     DistanceArcs(String, String, String, String, f64, bool), // arc1_center_id, arc1_id, arc2_center_id, arc2_id, gap, internal
+    DistancePointArc(String, String, String, f64, bool), // point_id, arc_center_id, arc_id, gap, internal
+    DistanceLineArc(String, String, String, String, f64), // line_pa, line_pb, arc_center_id, arc_id, gap
+    DistanceExtensionArc(String, String, String, String, f64), // line_pa, line_pb, arc_center_id, arc_id, gap
     DistanceLineLine(String, String, String, String, f64),  // a_p1, a_p2, b_p1, b_p2, distance
 }
 ```

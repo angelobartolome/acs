@@ -233,13 +233,14 @@ fn acs_constraint_catalog_describes_every_row() {
     // Rows without an Extension variant carry no flag.
     let coincident = rows.iter().find(|r| r["type"] == "coincident").unwrap();
     assert!(coincident.get("extension").is_none());
-    // Point–circle, circle–circle, circle–arc and arc–arc distance have an
-    // outside row (`internal: false`) and an inside one (`internal: true`).
+    // Point–circle, point–arc, circle–circle, circle–arc and arc–arc
+    // distance have an outside row (`internal: false`) and an inside one
+    // (`internal: true`).
     let distance_internal: Vec<&Value> = rows
         .iter()
         .filter(|r| r["type"] == "distance" && r.get("internal").is_some())
         .collect();
-    assert_eq!(distance_internal.len(), 8);
+    assert_eq!(distance_internal.len(), 10);
     for pair in distance_internal.chunks(2) {
         assert_eq!(pair[0]["internal"], false);
         assert_eq!(pair[1]["internal"], true);
@@ -252,19 +253,22 @@ fn acs_constraint_catalog_describes_every_row() {
 fn the_catalog_lists_midpoint_by_entities() {
     let rows = catalog(&acs_constraint_catalog());
     let midpoint: Vec<&Value> = rows.iter().filter(|r| r["type"] == "midpoint").collect();
-    let entities = |first: &str| {
+    let entities_of = |first: &str, second: &str| {
         json!([
             { "name": "entities", "index": 0, "kind": first },
-            { "name": "entities", "index": 1, "kind": "line" }
+            { "name": "entities", "index": 1, "kind": second }
         ])
     };
-    assert_eq!(midpoint.len(), 3);
+    let entities = |first: &str| entities_of(first, "line");
+    assert_eq!(midpoint.len(), 4);
     assert_eq!(midpoint[0]["fields"], entities("point"));
     assert!(midpoint[0].get("extension").is_none());
     assert_eq!(midpoint[1]["fields"], entities("line"));
     assert_eq!(midpoint[1]["extension"], false);
     assert_eq!(midpoint[2]["fields"], entities("line"));
     assert_eq!(midpoint[2]["extension"], true);
+    assert_eq!(midpoint[3]["fields"], entities_of("point", "arc"));
+    assert!(midpoint[3].get("extension").is_none());
 
     assert!(!types_of(&rows).contains("midpoint_on"));
     assert!(rows.iter().all(|r| r.get("deprecated").is_none()));

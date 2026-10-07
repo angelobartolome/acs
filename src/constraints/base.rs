@@ -376,6 +376,11 @@ pub enum ConstraintType {
     /// (point_id, arc_center_point_id, arc_id)
     PointOnArc(String, String, String),
 
+    /// A point is the midpoint of an arc's span: on its circle, halfway by
+    /// angle from its start to its end, counter-clockwise.
+    /// (point_id, arc_center_point_id, arc_id)
+    MidpointOfArc(String, String, String),
+
     /// A Line (the segment) is tangent to an arc, touching it on both the
     /// segment and the arc's span.
     /// (line_pa_id, line_pb_id, arc_center_point_id, arc_id)
@@ -407,6 +412,13 @@ pub enum ConstraintType {
     /// segment.
     /// (line_pa_id, line_pb_id, ellipse_center_id, ellipse_focus1_id, ellipse_id)
     TangentLineEllipse(String, String, String, String, String),
+
+    /// A Line runs along an ellipse's tangent at its endpoint `point_id`,
+    /// held on the ellipse (or elliptical arc) by another constraint; built
+    /// only by `constraint_catalog::tangent_at_held_endpoints`.
+    /// (point_id, other_line_end_id, ellipse_center_id, ellipse_focus1_id,
+    /// ellipse_or_elliptical_arc_id)
+    TangentLineEllipseAtPoint(String, String, String, String, String),
 
     /// A point is an endpoint (either one) of an ellipse's major or minor
     /// axis.
@@ -515,6 +527,24 @@ pub enum ConstraintType {
     /// nearest points on both spans (`TangentArcs` held `distance` apart).
     /// (arc1_center_point_id, arc1_id, arc2_center_point_id, arc2_id, distance, internal)
     DistanceArcs(String, String, String, String, f64, bool),
+
+    /// Gap between a point and an arc: `DistancePointCircle`'s gap, with the
+    /// nearest point (on the ray from the center through the point) on the
+    /// arc's span.
+    /// (point_id, arc_center_point_id, arc_id, distance, internal)
+    DistancePointArc(String, String, String, f64, bool),
+
+    /// Gap between a Line (the segment) and an arc: `DistanceLineCircle`'s
+    /// gap, with the nearest point (on the ray from the center through the
+    /// segment's nearest point) on the arc's span.
+    /// (line_pa_id, line_pb_id, arc_center_point_id, arc_id, distance)
+    DistanceLineArc(String, String, String, String, f64),
+
+    /// Gap between a Line's Extension and an arc: `DistanceExtensionCircle`'s
+    /// gap, with the nearest point (on the ray from the center through the
+    /// foot of the perpendicular) on the arc's span.
+    /// (line_pa_id, line_pb_id, arc_center_point_id, arc_id, distance)
+    DistanceExtensionArc(String, String, String, String, f64),
 
     /// Both endpoints of line b are `distance` from line a's Extension, on
     /// one side: b is parallel to a, `distance` away.
@@ -625,6 +655,9 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         ConstraintType::PointOnArc(p, center, arc) => Ok(Box::new(
             crate::constraints::point_on_arc::PointOnArcConstraint::new(p, center, arc),
         )),
+        ConstraintType::MidpointOfArc(p, center, arc) => Ok(Box::new(
+            crate::constraints::midpoint_of_arc::MidpointOfArcConstraint::new(p, center, arc),
+        )),
         ConstraintType::TangentLineArc(pa, pb, center, arc) => Ok(Box::new(
             crate::constraints::tangent_line_arc::TangentLineArcConstraint::new(
                 pa, pb, center, arc,
@@ -688,6 +721,11 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         ConstraintType::TangentLineEllipse(pa, pb, center, focus, e) => Ok(Box::new(
             crate::constraints::tangent_line_ellipse::TangentLineEllipseConstraint::new(
                 pa, pb, center, focus, e,
+            ),
+        )),
+        ConstraintType::TangentLineEllipseAtPoint(p, other, center, focus, e) => Ok(Box::new(
+            crate::constraints::tangent_line_ellipse_at_point::TangentLineEllipseAtPointConstraint::new(
+                p, other, center, focus, e,
             ),
         )),
         ConstraintType::EllipseAxisPoint(p, center, focus, e, axis) => Ok(Box::new(
@@ -785,6 +823,21 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
                 .with_gap(d),
             ))
         }
+        ConstraintType::DistancePointArc(p, center, arc, d, internal) => Ok(Box::new(
+            crate::constraints::distance_point_arc::DistancePointArcConstraint::new(
+                p, center, arc, d, internal,
+            ),
+        )),
+        ConstraintType::DistanceLineArc(pa, pb, center, arc, d) => Ok(Box::new(
+            crate::constraints::distance_line_arc::DistanceLineArcConstraint::new(
+                pa, pb, center, arc, d, false,
+            ),
+        )),
+        ConstraintType::DistanceExtensionArc(pa, pb, center, arc, d) => Ok(Box::new(
+            crate::constraints::distance_line_arc::DistanceLineArcConstraint::new(
+                pa, pb, center, arc, d, true,
+            ),
+        )),
         ConstraintType::DistanceLineLine(a1, a2, b1, b2, d) => {
             // At 0 the side-free residual |d| − value only touches zero:
             // two Lines at distance 0 are `collinear`.

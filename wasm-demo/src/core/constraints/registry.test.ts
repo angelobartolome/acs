@@ -358,6 +358,11 @@ describe("ConstraintRegistry", () => {
       withCurves({ type: "tangent", a: "c1", b: "a1", internal: true })?.def,
     ).toBe("tangent_circle_arc_internal");
     expect(withCurves({ type: "tangent", a: "l1", b: "a1", internal: true })).toBeNull();
+    expect(withCurves({ type: "midpoint", entities: ["p1", "a1"] })).toMatchObject({
+      def: "midpoint_arc",
+      entities: ["p1", "a1"],
+    });
+    expect(withCurves({ type: "midpoint", entities: ["a1", "p1"] })).toBeNull();
     // `internal: true` selects the inside variant
     const C1 = { kind: "circle" as const, id: "c1", center: "p2", radius: 1, fixed: false };
     const withCircle = (id: string) => (id === "c1" ? C1 : resolve(id));
