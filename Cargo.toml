@@ -1,6 +1,6 @@
 [package]
 name = "acs-solver"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 authors = ["Angelo Bartolome <angelo.m.bartolome@gmail.com>"]
 description = "A geometric constraint solver written in Rust with WebAssembly bindings for web applications."
