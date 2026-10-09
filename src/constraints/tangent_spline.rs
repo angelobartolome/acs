@@ -94,7 +94,7 @@ impl TangentSplineConstraint {
 
     /// Local index of the other curve's first variable (after the
     /// Spline's handles and t).
-    fn other(&self) -> usize {
+    fn other_offset(&self) -> usize {
         2 * self.spline.points.len() + 1
     }
 }
@@ -103,13 +103,13 @@ impl TangentSplineConstraint {
 /// with α, β at local variables `alpha`, `alpha + 1`.
 fn arc_span_row(v: &P2<Dv>, r: &Dv, x: &[f64], alpha: usize) -> Dv {
     let phi = v.y.atan2(&v.x);
-    let (o, [d_phi, d_start, d_end]) = span_overshoot(phi.v, x[alpha], x[alpha + 1]);
+    let (outside, [d_phi, d_start, d_end]) = span_overshoot(phi.v, x[alpha], x[alpha + 1]);
     let along = phi.clone() * Dv::cst(d_phi)
         + Dv::var(x, alpha) * Dv::cst(d_start)
         + Dv::var(x, alpha + 1) * Dv::cst(d_end);
-    // Value o (the variables' values cancel), partials of `along`.
-    let o = Dv { v: o, g: along.g };
-    o * r.clone()
+    // Value `outside` (the variables' values cancel), partials of `along`.
+    let outside = Dv { v: outside, g: along.g };
+    outside * r.clone()
 }
 
 /// An ellipse (center, focus, minor radius b) at q: its on-ellipse residual
@@ -197,10 +197,10 @@ impl Constraint for TangentSplineConstraint {
 impl TangentSplineConstraint {
     /// Local indices of its parameters, in [`Constraint::curve_params`] order.
     fn param_indices(&self) -> Vec<usize> {
-        let o = self.other();
+        let first = self.other_offset();
         match &self.to {
-            TangentTo::Spline(s, _) => vec![o - 1, o + 2 * s.points.len()],
-            _ => vec![o - 1],
+            TangentTo::Spline(other_spline, _) => vec![first - 1, first + 2 * other_spline.points.len()],
+            _ => vec![first - 1],
         }
     }
 
@@ -215,9 +215,9 @@ impl TangentSplineConstraint {
             x[i] = v;
         }
         let domains: Vec<(f64, f64)> = match &self.to {
-            TangentTo::Spline(s, _) => vec![
+            TangentTo::Spline(other_spline, _) => vec![
                 curve_f(&self.spline, &x, 0).domain(),
-                curve_f(s, &x, self.other()).domain(),
+                curve_f(other_spline, &x, self.other_offset()).domain(),
             ],
             _ => vec![curve_f(&self.spline, &x, 0).domain()],
         };
@@ -243,7 +243,7 @@ impl TangentSplineConstraint {
     /// The best of a sampling of the curve(s) for the contact.
     fn seed_params(&self, x: &[f64]) -> Vec<f64> {
         let curve = curve_f(&self.spline, x, 0);
-        let o = self.other();
+        let first = self.other_offset();
         let pt = |i: usize| P2::new(x[i], x[i + 1]);
         let samples = curve.samples(16);
         let best = |score: &dyn Fn([f64; 2], [f64; 2]) -> f64| {
@@ -259,7 +259,7 @@ impl TangentSplineConstraint {
         };
         match &self.to {
             TangentTo::Line(..) => {
-                let (a, b) = (pt(o), pt(o + 2));
+                let (a, b) = (pt(first), pt(first + 2));
                 let d = b.sub(&a);
                 let len = d.norm();
                 let g = d.unit();
@@ -271,28 +271,28 @@ impl TangentSplineConstraint {
                 })]
             }
             TangentTo::Circle(..) | TangentTo::Arc(..) => {
-                let (c, r) = (pt(o), x[o + 2]);
+                let (c, r) = (pt(first), x[first + 2]);
                 let arc = matches!(self.to, TangentTo::Arc(..));
                 vec![best(&|q, tau| {
                     let v = P2::new(q[0], q[1]).sub(&c);
-                    let mut s = (v.norm() - r).abs() + r * v.unit().dot(&P2::new(tau[0], tau[1])).abs();
+                    let mut score = (v.norm() - r).abs() + r * v.unit().dot(&P2::new(tau[0], tau[1])).abs();
                     if arc {
-                        s += r * span_overshoot(v.y.atan2(v.x), x[o + 3], x[o + 4]).0.abs();
+                        score += r * span_overshoot(v.y.atan2(v.x), x[first + 3], x[first + 4]).0.abs();
                     }
-                    s
+                    score
                 })]
             }
             TangentTo::Ellipse(..) => {
                 let cst = |i: usize| P2::new(Dv::cst(x[i]), Dv::cst(x[i + 1]));
-                let (c, f, b) = (cst(o), cst(o + 2), Dv::cst(x[o + 4]));
-                let size = (x[o + 4].powi(2) + (x[o + 2] - x[o]).powi(2) + (x[o + 3] - x[o + 1]).powi(2)).sqrt();
+                let (c, f, b) = (cst(first), cst(first + 2), Dv::cst(x[first + 4]));
+                let major_radius = (x[first + 4].powi(2) + (x[first + 2] - x[first]).powi(2) + (x[first + 3] - x[first + 1]).powi(2)).sqrt();
                 vec![best(&|q, tau| {
                     let (on, n) = ellipse_at(&P2::new(Dv::cst(q[0]), Dv::cst(q[1])), &c, &f, &b);
-                    on.v.abs() + size * (n.x.v * tau[0] + n.y.v * tau[1]).abs()
+                    on.v.abs() + major_radius * (n.x.v * tau[0] + n.y.v * tau[1]).abs()
                 })]
             }
-            TangentTo::Spline(s, _) => {
-                let other = curve_f(s, x, o);
+            TangentTo::Spline(other_spline, _) => {
+                let other = curve_f(other_spline, x, first);
                 let ours: Vec<_> = samples.iter().map(|&t| (t, point_tangent(&curve, t))).collect();
                 let theirs: Vec<_> = other.samples(16).into_iter().map(|t| (t, point_tangent(&other, t))).collect();
                 let size = curve.polygon_length().max(other.polygon_length()).max(1e-9);
@@ -313,16 +313,16 @@ impl TangentSplineConstraint {
 
     /// The residuals and partials (see the type's docs).
     fn eval_rows(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
-        let o = self.other();
+        let first = self.other_offset();
         let curve = curve_d(&self.spline, x, 0);
-        let t = Dv::var(x, o - 1);
+        let t = Dv::var(x, first - 1);
         let d = curve.eval(&t, 1);
         let (q, tau) = (&d[0], d[1].unit());
         let (lo, hi) = curve.domain();
         let span = overshoot(&t, lo, hi);
         let rows: Vec<Dv> = match &self.to {
             TangentTo::Line(..) => {
-                let (a, b) = (point_d(x, o), point_d(x, o + 2));
+                let (a, b) = (point_d(x, first), point_d(x, first + 2));
                 let ab = b.sub(&a);
                 let g = ab.unit();
                 let w = q.sub(&a);
@@ -336,21 +336,21 @@ impl TangentSplineConstraint {
                 ]
             }
             TangentTo::Circle(..) | TangentTo::Arc(..) => {
-                let (c, rad) = (point_d(x, o), Dv::var(x, o + 2));
+                let (c, rad) = (point_d(x, first), Dv::var(x, first + 2));
                 let v = q.sub(&c);
                 let mut rows = vec![v.norm() - rad.clone(), v.dot(&tau), span];
                 if matches!(self.to, TangentTo::Arc(..)) {
-                    rows.push(arc_span_row(&v, &rad, x, o + 3));
+                    rows.push(arc_span_row(&v, &rad, x, first + 3));
                 }
                 rows
             }
             TangentTo::Ellipse(..) => {
-                let (on, n) = ellipse_at(q, &point_d(x, o), &point_d(x, o + 2), &Dv::var(x, o + 4));
+                let (on, n) = ellipse_at(q, &point_d(x, first), &point_d(x, first + 2), &Dv::var(x, first + 4));
                 vec![on, line_angle(&n.rot90(), &tau) * curve.polygon_length(), span]
             }
-            TangentTo::Spline(s, _) => {
-                let other = curve_d(s, x, o);
-                let u = Dv::var(x, o + 2 * s.points.len());
+            TangentTo::Spline(other_spline, _) => {
+                let other = curve_d(other_spline, x, first);
+                let u = Dv::var(x, first + 2 * other_spline.points.len());
                 let e = other.eval(&u, 1);
                 let gap = e[0].sub(q);
                 let (lo2, hi2) = other.domain();
