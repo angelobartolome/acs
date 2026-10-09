@@ -919,9 +919,9 @@ distances.
 | `PointOnSpline(p, C, t)` (`on`) | `R₀,₁ = p − q`, `R₂ = span(t)` |
 | `TangentLineSpline(a, b, C, t)` (`tangent` line–spline) | with `g = (b − a)/\|b − a\|`, `σ = g·(q − a)`, `f = a + σ·g`: `R₀ = n̂·(f − q)`, `R₁ = S·∠(g, τ̂)`, `R₂` = overshoot of `σ` past `[0, \|b − a\|]` (the segment row of `TangentLineCircle`), `R₃ = span(t)` |
 | `TangentCircleSpline(c, Γ, C, t)` (`tangent` circle–spline) | with `v = q − c`: `R₀ = \|v\| − r`, `R₁ = v·τ̂`, `R₂ = span(t)` |
-| `TangentArcSpline(c, Γ, C, t)` (`tangent` arc–spline) | the circle's rows, and `R₃ = r·A(atan2(v); α, β)` (§20) |
+| `TangentArcSpline(c, Γ, C, t)` (`tangent` arc–spline) | the circle's `R₀`, `R₁`, then `R₂ = r·A(atan2(v); α, β)` (§20), `R₃ = span(t)` |
 | `TangentEllipseSpline(c, f, E, C, t)` (`tangent` ellipse–spline) | `R₀ = \|q − f\| + \|q − f₂\| − 2A` (§21), `R₁ = S·∠(rot90(m̂), τ̂)`, `m = (q − f)/\|q − f\| + (q − f₂)/\|q − f₂\|` (the ellipse's normal at `q`), `R₂ = span(t)` |
-| `TangentSplines(C, t, D, s)` (`tangent` spline–spline) | with `w = D(s) − q`: `R₀ = n̂·w`, `R₁ = τ̂·w`, `R₂ = S·∠(τ̂_D, τ̂)`, `R₃ = span(t)`, `R₄ = span_D(s)` |
+| `TangentSplines(C, t, D, s)` (`tangent` spline–spline) | with `w = D(s) − q`: `R₀ = n̂·w`, `R₁ = τ̂·w`, `R₂ = S·∠(τ̂_D, τ̂)`, `R₃ = span_D(s)`, `R₄ = span(t)` |
 | `TangentLineSplineAtPoint(p, o, C, at)` (line ending at the spline's end, or held `on` it) | `R = ∠((o − p)/\|o − p\|, τ̂(t_at))` |
 | `TangentArcSplineAtPoint(p, k, C, at)` (arc and spline sharing an end) | `R = ∠(rot90((p − k)/\|p − k\|), τ̂(t_at))` |
 | `TangentSplinesAtPoint(C, at, D, at₂)` (splines sharing an end) | `R = ∠(τ̂_D(t_at₂), τ̂(t_at))` |
