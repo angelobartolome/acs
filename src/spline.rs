@@ -314,6 +314,12 @@ impl<S: Scalar> Curve<S> {
         Curve { degree, knots, control: handles }
     }
 
+    /// The length of its control polygon: a size for weighing an angle
+    /// against distances.
+    pub fn polygon_length(&self) -> S {
+        self.control.windows(2).map(|w| w[1].sub(&w[0]).norm()).fold(S::cst(0.0), |a, b| a + b)
+    }
+
     /// Its parameter range `[first knot, last knot]`.
     pub fn domain(&self) -> (f64, f64) {
         (self.knots[0].val(), self.knots[self.knots.len() - 1].val())

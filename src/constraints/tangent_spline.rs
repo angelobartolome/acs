@@ -10,7 +10,7 @@ use crate::constraints::segment::foot_overshoot;
 use crate::constraints::{Constraint, Var, xy};
 use crate::geometry::Spline;
 use crate::spline::{
-    Curve, Dv, P2, Scalar, curve_d, curve_f, handle_vars, line_angle, overshoot, point_d,
+    Dv, P2, Scalar, curve_d, curve_f, handle_vars, line_angle, overshoot, point_d,
     point_tangent,
 };
 
@@ -46,7 +46,8 @@ pub enum TangentTo {
 /// normal n̂ = rot90(τ̂). ∠(u, τ̂) is the angle from τ̂ to the unit direction
 /// u modulo π, in (−π/2, π/2] (0 when parallel either way;
 /// `crate::spline::line_angle`), and S the length of the Spline's control
-/// polygon, which weighs an angle against distances.
+/// polygon (`Curve::polygon_length`), which weighs an angle against
+/// distances.
 ///
 /// - Line a→b (g = (b − a)/|b − a|, σ = g·(q − a), f = a + σ·g the line's
 ///   point nearest q): R₀ = n̂·(f − q) (the line through q's tangent),
@@ -294,7 +295,7 @@ impl TangentSplineConstraint {
                 let other = curve_f(s, x, o);
                 let ours: Vec<_> = samples.iter().map(|&t| (t, point_tangent(&curve, t))).collect();
                 let theirs: Vec<_> = other.samples(16).into_iter().map(|t| (t, point_tangent(&other, t))).collect();
-                let size = chord(&curve).max(chord(&other)).max(1e-9);
+                let size = curve.polygon_length().max(other.polygon_length()).max(1e-9);
                 let mut best = (f64::INFINITY, 0.0, 0.0);
                 for (t, (q1, t1)) in &ours {
                     for (u, (q2, t2)) in &theirs {
@@ -329,7 +330,7 @@ impl TangentSplineConstraint {
                 let foot = a.add(&g.scale(&g.dot(&w)));
                 vec![
                     n.dot(&foot.sub(q)),
-                    line_angle(&g, &tau) * size_d(&curve),
+                    line_angle(&g, &tau) * curve.polygon_length(),
                     segment_overshoot(q, &a, &b),
                     span,
                 ]
@@ -345,7 +346,7 @@ impl TangentSplineConstraint {
             }
             TangentTo::Ellipse(..) => {
                 let (on, n) = ellipse_at(q, &point_d(x, o), &point_d(x, o + 2), &Dv::var(x, o + 4));
-                vec![on, line_angle(&n.rot90(), &tau) * size_d(&curve), span]
+                vec![on, line_angle(&n.rot90(), &tau) * curve.polygon_length(), span]
             }
             TangentTo::Spline(s, _) => {
                 let other = curve_d(s, x, o);
@@ -356,7 +357,7 @@ impl TangentSplineConstraint {
                 vec![
                     tau.rot90().dot(&gap),
                     tau.dot(&gap),
-                    line_angle(&e[1].unit(), &tau) * size_d(&curve),
+                    line_angle(&e[1].unit(), &tau) * curve.polygon_length(),
                     span,
                     overshoot(&u, lo2, hi2),
                 ]
@@ -367,16 +368,4 @@ impl TangentSplineConstraint {
             v.write_row(j, row);
         }
     }
-}
-
-/// The length of a curve's control polygon, with partials: a size for
-/// weighing an angle against distances.
-fn size_d(curve: &Curve<Dv>) -> Dv {
-    curve.control.windows(2).map(|w| w[1].sub(&w[0]).norm()).fold(Dv::cst(0.0), |a, b| a + b)
-}
-
-/// The length of a curve's control polygon: a size for weighing angles
-/// against distances.
-fn chord(curve: &Curve<f64>) -> f64 {
-    curve.control.windows(2).map(|w| w[1].sub(&w[0]).norm()).sum()
 }
