@@ -58,7 +58,7 @@ impl Constraint for PointOnEllipseConstraint {
         // x = [px, py, cx, cy, fx, fy, b]
         let e = EllipseFrame::<7>::new(x, 2, 4, 6);
         let p = V2::point(x, 0);
-        let res = p.sub(e.focus).norm() + p.sub(e.focus2()).norm() - e.major_radius.scale(2.0);
+        let res = e.focal_residual(p);
         r[0] = res.v;
         res.write_row(j, 0);
     }

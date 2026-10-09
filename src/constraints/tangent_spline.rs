@@ -5,6 +5,7 @@
 use nalgebra::DMatrix;
 
 use crate::constraints::arc_span::span_overshoot;
+use crate::constraints::ellipse::{D, EllipseFrame, V2};
 use crate::constraints::{Constraint, Var, xy};
 use crate::geometry::Spline;
 use crate::spline::{
@@ -110,14 +111,24 @@ fn arc_span_row(v: &P2<Dv>, r: &Dv, x: &[f64], alpha: usize) -> Dv {
 }
 
 /// An ellipse (center, focus, minor radius b) at q: its on-ellipse residual
-/// |q − f| + |q − f₂| − 2A and its unit normal there.
-fn ellipse_at<S: Scalar>(q: &P2<S>, center: P2<S>, focus: P2<S>, b: S) -> (S, P2<S>) {
-    let e = focus.sub(&center);
-    let major = (b.clone() * b + e.dot(&e)).sqrt();
-    let focus2 = center.add(&center).sub(&focus);
-    let (w1, w2) = (q.sub(&focus), q.sub(&focus2));
-    let on = w1.norm() + w2.norm() - major * S::cst(2.0);
-    (on, w1.unit().add(&w2.unit()).unit())
+/// |q − f| + |q − f₂| − 2A and its unit normal there, by [`EllipseFrame`]
+/// over the seven inputs, chained into `Dv`.
+fn ellipse_at(q: &P2<Dv>, center: &P2<Dv>, focus: &P2<Dv>, b: &Dv) -> (Dv, P2<Dv>) {
+    let inputs = [
+        q.x.clone(),
+        q.y.clone(),
+        center.x.clone(),
+        center.y.clone(),
+        focus.x.clone(),
+        focus.y.clone(),
+        b.clone(),
+    ];
+    let x = inputs.clone().map(|d| d.v);
+    let e = EllipseFrame::<7>::new(&x, 2, 4, 6);
+    let p = V2::point(&x, 0);
+    let chain = |d: D<7>| Dv::chain(d.v, &d.g, &inputs);
+    let n = e.normal_at(p);
+    (chain(e.focal_residual(p)), P2::new(chain(n.x), chain(n.y)))
 }
 
 /// How far a position σ along a segment of length `len` lies outside it.
@@ -272,11 +283,12 @@ impl TangentSplineConstraint {
                 })]
             }
             TangentTo::Ellipse(..) => {
-                let (c, f, b) = (pt(o), pt(o + 2), x[o + 4]);
-                let size = (b * b + f.sub(&c).dot(&f.sub(&c))).sqrt();
+                let cst = |i: usize| P2::new(Dv::cst(x[i]), Dv::cst(x[i + 1]));
+                let (c, f, b) = (cst(o), cst(o + 2), Dv::cst(x[o + 4]));
+                let size = (x[o + 4].powi(2) + (x[o + 2] - x[o]).powi(2) + (x[o + 3] - x[o + 1]).powi(2)).sqrt();
                 vec![best(&|q, tau| {
-                    let (on, n) = ellipse_at(&P2::new(q[0], q[1]), c.clone(), f.clone(), b);
-                    on.abs() + size * n.dot(&P2::new(tau[0], tau[1])).abs()
+                    let (on, n) = ellipse_at(&P2::new(Dv::cst(q[0]), Dv::cst(q[1])), &c, &f, &b);
+                    on.v.abs() + size * (n.x.v * tau[0] + n.y.v * tau[1]).abs()
                 })]
             }
             TangentTo::Spline(s, _) => {
@@ -333,7 +345,7 @@ impl TangentSplineConstraint {
                 rows
             }
             TangentTo::Ellipse(..) => {
-                let (on, n) = ellipse_at(q, point_d(x, o), point_d(x, o + 2), Dv::var(x, o + 4));
+                let (on, n) = ellipse_at(q, &point_d(x, o), &point_d(x, o + 2), &Dv::var(x, o + 4));
                 vec![on, line_angle(&n.rot90(), &tau) * size_d(&curve), span]
             }
             TangentTo::Spline(s, _) => {

@@ -94,6 +94,22 @@ impl Dv {
         Dv { v, g: self.g.iter().map(|g| g * dv).collect() }
     }
 
+    /// The value `v` whose partials w.r.t. `inputs` are `partials`, by the
+    /// chain rule: brings a result computed in the fixed-size forward mode
+    /// of `constraints/ellipse.rs` (`D<N>`) or as a `segment.rs` gradient,
+    /// over these inputs, into `Dv`, so the spline kernels reuse those
+    /// helpers rather than re-deriving them.
+    pub(crate) fn chain<const N: usize>(v: f64, partials: &[f64; N], inputs: &[Dv; N]) -> Dv {
+        let len = inputs.iter().map(|d| d.g.len()).max().unwrap_or(0);
+        let mut g = vec![0.0; len];
+        for (p, input) in partials.iter().zip(inputs) {
+            for (gk, ik) in g.iter_mut().zip(&input.g) {
+                *gk += p * ik;
+            }
+        }
+        Dv { v, g }
+    }
+
     /// Writes the partials into row `row` of a local Jacobian.
     pub fn write_row(&self, j: &mut DMatrix<f64>, row: usize) {
         for (k, &g) in self.g.iter().enumerate() {
