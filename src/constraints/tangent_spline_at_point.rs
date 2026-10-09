@@ -35,6 +35,14 @@ pub enum Side {
 ///
 /// It owns no parameter: `at` is a domain end (a constant) or another
 /// constraint's [`Var::CurveParam`], which it reads.
+///
+/// Entities:
+///   - `spline` – the Spline, curve C (its handles are the variables)
+///   - `at`     – where on C the contact is: its start, its end, or a curve
+///     parameter
+///   - `side`   – the other side: a Line's endpoint p on C and its other
+///     endpoint o; an Arc's endpoint p on C and its center k; or another
+///     Spline D and where on D the contact is
 pub struct TangentSplineAtPointConstraint {
     /// The other side.
     pub side: Side,

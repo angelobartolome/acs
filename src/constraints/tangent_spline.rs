@@ -28,7 +28,19 @@ pub enum TangentTo {
 }
 
 /// Tangency between a Spline (curve C, contact parameter t) and another
-/// curve, touching at q = C(t) with unit tangent τ̂ = C′(t)/|C′(t)| and unit
+/// curve.
+///
+/// Entities:
+///   - `spline`   – the Spline, curve C (its handles are the variables)
+///   - `param_id` – the contact's curve parameter t on C (a
+///     [`Var::CurveParam`] it owns)
+///   - `to`       – the other curve: a Line's endpoints a, b; a circle's or
+///     arc's center c and the circle or arc (radius r, an arc's angles α,
+///     β); an ellipse's center c, focus f and the ellipse (minor radius b);
+///     or another Spline D with the contact's curve parameter s on it (also
+///     owned)
+///
+/// They touch at q = C(t) with unit tangent τ̂ = C′(t)/|C′(t)| and unit
 /// normal n̂ = rot90(τ̂). ∠(u, τ̂) is the angle from τ̂ to the unit direction
 /// u modulo π, in (−π/2, π/2] (0 when parallel either way;
 /// `crate::spline::line_angle`), and S the length of the Spline's control
