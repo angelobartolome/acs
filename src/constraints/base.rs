@@ -1018,32 +1018,32 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         )),
         ConstraintType::TangentLineSpline(a, b, spline, t) => {
             use crate::constraints::tangent_spline::{TangentSplineConstraint, TangentTo};
-            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Line(a, b), spline, t)))
+            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Line { a, b }, spline, t)))
         }
         ConstraintType::TangentCircleSpline(center, circle, spline, t) => {
             use crate::constraints::tangent_spline::{TangentSplineConstraint, TangentTo};
-            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Circle(center, circle), spline, t)))
+            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Circle { center, circle }, spline, t)))
         }
         ConstraintType::TangentArcSpline(center, arc, spline, t) => {
             use crate::constraints::tangent_spline::{TangentSplineConstraint, TangentTo};
-            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Arc(center, arc), spline, t)))
+            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Arc { center, arc }, spline, t)))
         }
         ConstraintType::TangentEllipseSpline(center, focus, e, spline, t) => {
             use crate::constraints::tangent_spline::{TangentSplineConstraint, TangentTo};
             Ok(Box::new(TangentSplineConstraint::new(
-                TangentTo::Ellipse(center, focus, e),
+                TangentTo::Ellipse { center, focus, ellipse: e },
                 spline,
                 t,
             )))
         }
         ConstraintType::TangentSplines(s1, t1, s2, t2) => {
             use crate::constraints::tangent_spline::{TangentSplineConstraint, TangentTo};
-            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Spline(s2, t2), s1, t1)))
+            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Spline { spline: s2, param_id: t2 }, s1, t1)))
         }
         ConstraintType::TangentLineSplineAtPoint(p, other, spline, at) => {
             use crate::constraints::tangent_spline_at_point::{Side, TangentSplineAtPointConstraint};
             Ok(Box::new(TangentSplineAtPointConstraint::new(
-                Side::Line(p, other),
+                Side::Line { point: p, other },
                 spline,
                 at,
             )))
@@ -1051,14 +1051,14 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
         ConstraintType::TangentArcSplineAtPoint(p, center, spline, at) => {
             use crate::constraints::tangent_spline_at_point::{Side, TangentSplineAtPointConstraint};
             Ok(Box::new(TangentSplineAtPointConstraint::new(
-                Side::ArcRadius(p, center),
+                Side::ArcRadius { point: p, center },
                 spline,
                 at,
             )))
         }
         ConstraintType::TangentSplinesAtPoint(s1, at1, s2, at2) => {
             use crate::constraints::tangent_spline_at_point::{Side, TangentSplineAtPointConstraint};
-            Ok(Box::new(TangentSplineAtPointConstraint::new(Side::Spline(s2, at2), s1, at1)))
+            Ok(Box::new(TangentSplineAtPointConstraint::new(Side::Spline { spline: s2, at: at2 }, s1, at1)))
         }
     }
 }

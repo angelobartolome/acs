@@ -16,17 +16,44 @@ use crate::spline::{
 
 /// What a Spline is tangent to, by ID.
 pub enum TangentTo {
-    /// A Line (the segment), by its endpoints a, b.
-    Line(String, String),
-    /// A circle, by its center Point and its own ID.
-    Circle(String, String),
-    /// An arc, by its center Point and its own ID; the contact is on its span.
-    Arc(String, String),
-    /// An ellipse, by its center and focus Points and its own ID.
-    Ellipse(String, String, String),
-    /// Another Spline, with the curve parameter of the contact on it (also
-    /// owned by this constraint).
-    Spline(Spline, String),
+    /// A Line (the segment).
+    Line {
+        /// Its start Point a.
+        a: String,
+        /// Its end Point b.
+        b: String,
+    },
+    /// A circle.
+    Circle {
+        /// Its center Point.
+        center: String,
+        /// The circle (its radius).
+        circle: String,
+    },
+    /// An arc; the contact is on its span.
+    Arc {
+        /// Its center Point.
+        center: String,
+        /// The arc (its radius and angles).
+        arc: String,
+    },
+    /// An ellipse.
+    Ellipse {
+        /// Its center Point.
+        center: String,
+        /// Its focus Point.
+        focus: String,
+        /// The ellipse (its minor radius).
+        ellipse: String,
+    },
+    /// Another Spline.
+    Spline {
+        /// The Spline.
+        spline: Spline,
+        /// The contact's curve parameter on it (also owned by this
+        /// constraint).
+        param_id: String,
+    },
 }
 
 /// Tangency between a Spline (curve C, contact parameter t) and another
@@ -148,22 +175,22 @@ impl Constraint for TangentSplineConstraint {
         let mut v = handle_vars(&self.spline);
         v.push(Var::CurveParam(&self.param_id));
         match &self.to {
-            TangentTo::Line(a, b) => v.extend(xy(a).into_iter().chain(xy(b))),
-            TangentTo::Circle(c, id) => {
-                v.extend(xy(c));
-                v.push(Var::Radius(id));
+            TangentTo::Line { a, b } => v.extend(xy(a).into_iter().chain(xy(b))),
+            TangentTo::Circle { center, circle } => {
+                v.extend(xy(center));
+                v.push(Var::Radius(circle));
             }
-            TangentTo::Arc(c, id) => {
-                v.extend(xy(c));
-                v.extend([Var::Radius(id), Var::StartAngle(id), Var::EndAngle(id)]);
+            TangentTo::Arc { center, arc } => {
+                v.extend(xy(center));
+                v.extend([Var::Radius(arc), Var::StartAngle(arc), Var::EndAngle(arc)]);
             }
-            TangentTo::Ellipse(c, f, id) => {
-                v.extend(xy(c).into_iter().chain(xy(f)));
-                v.push(Var::MinorRadius(id));
+            TangentTo::Ellipse { center, focus, ellipse } => {
+                v.extend(xy(center).into_iter().chain(xy(focus)));
+                v.push(Var::MinorRadius(ellipse));
             }
-            TangentTo::Spline(s, t) => {
-                v.extend(handle_vars(s));
-                v.push(Var::CurveParam(t));
+            TangentTo::Spline { spline, param_id } => {
+                v.extend(handle_vars(spline));
+                v.push(Var::CurveParam(param_id));
             }
         }
         v
@@ -171,7 +198,7 @@ impl Constraint for TangentSplineConstraint {
 
     fn curve_params(&self) -> Vec<&str> {
         match &self.to {
-            TangentTo::Spline(_, t) => vec![&self.param_id, t],
+            TangentTo::Spline { param_id, .. } => vec![&self.param_id, param_id],
             _ => vec![&self.param_id],
         }
     }
@@ -183,9 +210,9 @@ impl Constraint for TangentSplineConstraint {
 
     fn num_residuals(&self) -> usize {
         match self.to {
-            TangentTo::Line(..) | TangentTo::Arc(..) => 4,
-            TangentTo::Circle(..) | TangentTo::Ellipse(..) => 3,
-            TangentTo::Spline(..) => 5,
+            TangentTo::Line { .. } | TangentTo::Arc { .. } => 4,
+            TangentTo::Circle { .. } | TangentTo::Ellipse { .. } => 3,
+            TangentTo::Spline { .. } => 5,
         }
     }
 
@@ -199,7 +226,7 @@ impl TangentSplineConstraint {
     fn param_indices(&self) -> Vec<usize> {
         let first = self.other_offset();
         match &self.to {
-            TangentTo::Spline(other_spline, _) => vec![first - 1, first + 2 * other_spline.points.len()],
+            TangentTo::Spline { spline: other_spline, .. } => vec![first - 1, first + 2 * other_spline.points.len()],
             _ => vec![first - 1],
         }
     }
@@ -215,7 +242,7 @@ impl TangentSplineConstraint {
             x[i] = v;
         }
         let domains: Vec<(f64, f64)> = match &self.to {
-            TangentTo::Spline(other_spline, _) => vec![
+            TangentTo::Spline { spline: other_spline, .. } => vec![
                 curve_f(&self.spline, &x, 0).domain(),
                 curve_f(other_spline, &x, self.other_offset()).domain(),
             ],
@@ -258,7 +285,7 @@ impl TangentSplineConstraint {
                 .map_or(0.0, |(t, _)| t)
         };
         match &self.to {
-            TangentTo::Line(..) => {
+            TangentTo::Line { .. } => {
                 let (a, b) = (pt(first), pt(first + 2));
                 let d = b.sub(&a);
                 let len = d.norm();
@@ -270,9 +297,9 @@ impl TangentSplineConstraint {
                     off + len * g.cross(&P2::new(tau[0], tau[1])).abs()
                 })]
             }
-            TangentTo::Circle(..) | TangentTo::Arc(..) => {
+            TangentTo::Circle { .. } | TangentTo::Arc { .. } => {
                 let (c, r) = (pt(first), x[first + 2]);
-                let arc = matches!(self.to, TangentTo::Arc(..));
+                let arc = matches!(self.to, TangentTo::Arc { .. });
                 vec![best(&|q, tau| {
                     let v = P2::new(q[0], q[1]).sub(&c);
                     let mut score = (v.norm() - r).abs() + r * v.unit().dot(&P2::new(tau[0], tau[1])).abs();
@@ -282,7 +309,7 @@ impl TangentSplineConstraint {
                     score
                 })]
             }
-            TangentTo::Ellipse(..) => {
+            TangentTo::Ellipse { .. } => {
                 let cst = |i: usize| P2::new(Dv::cst(x[i]), Dv::cst(x[i + 1]));
                 let (c, f, b) = (cst(first), cst(first + 2), Dv::cst(x[first + 4]));
                 let major_radius = (x[first + 4].powi(2) + (x[first + 2] - x[first]).powi(2) + (x[first + 3] - x[first + 1]).powi(2)).sqrt();
@@ -291,7 +318,7 @@ impl TangentSplineConstraint {
                     on.v.abs() + major_radius * (n.x.v * tau[0] + n.y.v * tau[1]).abs()
                 })]
             }
-            TangentTo::Spline(other_spline, _) => {
+            TangentTo::Spline { spline: other_spline, .. } => {
                 let other = curve_f(other_spline, x, first);
                 let ours: Vec<_> = samples.iter().map(|&t| (t, point_tangent(&curve, t))).collect();
                 let theirs: Vec<_> = other.samples(16).into_iter().map(|t| (t, point_tangent(&other, t))).collect();
@@ -321,7 +348,7 @@ impl TangentSplineConstraint {
         let (lo, hi) = curve.domain();
         let span = overshoot(&t, lo, hi);
         let rows: Vec<Dv> = match &self.to {
-            TangentTo::Line(..) => {
+            TangentTo::Line { .. } => {
                 let (a, b) = (point_d(x, first), point_d(x, first + 2));
                 let ab = b.sub(&a);
                 let g = ab.unit();
@@ -335,20 +362,20 @@ impl TangentSplineConstraint {
                     span,
                 ]
             }
-            TangentTo::Circle(..) | TangentTo::Arc(..) => {
+            TangentTo::Circle { .. } | TangentTo::Arc { .. } => {
                 let (c, rad) = (point_d(x, first), Dv::var(x, first + 2));
                 let v = q.sub(&c);
                 let mut rows = vec![v.norm() - rad.clone(), v.dot(&tau), span];
-                if matches!(self.to, TangentTo::Arc(..)) {
+                if matches!(self.to, TangentTo::Arc { .. }) {
                     rows.push(arc_span_row(&v, &rad, x, first + 3));
                 }
                 rows
             }
-            TangentTo::Ellipse(..) => {
+            TangentTo::Ellipse { .. } => {
                 let (on, n) = ellipse_at(q, &point_d(x, first), &point_d(x, first + 2), &Dv::var(x, first + 4));
                 vec![on, line_angle(&n.rot90(), &tau) * curve.polygon_length(), span]
             }
-            TangentTo::Spline(other_spline, _) => {
+            TangentTo::Spline { spline: other_spline, .. } => {
                 let other = curve_d(other_spline, x, first);
                 let u = Dv::var(x, first + 2 * other_spline.points.len());
                 let e = other.eval(&u, 1);

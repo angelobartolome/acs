@@ -9,12 +9,27 @@ use crate::spline::{Curve, Dv, P2, Scalar, curve_d, handle_vars, line_angle, poi
 
 /// The other side of a tangency at a known point.
 pub enum Side {
-    /// A Line, by its endpoint `p` on the Spline and its other endpoint.
-    Line(String, String),
-    /// An Arc, by its endpoint `p` on the Spline and its center.
-    ArcRadius(String, String),
-    /// Another Spline, at one of its ends or a curve parameter.
-    Spline(Spline, SplineAt),
+    /// A Line.
+    Line {
+        /// Its endpoint on the Spline.
+        point: String,
+        /// Its other endpoint.
+        other: String,
+    },
+    /// An Arc, by the radius to its endpoint on the Spline.
+    ArcRadius {
+        /// Its endpoint on the Spline.
+        point: String,
+        /// Its center Point.
+        center: String,
+    },
+    /// Another Spline.
+    Spline {
+        /// The Spline.
+        spline: Spline,
+        /// Where on it the contact is.
+        at: SplineAt,
+    },
 }
 
 /// Tangency where the contact point is already known to be on the Spline:
@@ -87,9 +102,9 @@ impl Constraint for TangentSplineAtPointConstraint {
         // x = [handles (2n), (t), the other side's variables]
         let mut v = spline_vars(&self.spline, &self.at);
         match &self.side {
-            Side::Line(p, o) => v.extend(xy(p).into_iter().chain(xy(o))),
-            Side::ArcRadius(p, k) => v.extend(xy(p).into_iter().chain(xy(k))),
-            Side::Spline(s, at) => v.extend(spline_vars(s, at)),
+            Side::Line { point, other } => v.extend(xy(point).into_iter().chain(xy(other))),
+            Side::ArcRadius { point, center } => v.extend(xy(point).into_iter().chain(xy(center))),
+            Side::Spline { spline, at } => v.extend(spline_vars(spline, at)),
         }
         v
     }
@@ -101,10 +116,10 @@ impl Constraint for TangentSplineAtPointConstraint {
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
         let (tau, o) = tangent_at(&self.spline, &self.at, x, 0);
         let res = match &self.side {
-            Side::Line(..) => line_angle(&point_d(x, o + 2).sub(&point_d(x, o)).unit(), &tau),
+            Side::Line { .. } => line_angle(&point_d(x, o + 2).sub(&point_d(x, o)).unit(), &tau),
             // The arc's tangent at p is its radius turned a quarter turn.
-            Side::ArcRadius(..) => line_angle(&point_d(x, o).sub(&point_d(x, o + 2)).unit().rot90(), &tau),
-            Side::Spline(s, at) => line_angle(&tangent_at(s, at, x, o).0, &tau),
+            Side::ArcRadius { .. } => line_angle(&point_d(x, o).sub(&point_d(x, o + 2)).unit().rot90(), &tau),
+            Side::Spline { spline, at } => line_angle(&tangent_at(spline, at, x, o).0, &tau),
         };
         r[0] = res.v;
         res.write_row(j, 0);
