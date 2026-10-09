@@ -607,7 +607,7 @@ fn array_and_mirror_guides_are_declared_and_have_partials() {
 /// corner. A Jacobian written with `=` instead of `+=` is wrong only here.
 fn shared_point_constraints() -> Vec<ConstraintType> {
     let s = |x: &str| x.to_string();
-    vec![
+    let mut cases = vec![
         ConstraintType::Parallel(s("p0"), s("p1"), s("p1"), s("p2")),
         ConstraintType::Perpendicular(s("p0"), s("p1"), s("p1"), s("p2")),
         ConstraintType::Angle(s("p0"), s("p1"), s("p1"), s("p2"), 0.7),
@@ -738,7 +738,29 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         // difference, also between a point and itself.
         ConstraintType::Difference(Operand::X(s("p0")), Operand::X(s("p1")), Operand::Const(-1.5)),
         ConstraintType::Difference(Operand::Y(s("p0")), Operand::Y(s("p0")), Operand::Const(0.0)),
-    ]
+    ];
+    // Splines in either form: a handle that is also the point on it or the
+    // line's endpoint, a spline tangent to itself, a line or arc ending at
+    // its start, and two splines sharing an end.
+    for form in [true, false] {
+        let (a, b) = (spline(0, form), spline(1, form));
+        let a_start = a.points[0].clone();
+        let mut b_from_a_end = b.clone();
+        b_from_a_end.points[0] = a.points[a.points.len() - 1].clone();
+        cases.extend([
+            ConstraintType::PointOnSpline(a.points[2].clone(), a.clone(), s("#0")),
+            ConstraintType::TangentLineSpline(a.points[1].clone(), s("p1"), a.clone(), s("#0")),
+            ConstraintType::TangentSplines(a.clone(), s("#0"), a.clone(), s("#1")),
+            ConstraintType::TangentSplinesAtPoint(a.clone(), SplineAt::End, b_from_a_end, SplineAt::Start),
+        ]);
+        for at in [SplineAt::Start, SplineAt::End, SplineAt::CurveParam(s("#1"))] {
+            cases.extend([
+                ConstraintType::TangentLineSplineAtPoint(a_start.clone(), s("p1"), a.clone(), at.clone()),
+                ConstraintType::TangentArcSplineAtPoint(a_start.clone(), s("a1_center"), a.clone(), at.clone()),
+            ]);
+        }
+    }
+    cases
 }
 
 #[test]
@@ -804,29 +826,24 @@ fn elliptical_arc_rules_jacobian_matches_finite_differences() {
 
 /// Every Spline kernel in both handle forms (fit points, whose control
 /// points come from a linear solve at centripetal parameters, and control
-/// points), at either end and at a curve parameter, and with shared Points.
+/// points), at either end and at a curve parameter; the cases sharing a
+/// Point are in `shared_point_constraints`.
 #[test]
 fn spline_jacobians_match_finite_differences() {
     let s = |x: &str| x.to_string();
     let mut cases = Vec::new();
     for form in [true, false] {
         let (a, b) = (spline(0, form), spline(1, form));
-        let a_start = a.points[0].clone();
         cases.extend([
             ConstraintType::PointOnSpline(s("p0"), a.clone(), s("#0")),
-            ConstraintType::PointOnSpline(a.points[2].clone(), a.clone(), s("#0")),
             ConstraintType::TangentLineSpline(s("p0"), s("p1"), a.clone(), s("#0")),
-            ConstraintType::TangentLineSpline(a.points[1].clone(), s("p1"), a.clone(), s("#0")),
             ConstraintType::TangentCircleSpline(s("c1_center"), s("c1"), a.clone(), s("#0")),
             ConstraintType::TangentArcSpline(s("a1_center"), s("a1"), a.clone(), s("#0")),
             ConstraintType::TangentEllipseSpline(s("e1_center"), s("e1_focus"), s("e1"), a.clone(), s("#0")),
             ConstraintType::TangentSplines(a.clone(), s("#0"), b.clone(), s("#1")),
-            ConstraintType::TangentSplines(a.clone(), s("#0"), a.clone(), s("#1")),
         ]);
         for at in [SplineAt::Start, SplineAt::End, SplineAt::CurveParam(s("#1"))] {
             cases.extend([
-                ConstraintType::TangentLineSplineAtPoint(a_start.clone(), s("p1"), a.clone(), at.clone()),
-                ConstraintType::TangentArcSplineAtPoint(a_start.clone(), s("a1_center"), a.clone(), at.clone()),
                 ConstraintType::TangentSplinesAtPoint(a.clone(), at.clone(), b.clone(), SplineAt::Start),
                 ConstraintType::TangentSplinesAtPoint(b.clone(), SplineAt::End, a.clone(), at.clone()),
             ]);
