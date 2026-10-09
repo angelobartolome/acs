@@ -23,6 +23,9 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use nalgebra::DMatrix;
 
+use crate::constraints::{Var, xy};
+use crate::geometry::Spline;
+
 /// Added (squared) to each squared chord in the centripetal parameters:
 /// `Δᵢ = (|Qᵢ₊₁ − Qᵢ|² + ε²)^¼`, so coincident fit points give a tiny step
 /// (1e-6) rather than a repeated knot (a singular system), and `Δ` stays
@@ -665,8 +668,6 @@ pub fn overshoot(t: &Dv, lo: f64, hi: f64) -> Dv {
 
 // ── Kernel plumbing: a Spline's curve from a kernel's local variables ──
 
-use crate::constraints::{Var, xy};
-use crate::geometry::Spline;
 
 /// The x, y of each of `spline`'s handles: what a kernel reads for its curve.
 pub(crate) fn handle_vars(spline: &Spline) -> Vec<Var<'_>> {
