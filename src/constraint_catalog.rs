@@ -138,7 +138,7 @@ pub fn tangent_at_held_endpoints(constraints: &mut [(ConstraintType, bool)]) {
         } else {
             continue;
         };
-        *ct = ConstraintType::TangentLineSplineAtPoint(p.clone(), other.clone(), spline.clone(), SplineAt::Param(t));
+        *ct = ConstraintType::TangentLineSplineAtPoint(p.clone(), other.clone(), spline.clone(), SplineAt::CurveParam(t));
     }
     let held: std::collections::HashSet<(String, String)> = constraints
         .iter()
@@ -360,7 +360,7 @@ impl Args {
         self.splines[i].clone()
     }
     /// The ID of curve parameter `k` the constraint owns.
-    fn param(&self, k: usize) -> String {
+    fn curve_param(&self, k: usize) -> String {
         format!("{}#{k}", self.id)
     }
     /// Which end of Spline field `i` the Point `p` is, if it is its first or
@@ -386,7 +386,7 @@ impl Args {
         } else if let Some(at) = self.spline_end(0, &b) {
             ConstraintType::TangentLineSplineAtPoint(b, a, s, at)
         } else {
-            ConstraintType::TangentLineSpline(a, b, s, self.param(0))
+            ConstraintType::TangentLineSpline(a, b, s, self.curve_param(0))
         }
     }
     /// Arc field 0 tangent to Spline field 0: at an endpoint they share
@@ -399,7 +399,7 @@ impl Args {
             .find_map(|p| self.spline_end(0, &p).map(|at| (p, at)))
         {
             Some((p, at)) => ConstraintType::TangentArcSplineAtPoint(p, self.center(0), s, at),
-            None => ConstraintType::TangentArcSpline(self.center(0), self.c(0), s, self.param(0)),
+            None => ConstraintType::TangentArcSpline(self.center(0), self.c(0), s, self.curve_param(0)),
         }
     }
     /// Spline fields 0 and 1 tangent: at an end they share
@@ -412,7 +412,7 @@ impl Args {
             .find_map(|p| Some((self.spline_end(0, p)?, self.spline_end(1, p)?)));
         match shared {
             Some((at0, at1)) => ConstraintType::TangentSplinesAtPoint(s0, at0, s1, at1),
-            None => ConstraintType::TangentSplines(s0, self.param(0), s1, self.param(1)),
+            None => ConstraintType::TangentSplines(s0, self.curve_param(0), s1, self.curve_param(1)),
         }
     }
     /// The endpoint of EllipticalArc field 0 that `p` is, if it is one.

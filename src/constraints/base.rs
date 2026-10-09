@@ -28,8 +28,8 @@ pub enum Var<'a> {
     MinorRadius(&'a str),
     /// A curve parameter ([`CurveParam`](crate::geometry::CurveParam)): where
     /// a constraint's contact point sits along a Spline. Owned by the
-    /// constraint that lists it in [`Constraint::params`].
-    Param(&'a str),
+    /// constraint that lists it in [`Constraint::curve_params`].
+    CurveParam(&'a str),
 }
 
 impl Var<'_> {
@@ -42,7 +42,7 @@ impl Var<'_> {
             | Var::StartAngle(id)
             | Var::EndAngle(id)
             | Var::MinorRadius(id)
-            | Var::Param(id) => id,
+            | Var::CurveParam(id) => id,
         }
     }
 
@@ -54,7 +54,7 @@ impl Var<'_> {
     /// Index of this variable within its entity's values.
     fn index_in_entity(&self) -> usize {
         match self {
-            Var::X(_) | Var::Radius(_) | Var::MinorRadius(_) | Var::Param(_) => 0,
+            Var::X(_) | Var::Radius(_) | Var::MinorRadius(_) | Var::CurveParam(_) => 0,
             Var::Y(_) | Var::StartAngle(_) => 1,
             Var::EndAngle(_) => 2,
         }
@@ -148,18 +148,18 @@ pub trait Constraint {
     }
 
     /// Curve parameters this constraint *owns* (each also among its
-    /// `vars()` as [`Var::Param`]): unknowns no entity has, such as where a
+    /// `vars()` as [`Var::CurveParam`]): unknowns no entity has, such as where a
     /// point sits along a Spline. `ConstraintSolver::add_constraint` creates
-    /// them, starting at [`Self::init_params`]; they count as free
+    /// them, starting at [`Self::init_curve_params`]; they count as free
     /// variables in degrees of freedom, and diagnosis drops them with their
     /// constraint. Default: none.
-    fn params(&self) -> Vec<&str> {
+    fn curve_params(&self) -> Vec<&str> {
         Vec::new()
     }
 
-    /// Starting values of [`Self::params`], from `x` as `eval` receives it
+    /// Starting values of [`Self::curve_params`], from `x` as `eval` receives it
     /// (the entries of the parameters themselves are meaningless).
-    fn init_params(&self, _x: &[f64]) -> Vec<f64> {
+    fn init_curve_params(&self, _x: &[f64]) -> Vec<f64> {
         Vec::new()
     }
 
@@ -266,7 +266,7 @@ pub fn check_vars(constraint: &dyn Constraint, geometry: &GeometrySystem) -> Res
             Var::MinorRadius(id) => {
                 geometry.get_ellipse(id).is_some() || geometry.get_elliptical_arc(id).is_some()
             }
-            Var::Param(id) => geometry.get_param(id).is_some(),
+            Var::CurveParam(id) => geometry.get_curve_param(id).is_some(),
         };
         if !ok {
             let kind = match p {
@@ -274,7 +274,7 @@ pub fn check_vars(constraint: &dyn Constraint, geometry: &GeometrySystem) -> Res
                 Var::Radius(_) => "a circle or arc",
                 Var::StartAngle(_) | Var::EndAngle(_) => "an arc or elliptical arc",
                 Var::MinorRadius(_) => "an ellipse or elliptical arc",
-                Var::Param(_) => "a curve parameter",
+                Var::CurveParam(_) => "a curve parameter",
             };
             return Err(format!("'{}' is not {kind}", p.entity_id()));
         }
@@ -303,7 +303,7 @@ pub(crate) fn geometry_value(var: &Var<'_>, geometry: &GeometrySystem) -> Option
             .get_ellipse(id)
             .map(|e| e.radmin)
             .or_else(|| geometry.get_elliptical_arc(id).map(|a| a.radmin)),
-        Var::Param(id) => geometry.get_param(id).map(|p| p.value),
+        Var::CurveParam(id) => geometry.get_curve_param(id).map(|p| p.value),
     }
 }
 
@@ -316,7 +316,7 @@ pub enum SplineAt {
     /// The end of the curve (its last handle).
     End,
     /// A curve parameter, by ID.
-    Param(String),
+    CurveParam(String),
 }
 
 /// One end of an arc: where it starts, or where it ends.

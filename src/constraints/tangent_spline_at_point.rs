@@ -34,7 +34,7 @@ pub enum Side {
 /// - Spline D at `at₂`: R = ∠(τ̂_D, τ̂)
 ///
 /// It owns no parameter: `at` is a domain end (a constant) or another
-/// constraint's [`Var::Param`], which it reads.
+/// constraint's [`Var::CurveParam`], which it reads.
 pub struct TangentSplineAtPointConstraint {
     /// The other side.
     pub side: Side,
@@ -54,8 +54,8 @@ impl TangentSplineAtPointConstraint {
 /// `spline`'s handles, then its curve parameter if `at` is one.
 fn spline_vars<'a>(spline: &'a Spline, at: &'a SplineAt) -> Vec<Var<'a>> {
     let mut v = handle_vars(spline);
-    if let SplineAt::Param(t) = at {
-        v.push(Var::Param(t));
+    if let SplineAt::CurveParam(t) = at {
+        v.push(Var::CurveParam(t));
     }
     v
 }
@@ -69,7 +69,7 @@ fn tangent_at(spline: &Spline, at: &SplineAt, x: &[f64], offset: usize) -> (P2<D
     let (t, next) = match at {
         SplineAt::Start => (Dv::cst(lo), next),
         SplineAt::End => (Dv::cst(hi), next),
-        SplineAt::Param(_) => (Dv::var(x, next), next + 1),
+        SplineAt::CurveParam(_) => (Dv::var(x, next), next + 1),
     };
     (curve.eval(&t, 1)[1].unit(), next)
 }

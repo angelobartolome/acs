@@ -130,28 +130,28 @@ impl ConstraintSolver {
 
     fn push_constraint(&mut self, constraint_type: ConstraintType, temporary: bool) -> Result<(), String> {
         let constraint = create_constraint(constraint_type)?;
-        let params: Vec<String> = constraint.params().iter().map(|s| s.to_string()).collect();
-        for (k, id) in params.iter().enumerate() {
-            if self.geometry.has_id(id) || params[..k].contains(id) {
+        let curve_params: Vec<String> = constraint.curve_params().iter().map(|s| s.to_string()).collect();
+        for (k, id) in curve_params.iter().enumerate() {
+            if self.geometry.has_id(id) || curve_params[..k].contains(id) {
                 return Err(format!("curve parameter '{id}' needs an ID no entity has"));
             }
         }
-        for id in &params {
-            self.geometry.add_param(CurveParam { id: id.clone(), value: 0.0 });
+        for id in &curve_params {
+            self.geometry.add_curve_param(CurveParam { id: id.clone(), value: 0.0 });
         }
         if let Err(e) = check_vars(constraint.as_ref(), &self.geometry) {
-            for id in &params {
-                self.geometry.remove_param(id);
+            for id in &curve_params {
+                self.geometry.remove_curve_param(id);
             }
             return Err(e);
         }
-        if !params.is_empty() {
+        if !curve_params.is_empty() {
             let x: Vec<f64> = reads(constraint.as_ref())
                 .iter()
                 .map(|v| geometry_value(v, &self.geometry).unwrap_or(0.0))
                 .collect();
-            for (id, value) in params.into_iter().zip(constraint.init_params(&x)) {
-                self.geometry.add_param(CurveParam { id, value });
+            for (id, value) in curve_params.into_iter().zip(constraint.init_curve_params(&x)) {
+                self.geometry.add_curve_param(CurveParam { id, value });
             }
         }
         self.constraints.push(constraint);

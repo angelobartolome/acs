@@ -12,7 +12,7 @@ use crate::spline::{Dv, closest_param, curve_d, curve_f, handle_vars, overshoot,
 /// Entities:
 ///   - `point_id` – the point p
 ///   - `spline`   – the Spline, curve C (its handles are the variables)
-///   - `param_id` – the curve parameter t (a [`Var::Param`] it owns)
+///   - `param_id` – the curve parameter t (a [`Var::CurveParam`] it owns)
 ///
 /// Residuals:
 ///   R₀,₁ = p − C(t)
@@ -44,15 +44,15 @@ impl Constraint for PointOnSplineConstraint {
         // x = [handles (2n), px, py, t]
         let mut v = handle_vars(&self.spline);
         v.extend(xy(&self.point_id));
-        v.push(Var::Param(&self.param_id));
+        v.push(Var::CurveParam(&self.param_id));
         v
     }
 
-    fn params(&self) -> Vec<&str> {
+    fn curve_params(&self) -> Vec<&str> {
         vec![&self.param_id]
     }
 
-    fn init_params(&self, x: &[f64]) -> Vec<f64> {
+    fn init_curve_params(&self, x: &[f64]) -> Vec<f64> {
         let h = 2 * self.spline.points.len();
         vec![closest_param(&curve_f(&self.spline, x, 0), [x[h], x[h + 1]])]
     }

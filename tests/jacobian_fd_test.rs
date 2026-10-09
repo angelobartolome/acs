@@ -141,7 +141,7 @@ fn build_pm(seed: u64) -> VarRegistry {
     }
     for id in PARAMS {
         let value = rng.range(0.15, 0.85);
-        pm.register_entity(id.to_string(), EntityType::Param, &CurveParam { id: id.to_string(), value });
+        pm.register_entity(id.to_string(), EntityType::CurveParam, &CurveParam { id: id.to_string(), value });
     }
     pm
 }
@@ -823,7 +823,7 @@ fn spline_jacobians_match_finite_differences() {
             ConstraintType::TangentSplines(a.clone(), s("#0"), b.clone(), s("#1")),
             ConstraintType::TangentSplines(a.clone(), s("#0"), a.clone(), s("#1")),
         ]);
-        for at in [SplineAt::Start, SplineAt::End, SplineAt::Param(s("#1"))] {
+        for at in [SplineAt::Start, SplineAt::End, SplineAt::CurveParam(s("#1"))] {
             cases.extend([
                 ConstraintType::TangentLineSplineAtPoint(a_start.clone(), s("p1"), a.clone(), at.clone()),
                 ConstraintType::TangentArcSplineAtPoint(a_start.clone(), s("a1_center"), a.clone(), at.clone()),

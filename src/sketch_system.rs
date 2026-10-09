@@ -91,7 +91,7 @@ pub(crate) struct SketchSystem<'a> {
     components: Vec<Component>,
     /// Global columns of the curve parameters temporary constraints own:
     /// outside the diagnosed system, like their owners.
-    goal_params: HashSet<usize>,
+    goal_curve_params: HashSet<usize>,
 }
 
 impl<'a> SketchSystem<'a> {
@@ -141,7 +141,7 @@ impl<'a> SketchSystem<'a> {
             })
             .collect();
 
-        let goal_params = (0..n)
+        let goal_curve_params = (0..n)
             .filter(|&i| roles[i] == Role::Temporary)
             .flat_map(|i| owned_columns(constraints.get(i), &pm))
             .collect();
@@ -150,7 +150,7 @@ impl<'a> SketchSystem<'a> {
             constraints,
             pm,
             components,
-            goal_params,
+            goal_curve_params,
         }
     }
 
@@ -244,7 +244,7 @@ impl<'a> SketchSystem<'a> {
         for (id, arc) in geometry.get_all_elliptical_arcs_mut() {
             self.pm.write_entity_values(id, arc)?;
         }
-        for (id, param) in geometry.get_all_params_mut() {
+        for (id, param) in geometry.get_all_curve_params_mut() {
             self.pm.write_entity_values(id, param)?;
         }
         Ok(())
@@ -287,7 +287,7 @@ impl<'a> SketchSystem<'a> {
         }
 
         let mut per_entity: BTreeMap<&str, bool> = BTreeMap::new();
-        for p in info.iter().filter(|p| p.entity_type != EntityType::Param) {
+        for p in info.iter().filter(|p| p.entity_type != EntityType::CurveParam) {
             *per_entity.entry(&p.entity_id).or_insert(true) &= locked[p.global_index];
         }
         per_entity
@@ -310,7 +310,7 @@ impl<'a> SketchSystem<'a> {
             .pm
             .var_info()
             .iter()
-            .filter(|p| !p.is_fixed && !self.goal_params.contains(&p.global_index))
+            .filter(|p| !p.is_fixed && !self.goal_curve_params.contains(&p.global_index))
             .count();
         let rank: usize = self
             .components
@@ -404,12 +404,12 @@ impl<'a> SketchSystem<'a> {
                     .iter()
                     .map(|&i| owned_columns(self.constraints.get(i), &self.pm))
                     .collect();
-                let param_reads: Vec<HashSet<usize>> = which
+                let curve_param_reads: Vec<HashSet<usize>> = which
                     .iter()
                     .map(|&i| {
                         reads(self.constraints.get(i))
                             .iter()
-                            .filter(|v| matches!(v, Var::Param(_)))
+                            .filter(|v| matches!(v, Var::CurveParam(_)))
                             .filter_map(|v| v.column(&self.pm))
                             .collect()
                     })
@@ -430,7 +430,7 @@ impl<'a> SketchSystem<'a> {
                     let vanished = (0..which.len())
                         .filter(|&k| dropped[k])
                         .flat_map(|k| &owned[k])
-                        .filter(|col| (0..which.len()).all(|k| dropped[k] || !param_reads[k].contains(col)))
+                        .filter(|col| (0..which.len()).all(|k| dropped[k] || !curve_param_reads[k].contains(col)))
                         .count();
                     if rank(&jac.select_rows(kept.collect::<Vec<_>>().iter())) + vanished == full_rank {
                         out.redundant.push(which[c]);
@@ -879,7 +879,7 @@ fn implicit_arc_rules(geometry: &GeometrySystem) -> Vec<Box<dyn Constraint>> {
 
 /// Global columns of the curve parameters `c` owns.
 fn owned_columns(c: &dyn Constraint, pm: &VarRegistry) -> Vec<usize> {
-    c.params().into_iter().filter_map(|id| Var::Param(id).column(pm)).collect()
+    c.curve_params().into_iter().filter_map(|id| Var::CurveParam(id).column(pm)).collect()
 }
 
 /// Registers every Point, Circle, Arc, Ellipse and EllipticalArc, then the
@@ -921,10 +921,10 @@ fn build_var_registry(geometry: &GeometrySystem) -> VarRegistry {
         );
     }
 
-    let mut param_ids: Vec<&String> = geometry.get_all_params().keys().collect();
+    let mut param_ids: Vec<&String> = geometry.get_all_curve_params().keys().collect();
     param_ids.sort();
     for id in param_ids {
-        pm.register_entity(id.clone(), EntityType::Param, &geometry.get_all_params()[id]);
+        pm.register_entity(id.clone(), EntityType::CurveParam, &geometry.get_all_curve_params()[id]);
     }
 
     pm

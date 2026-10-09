@@ -123,7 +123,7 @@ impl Constraint for TangentSplineConstraint {
     fn vars(&self) -> Vec<Var<'_>> {
         // x = [handles (2n), t, the other curve's variables]
         let mut v = handle_vars(&self.spline);
-        v.push(Var::Param(&self.param_id));
+        v.push(Var::CurveParam(&self.param_id));
         match &self.to {
             TangentTo::Line(a, b) => v.extend(xy(a).into_iter().chain(xy(b))),
             TangentTo::Circle(c, id) => {
@@ -140,20 +140,20 @@ impl Constraint for TangentSplineConstraint {
             }
             TangentTo::Spline(s, t) => {
                 v.extend(handle_vars(s));
-                v.push(Var::Param(t));
+                v.push(Var::CurveParam(t));
             }
         }
         v
     }
 
-    fn params(&self) -> Vec<&str> {
+    fn curve_params(&self) -> Vec<&str> {
         match &self.to {
             TangentTo::Spline(_, t) => vec![&self.param_id, t],
             _ => vec![&self.param_id],
         }
     }
 
-    fn init_params(&self, x: &[f64]) -> Vec<f64> {
+    fn init_curve_params(&self, x: &[f64]) -> Vec<f64> {
         let seed = self.seed_params(x);
         self.refine_params(x, seed)
     }
@@ -172,7 +172,7 @@ impl Constraint for TangentSplineConstraint {
 }
 
 impl TangentSplineConstraint {
-    /// Local indices of its parameters, in [`Constraint::params`] order.
+    /// Local indices of its parameters, in [`Constraint::curve_params`] order.
     fn param_indices(&self) -> Vec<usize> {
         let o = self.other();
         match &self.to {

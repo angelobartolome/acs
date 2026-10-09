@@ -873,7 +873,7 @@ fast enough to stall Dog-Leg from a poor start.
 
 **Curve parameters (design note).** `on` and `tangent` need to know *where*
 on the curve the contact is. ACS holds that as a solver variable, a **curve
-parameter** (`Var::Param`, a `CurveParam` entity), owned by the constraint
+parameter** (`Var::CurveParam`, a `CurveParam` entity), owned by the constraint
 that places the contact, the way an Arc holds its angles (and as GCS holds
 a point's B-spline parameter). `ConstraintSolver::add_constraint` creates it
 under an ID the constraint names (the catalog uses `"<constraint id>#k"`;

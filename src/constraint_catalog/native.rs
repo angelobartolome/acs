@@ -246,7 +246,7 @@ pub(super) static SPECS: &[S] = &[
         ConstraintType::PointOnEllipticalArc(a.p(0), center, focus, e)
     }),
     S::new("on", &[("point", Point), ("curve", Spline)], |a| {
-        ConstraintType::PointOnSpline(a.p(0), a.spline(0), a.param(0))
+        ConstraintType::PointOnSpline(a.p(0), a.spline(0), a.curve_param(0))
     }),
     S::new(
         "midpoint",
@@ -296,14 +296,14 @@ pub(super) static SPECS: &[S] = &[
         a.tangent_line_spline()
     }),
     S::new("tangent", &[("a", Circle), ("b", Spline)], |a| {
-        ConstraintType::TangentCircleSpline(a.center(0), a.c(0), a.spline(0), a.param(0))
+        ConstraintType::TangentCircleSpline(a.center(0), a.c(0), a.spline(0), a.curve_param(0))
     }),
     S::new("tangent", &[("a", Arc), ("b", Spline)], |a| {
         a.tangent_arc_spline()
     }),
     S::new("tangent", &[("a", Ellipse), ("b", Spline)], |a| {
         let (center, focus, e) = a.e(0);
-        ConstraintType::TangentEllipseSpline(center, focus, e, a.spline(0), a.param(0))
+        ConstraintType::TangentEllipseSpline(center, focus, e, a.spline(0), a.curve_param(0))
     }),
     S::new("tangent", &[("a", Spline), ("b", Spline)], |a| {
         a.tangent_splines()

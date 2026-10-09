@@ -56,7 +56,7 @@ pub enum EntityType {
     /// `radmin`, `start_angle`, `end_angle`.
     EllipticalArc,
     /// A constraint's curve parameter (`t`), not a sketch entity.
-    Param,
+    CurveParam,
 }
 
 /// Manages the global variable vector and entity-to-variable mapping

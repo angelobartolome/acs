@@ -439,7 +439,7 @@ impl Spline {
 }
 
 /// The curve parameter of a contact point on a Spline, owned by the
-/// constraint that places it there (`Var::Param`): a solver variable no
+/// constraint that places it there (`Var::CurveParam`): a solver variable no
 /// sketch entity has, created by `ConstraintSolver::add_constraint`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurveParam {
@@ -483,7 +483,7 @@ pub struct GeometrySystem {
     ellipses: HashMap<String, Ellipse>,
     elliptical_arcs: HashMap<String, EllipticalArc>,
     splines: HashMap<String, Spline>,
-    params: HashMap<String, CurveParam>,
+    curve_params: HashMap<String, CurveParam>,
 }
 
 impl Default for GeometrySystem {
@@ -503,7 +503,7 @@ impl GeometrySystem {
             ellipses: HashMap::new(),
             elliptical_arcs: HashMap::new(),
             splines: HashMap::new(),
-            params: HashMap::new(),
+            curve_params: HashMap::new(),
         }
     }
 
@@ -657,28 +657,28 @@ impl GeometrySystem {
     }
 
     /// Adds a curve parameter (replacing one with the same ID).
-    pub fn add_param(&mut self, param: CurveParam) {
-        self.params.insert(param.id.clone(), param);
+    pub fn add_curve_param(&mut self, param: CurveParam) {
+        self.curve_params.insert(param.id.clone(), param);
     }
 
     /// Removes the curve parameter with this ID.
-    pub fn remove_param(&mut self, id: &str) {
-        self.params.remove(id);
+    pub fn remove_curve_param(&mut self, id: &str) {
+        self.curve_params.remove(id);
     }
 
     /// The curve parameter with this ID.
-    pub fn get_param(&self, id: &str) -> Option<&CurveParam> {
-        self.params.get(id)
+    pub fn get_curve_param(&self, id: &str) -> Option<&CurveParam> {
+        self.curve_params.get(id)
     }
 
     /// All curve parameters, by ID.
-    pub fn get_all_params(&self) -> &HashMap<String, CurveParam> {
-        &self.params
+    pub fn get_all_curve_params(&self) -> &HashMap<String, CurveParam> {
+        &self.curve_params
     }
 
     /// All curve parameters, by ID, to update in place.
-    pub fn get_all_params_mut(&mut self) -> &mut HashMap<String, CurveParam> {
-        &mut self.params
+    pub fn get_all_curve_params_mut(&mut self) -> &mut HashMap<String, CurveParam> {
+        &mut self.curve_params
     }
 
     /// Whether any entity or curve parameter has this ID.
@@ -690,6 +690,6 @@ impl GeometrySystem {
             || self.ellipses.contains_key(id)
             || self.elliptical_arcs.contains_key(id)
             || self.splines.contains_key(id)
-            || self.params.contains_key(id)
+            || self.curve_params.contains_key(id)
     }
 }
