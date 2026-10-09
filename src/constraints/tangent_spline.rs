@@ -6,6 +6,7 @@ use nalgebra::DMatrix;
 
 use crate::constraints::arc_span::span_overshoot;
 use crate::constraints::ellipse::{D, EllipseFrame, V2};
+use crate::constraints::segment::foot_overshoot;
 use crate::constraints::{Constraint, Var, xy};
 use crate::geometry::Spline;
 use crate::spline::{
@@ -131,15 +132,13 @@ fn ellipse_at(q: &P2<Dv>, center: &P2<Dv>, focus: &P2<Dv>, b: &Dv) -> (Dv, P2<Dv
     (chain(e.focal_residual(p)), P2::new(chain(n.x), chain(n.y)))
 }
 
-/// How far a position σ along a segment of length `len` lies outside it.
-fn segment_overshoot(sigma: Dv, len: Dv) -> Dv {
-    if sigma.v < 0.0 {
-        sigma
-    } else if sigma.v > len.v {
-        sigma - len
-    } else {
-        Dv::cst(0.0)
-    }
+/// How far the foot of q on the Line a→b falls outside the segment, by
+/// `segment.rs`'s [`foot_overshoot`] over the six inputs, chained into `Dv`.
+fn segment_overshoot(q: &P2<Dv>, a: &P2<Dv>, b: &P2<Dv>) -> Dv {
+    let inputs = [q.x.clone(), q.y.clone(), a.x.clone(), a.y.clone(), b.x.clone(), b.y.clone()];
+    let [qx, qy, ax, ay, bx, by] = inputs.clone().map(|d| d.v);
+    let (v, g) = foot_overshoot(qx, qy, ax, ay, bx, by);
+    Dv::chain(v, &g, &inputs)
 }
 
 impl Constraint for TangentSplineConstraint {
@@ -331,7 +330,7 @@ impl TangentSplineConstraint {
                 vec![
                     n.dot(&foot.sub(q)),
                     line_angle(&g, &tau) * size_d(&curve),
-                    segment_overshoot(g.dot(&w), ab.norm()),
+                    segment_overshoot(q, &a, &b),
                     span,
                 ]
             }
