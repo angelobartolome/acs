@@ -154,6 +154,20 @@ describe("ConstraintRegistry", () => {
     ).toBeNull();
   });
 
+  it("offers spline constraints for a spline and round-trips them", () => {
+    const S1: SketchEntity = { kind: "spline", id: "s1", points: ["p3", "p4", "p5"], interpolated: true };
+    const S2: SketchEntity = { kind: "spline", id: "s2", points: ["p5", "p6", "p7", "p8"], interpolated: false };
+    const C1: SketchEntity = { kind: "circle", id: "c1", center: "p7", radius: 1, fixed: false };
+    expect(applicableConstraints([P1, S1]).map((d) => d.key)).toContain("on_spline");
+    expect(applicableConstraints([L1, S1]).map((d) => d.key)).toContain("tangent_line_spline");
+    expect(applicableConstraints([S1, C1]).map((d) => d.key)).toContain("tangent_circle_spline");
+    expect(applicableConstraints([S1, S2]).map((d) => d.key)).toContain("tangent_splines");
+    const byId = new Map([...ENTITIES, S1, S2].map((e) => [e.id, e]));
+    expect(
+      primitiveToConstraint({ id: "k", type: "tangent", a: "s2", b: "l1" }, "f", (id) => byId.get(id)),
+    ).toMatchObject({ def: "tangent_line_spline", entities: ["l1", "s2"] });
+  });
+
   it("offers elliptical arc constraints for an elliptical arc and round-trips them", () => {
     const EA1: SketchEntity = {
       kind: "elliptical_arc",

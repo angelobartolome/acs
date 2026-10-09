@@ -261,6 +261,20 @@ impl<const N: usize> EllipseFrame<N> {
         self.center.add(self.center).sub(self.focus)
     }
 
+    /// GCS's on-ellipse residual at `p`, the sum of the distances to the
+    /// foci less the major diameter: `|p − f| + |p − f₂| − 2a`, 0 on the
+    /// ellipse.
+    pub fn focal_residual(&self, p: V2<N>) -> D<N> {
+        p.sub(self.focus).norm() + p.sub(self.focus2()).norm() - self.major_radius.scale(2.0)
+    }
+
+    /// The unit normal at `p` (on the ellipse): the bisector of the
+    /// directions from the two foci, `(p − f)/|p − f| + (p − f₂)/|p − f₂|`
+    /// normalized (the reflection property).
+    pub fn normal_at(&self, p: V2<N>) -> V2<N> {
+        p.sub(self.focus).unit().add(p.sub(self.focus2()).unit()).unit()
+    }
+
     /// Unit direction of the minor axis, `rot90` of the major one.
     pub fn minor_dir(&self) -> V2<N> {
         self.major_dir.rot90()

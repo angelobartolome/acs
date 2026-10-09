@@ -1,7 +1,8 @@
 //! [`ConstraintSolver`], the Rust API: geometry and constraints by string
 //! ID, solved in place.
 
-use crate::geometry::{Arc as GeoArc, Circle, Ellipse, EllipticalArc, Line};
+use crate::constraints::{geometry_value, reads};
+use crate::geometry::{Arc as GeoArc, Circle, CurveParam, Ellipse, EllipticalArc, Line, Spline};
 use crate::sketch_system::{Role, SketchSystem};
 pub use crate::sketch_system::Diagnosis;
 use crate::{
@@ -102,10 +103,18 @@ impl ConstraintSolver {
         self.geometry.add_elliptical_arc(arc)
     }
 
+    /// Adds a spline (its handle Points first) and returns its ID.
+    pub fn add_spline(&mut self, spline: Spline) -> String {
+        self.geometry.add_spline(spline)
+    }
+
     /// Adds a constraint. Every entity it references must already be added,
     /// with the right kind (a point where a point is expected, and so on).
     /// Constraints are numbered in the order they're added (temporary ones
-    /// included); [`Diagnosis`] reports them by that index.
+    /// included); [`Diagnosis`] reports them by that index. A constraint that
+    /// owns curve parameters (`on`/`tangent` with a Spline) names each by an
+    /// ID no entity has; this creates them, starting at the contact the
+    /// constraint finds nearest in the current geometry.
     pub fn add_constraint(&mut self, constraint_type: ConstraintType) -> Result<(), String> {
         self.push_constraint(constraint_type, false)
     }
@@ -121,7 +130,30 @@ impl ConstraintSolver {
 
     fn push_constraint(&mut self, constraint_type: ConstraintType, temporary: bool) -> Result<(), String> {
         let constraint = create_constraint(constraint_type)?;
-        check_vars(constraint.as_ref(), &self.geometry)?;
+        let curve_params: Vec<String> = constraint.curve_params().iter().map(|s| s.to_string()).collect();
+        for (k, id) in curve_params.iter().enumerate() {
+            if self.geometry.has_id(id) || curve_params[..k].contains(id) {
+                return Err(format!("curve parameter '{id}' needs an ID no entity has"));
+            }
+        }
+        for id in &curve_params {
+            self.geometry.add_curve_param(CurveParam { id: id.clone(), value: 0.0 });
+        }
+        if let Err(e) = check_vars(constraint.as_ref(), &self.geometry) {
+            for id in &curve_params {
+                self.geometry.remove_curve_param(id);
+            }
+            return Err(e);
+        }
+        if !curve_params.is_empty() {
+            let x: Vec<f64> = reads(constraint.as_ref())
+                .iter()
+                .map(|v| geometry_value(v, &self.geometry).unwrap_or(0.0))
+                .collect();
+            for (id, value) in curve_params.into_iter().zip(constraint.init_curve_params(&x)) {
+                self.geometry.add_curve_param(CurveParam { id, value });
+            }
+        }
         self.constraints.push(constraint);
         self.roles.push(if temporary {
             Role::Temporary
@@ -192,6 +224,48 @@ impl ConstraintSolver {
     /// The elliptical arc with this ID.
     pub fn get_elliptical_arc(&self, id: String) -> Option<&EllipticalArc> {
         self.geometry.get_elliptical_arc(&id)
+    }
+
+    /// IDs of the curve parameters constraint `index` owns, in its order
+    /// (none for a constraint that owns none, or an index past the last).
+    pub fn constraint_curve_params(&self, index: usize) -> Vec<String> {
+        self.constraints
+            .get(index)
+            .map(|c| c.curve_params().into_iter().map(String::from).collect())
+            .unwrap_or_default()
+    }
+
+    /// The current value of the curve parameter with this ID.
+    pub fn curve_param(&self, id: &str) -> Option<f64> {
+        self.geometry.get_curve_param(id).map(|p| p.value)
+    }
+
+    /// Sets a curve parameter's value, such as the one a previous solve
+    /// reported, to start the next solve from that contact instead of the
+    /// nearest one. Fails for an unknown ID.
+    pub fn set_curve_param(&mut self, id: &str, value: f64) -> Result<(), String> {
+        if self.geometry.get_curve_param(id).is_none() {
+            return Err(format!("'{id}' is not a curve parameter"));
+        }
+        self.geometry.add_curve_param(CurveParam { id: id.to_string(), value });
+        Ok(())
+    }
+
+    /// The spline with this ID.
+    pub fn get_spline(&self, id: String) -> Option<&Spline> {
+        self.geometry.get_spline(&id)
+    }
+
+    /// The curve of the spline with this ID, from its handles' current
+    /// positions.
+    pub fn spline_curve(&self, id: &str) -> Option<crate::spline::BSpline> {
+        let s = self.geometry.get_spline(id)?;
+        let handles: Option<Vec<[f64; 2]>> = s
+            .points
+            .iter()
+            .map(|p| self.geometry.get_point(p).map(|p| [p.x, p.y]))
+            .collect();
+        crate::spline::BSpline::new(&handles?, s.interpolated, s.knots.as_deref()).ok()
     }
 
     /// Prints the points and lines (for debugging).

@@ -6,7 +6,11 @@
 
 use nalgebra::{DMatrix, DVector};
 
-use crate::{GeometrySystem, VarRegistry};
+use crate::constraints::tangent_spline::{
+    ArcSide, CircleSide, EllipseSide, LineSide, SplineSide, TangentSplineConstraint, TangentTo,
+};
+use crate::constraints::tangent_spline_at_point::{Side, TangentSplineAtPointConstraint};
+use crate::{GeometrySystem, Spline, VarRegistry};
 
 /// One solver variable a constraint reads, named by role: a number the solver
 /// may move, such as a Point's x. Not a Parameter, which is a named, fixed
@@ -26,6 +30,10 @@ pub enum Var<'a> {
     EndAngle(&'a str),
     /// Minor radius (`radmin`) of an Ellipse or EllipticalArc.
     MinorRadius(&'a str),
+    /// A curve parameter ([`CurveParam`](crate::geometry::CurveParam)): where
+    /// a constraint's contact point sits along a Spline. Owned by the
+    /// constraint that lists it in [`Constraint::curve_params`].
+    CurveParam(&'a str),
 }
 
 impl Var<'_> {
@@ -37,7 +45,8 @@ impl Var<'_> {
             | Var::Radius(id)
             | Var::StartAngle(id)
             | Var::EndAngle(id)
-            | Var::MinorRadius(id) => id,
+            | Var::MinorRadius(id)
+            | Var::CurveParam(id) => id,
         }
     }
 
@@ -49,7 +58,7 @@ impl Var<'_> {
     /// Index of this variable within its entity's values.
     fn index_in_entity(&self) -> usize {
         match self {
-            Var::X(_) | Var::Radius(_) | Var::MinorRadius(_) => 0,
+            Var::X(_) | Var::Radius(_) | Var::MinorRadius(_) | Var::CurveParam(_) => 0,
             Var::Y(_) | Var::StartAngle(_) => 1,
             Var::EndAngle(_) => 2,
         }
@@ -139,6 +148,22 @@ pub trait Constraint {
     /// pattern about a center that moves with it). A variable may be both
     /// driven and a Guide.
     fn guides(&self) -> Vec<Var<'_>> {
+        Vec::new()
+    }
+
+    /// Curve parameters this constraint *owns* (each also among its
+    /// `vars()` as [`Var::CurveParam`]): unknowns no entity has, such as where a
+    /// point sits along a Spline. `ConstraintSolver::add_constraint` creates
+    /// them, starting at [`Self::init_curve_params`]; they count as free
+    /// variables in degrees of freedom, and diagnosis drops them with their
+    /// constraint. Default: none.
+    fn curve_params(&self) -> Vec<&str> {
+        Vec::new()
+    }
+
+    /// Starting values of [`Self::curve_params`], from `x` as `eval` receives it
+    /// (the entries of the parameters themselves are meaningless).
+    fn init_curve_params(&self, _x: &[f64]) -> Vec<f64> {
         Vec::new()
     }
 
@@ -245,6 +270,7 @@ pub fn check_vars(constraint: &dyn Constraint, geometry: &GeometrySystem) -> Res
             Var::MinorRadius(id) => {
                 geometry.get_ellipse(id).is_some() || geometry.get_elliptical_arc(id).is_some()
             }
+            Var::CurveParam(id) => geometry.get_curve_param(id).is_some(),
         };
         if !ok {
             let kind = match p {
@@ -252,11 +278,49 @@ pub fn check_vars(constraint: &dyn Constraint, geometry: &GeometrySystem) -> Res
                 Var::Radius(_) => "a circle or arc",
                 Var::StartAngle(_) | Var::EndAngle(_) => "an arc or elliptical arc",
                 Var::MinorRadius(_) => "an ellipse or elliptical arc",
+                Var::CurveParam(_) => "a curve parameter",
             };
             return Err(format!("'{}' is not {kind}", p.entity_id()));
         }
     }
     Ok(())
+}
+
+/// The current value of `var` in `geometry`, if its entity exists.
+pub(crate) fn geometry_value(var: &Var<'_>, geometry: &GeometrySystem) -> Option<f64> {
+    match *var {
+        Var::X(id) => geometry.get_point(id).map(|p| p.x),
+        Var::Y(id) => geometry.get_point(id).map(|p| p.y),
+        Var::Radius(id) => geometry
+            .get_circle(id)
+            .map(|c| c.radius)
+            .or_else(|| geometry.get_arc(id).map(|a| a.radius)),
+        Var::StartAngle(id) => geometry
+            .get_arc(id)
+            .map(|a| a.start_angle)
+            .or_else(|| geometry.get_elliptical_arc(id).map(|a| a.start_angle)),
+        Var::EndAngle(id) => geometry
+            .get_arc(id)
+            .map(|a| a.end_angle)
+            .or_else(|| geometry.get_elliptical_arc(id).map(|a| a.end_angle)),
+        Var::MinorRadius(id) => geometry
+            .get_ellipse(id)
+            .map(|e| e.radmin)
+            .or_else(|| geometry.get_elliptical_arc(id).map(|a| a.radmin)),
+        Var::CurveParam(id) => geometry.get_curve_param(id).map(|p| p.value),
+    }
+}
+
+/// Where along a Spline a tangency at a known point is: one of its ends, or
+/// a curve parameter another constraint (an `on`) owns.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SplineAt {
+    /// The start of the curve (its first handle).
+    Start,
+    /// The end of the curve (its last handle).
+    End,
+    /// A curve parameter, by ID.
+    CurveParam(String),
 }
 
 /// One end of an arc: where it starts, or where it ends.
@@ -581,12 +645,79 @@ pub enum ConstraintType {
     /// one side: b is parallel to a, `distance` away.
     /// (a_p1_id, a_p2_id, b_p1_id, b_p2_id, distance)
     DistanceLineLine(String, String, String, String, f64),
+
+    // ── Splines (handle Points; `on`/`tangent` own curve parameters, by a
+    //    fresh ID `add_constraint` creates) ──
+    /// A point lies on a Spline, at curve parameter `param_id`.
+    /// (point_id, spline, param_id)
+    PointOnSpline(String, Spline, String),
+
+    /// A Line (the segment) is tangent to a Spline, touching it on the
+    /// segment and the curve at curve parameter `param_id`.
+    /// (line_pa_id, line_pb_id, spline, param_id)
+    TangentLineSpline(String, String, Spline, String),
+
+    /// A circle is tangent to a Spline, touching it at curve parameter
+    /// `param_id`, from either side.
+    /// (circle_center_id, circle_id, spline, param_id)
+    TangentCircleSpline(String, String, Spline, String),
+
+    /// An arc is tangent to a Spline, touching it on the arc's span at curve
+    /// parameter `param_id`, from either side.
+    /// (arc_center_id, arc_id, spline, param_id)
+    TangentArcSpline(String, String, Spline, String),
+
+    /// An ellipse is tangent to a Spline, touching it at curve parameter
+    /// `param_id`.
+    /// (ellipse_center_id, ellipse_focus1_id, ellipse_id, spline, param_id)
+    TangentEllipseSpline(String, String, String, Spline, String),
+
+    /// Two Splines are tangent, touching at curve parameters `param1_id` on
+    /// the first and `param2_id` on the second.
+    /// (spline1, param1_id, spline2, param2_id)
+    TangentSplines(Spline, String, Spline, String),
+
+    /// A Line runs along a Spline's tangent at the Line's endpoint
+    /// `point_id`, which is on the Spline at `at` (an end the Line shares,
+    /// or the parameter of an `on` holding it).
+    /// (point_id, other_line_end_id, spline, at)
+    TangentLineSplineAtPoint(String, String, Spline, SplineAt),
+
+    /// An Arc is tangent to a Spline at an endpoint they share: the arc's
+    /// radius there is normal to the Spline.
+    /// (point_id, arc_center_id, spline, at)
+    TangentArcSplineAtPoint(String, String, Spline, SplineAt),
+
+    /// Two Splines are tangent at an end they share.
+    /// (spline1, at1, spline2, at2)
+    TangentSplinesAtPoint(Spline, SplineAt, Spline, SplineAt),
+}
+
+impl ConstraintType {
+    /// The Splines it reads.
+    pub fn splines(&self) -> Vec<&Spline> {
+        use ConstraintType::*;
+        match self {
+            PointOnSpline(_, s, _)
+            | TangentLineSpline(_, _, s, _)
+            | TangentCircleSpline(_, _, s, _)
+            | TangentArcSpline(_, _, s, _)
+            | TangentEllipseSpline(_, _, _, s, _)
+            | TangentLineSplineAtPoint(_, _, s, _)
+            | TangentArcSplineAtPoint(_, _, s, _) => vec![s],
+            TangentSplines(a, _, b, _) | TangentSplinesAtPoint(a, _, b, _) => vec![a, b],
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// The kernel for `constraint_type`. Fails for values a kernel can't take
 /// (an arc sweep outside `(0, 2π)`, a line–line distance that isn't
-/// positive).
+/// positive, a Spline whose points or knots make no curve).
 pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Constraint>, String> {
+    for spline in constraint_type.splines() {
+        spline.check().map_err(|e| format!("spline {}: {e}", spline.id))?;
+    }
     match constraint_type {
         // ── Existing ──────────────────────────────────────────────────────────
         ConstraintType::Vertical(p1, p2) => Ok(Box::new(
@@ -885,6 +1016,45 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
                     a1, a2, b1, b2, d,
                 ),
             ))
+        }
+        ConstraintType::PointOnSpline(p, spline, t) => Ok(Box::new(
+            crate::constraints::point_on_spline::PointOnSplineConstraint::new(p, spline, t),
+        )),
+        ConstraintType::TangentLineSpline(a, b, spline, t) => {
+            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Line(LineSide { a, b }), spline, t)))
+        }
+        ConstraintType::TangentCircleSpline(center, circle, spline, t) => {
+            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Circle(CircleSide { center, circle }), spline, t)))
+        }
+        ConstraintType::TangentArcSpline(center, arc, spline, t) => {
+            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Arc(ArcSide { center, arc }), spline, t)))
+        }
+        ConstraintType::TangentEllipseSpline(center, focus, e, spline, t) => {
+            Ok(Box::new(TangentSplineConstraint::new(
+                TangentTo::Ellipse(EllipseSide { center, focus, ellipse: e }),
+                spline,
+                t,
+            )))
+        }
+        ConstraintType::TangentSplines(s1, t1, s2, t2) => {
+            Ok(Box::new(TangentSplineConstraint::new(TangentTo::Spline(SplineSide { spline: s2, param_id: t2 }), s1, t1)))
+        }
+        ConstraintType::TangentLineSplineAtPoint(p, other, spline, at) => {
+            Ok(Box::new(TangentSplineAtPointConstraint::new(
+                Side::Line { point: p, other },
+                spline,
+                at,
+            )))
+        }
+        ConstraintType::TangentArcSplineAtPoint(p, center, spline, at) => {
+            Ok(Box::new(TangentSplineAtPointConstraint::new(
+                Side::ArcRadius { point: p, center },
+                spline,
+                at,
+            )))
+        }
+        ConstraintType::TangentSplinesAtPoint(s1, at1, s2, at2) => {
+            Ok(Box::new(TangentSplineAtPointConstraint::new(Side::Spline { spline: s2, at: at2 }, s1, at1)))
         }
     }
 }

@@ -14,14 +14,14 @@
 //! under soft goals, count in degrees of freedom and diagnosis) except that,
 //! having no index, they are never reported Conflicting or Redundant.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use nalgebra::{DMatrix, DVector, SymmetricEigen};
 
 use crate::component_graph::find_components_of;
 use crate::constraints::arc_rules::ArcRulesConstraint;
 use crate::constraints::elliptical_arc_rules::EllipticalArcRulesConstraint;
-use crate::constraints::{eval_into, reads};
+use crate::constraints::{Var, eval_into, reads};
 use crate::dogleg_solver::{System, TOLF};
 use crate::{
     Constraint, EntityType, GeometrySystem, VarRegistry, ParametricDogLegSolver,
@@ -89,6 +89,9 @@ pub(crate) struct SketchSystem<'a> {
     constraints: Constraints<'a>,
     pm: VarRegistry,
     components: Vec<Component>,
+    /// Global columns of the curve parameters temporary constraints own:
+    /// outside the diagnosed system, like their owners.
+    goal_curve_params: HashSet<usize>,
 }
 
 impl<'a> SketchSystem<'a> {
@@ -138,10 +141,16 @@ impl<'a> SketchSystem<'a> {
             })
             .collect();
 
+        let goal_curve_params = (0..n)
+            .filter(|&i| roles[i] == Role::Temporary)
+            .flat_map(|i| owned_columns(constraints.get(i), &pm))
+            .collect();
+
         Self {
             constraints,
             pm,
             components,
+            goal_curve_params,
         }
     }
 
@@ -235,6 +244,9 @@ impl<'a> SketchSystem<'a> {
         for (id, arc) in geometry.get_all_elliptical_arcs_mut() {
             self.pm.write_entity_values(id, arc)?;
         }
+        for (id, param) in geometry.get_all_curve_params_mut() {
+            self.pm.write_entity_values(id, param)?;
+        }
         Ok(())
     }
 
@@ -244,8 +256,9 @@ impl<'a> SketchSystem<'a> {
     /// A free variable is locked when no motion in its Component's Jacobian
     /// [null space](https://en.wikipedia.org/wiki/Kernel_(linear_algebra)) moves it; fixed variables are always locked; free
     /// variables no constraint reads are not. An entity is fully constrained
-    /// when all of its variables are locked. Lines have no variables of
-    /// their own; callers decide them from their endpoints.
+    /// when all of its variables are locked. Lines and Splines have no
+    /// variables of their own; callers decide them from their Points.
+    /// Constraints' curve parameters are not entities and never listed.
     pub(crate) fn fully_constrained_entity_ids(&self) -> Vec<String> {
         let info = self.pm.var_info();
         let mut locked: Vec<bool> = info.iter().map(|p| p.is_fixed).collect();
@@ -274,7 +287,7 @@ impl<'a> SketchSystem<'a> {
         }
 
         let mut per_entity: BTreeMap<&str, bool> = BTreeMap::new();
-        for p in info {
+        for p in info.iter().filter(|p| p.entity_type != EntityType::CurveParam) {
             *per_entity.entry(&p.entity_id).or_insert(true) &= locked[p.global_index];
         }
         per_entity
@@ -288,13 +301,16 @@ impl<'a> SketchSystem<'a> {
     /// variables minus the [rank](https://en.wikipedia.org/wiki/Rank_(linear_algebra)) of each
     /// Component's [Jacobian](https://en.wikipedia.org/wiki/Jacobian_matrix_and_determinant). Free variables
     /// no constraint reads count in full. Temporary constraints don't count,
-    /// here or in `fully_constrained_entity_ids`.
+    /// here or in `fully_constrained_entity_ids`, nor do the curve
+    /// parameters they own. A real constraint's curve parameter is a free
+    /// variable its own rows take back (a point `on` a Spline: two
+    /// equations, one parameter, one degree of freedom less).
     pub(crate) fn dof(&self) -> usize {
         let free = self
             .pm
             .var_info()
             .iter()
-            .filter(|p| !p.is_fixed)
+            .filter(|p| !p.is_fixed && !self.goal_curve_params.contains(&p.global_index))
             .count();
         let rank: usize = self
             .components
@@ -326,7 +342,10 @@ impl<'a> SketchSystem<'a> {
     /// - Component Solved: walking the dependent constraints from last to
     ///   first in sketch order, a constraint is Redundant when dropping it
     ///   (together with those already dropped) leaves the rank of J
-    ///   unchanged. The result is a minimal set whose removal changes
+    ///   unchanged, less one for each curve parameter it owns that no kept
+    ///   constraint reads (that unknown goes with it: a second `on` holding
+    ///   a point on a Spline brings two rows and a parameter, rank 1 more,
+    ///   and adds nothing). The result is a minimal set whose removal changes
     ///   neither the solution nor the degrees of freedom; of two duplicates,
     ///   the later is reported. Nothing is Conflicting.
     ///
@@ -381,6 +400,20 @@ impl<'a> SketchSystem<'a> {
                     })
                 };
                 let full_rank = rank(&jac);
+                let owned: Vec<Vec<usize>> = which
+                    .iter()
+                    .map(|&i| owned_columns(self.constraints.get(i), &self.pm))
+                    .collect();
+                let curve_param_reads: Vec<HashSet<usize>> = which
+                    .iter()
+                    .map(|&i| {
+                        reads(self.constraints.get(i))
+                            .iter()
+                            .filter(|v| matches!(v, Var::CurveParam(_)))
+                            .filter_map(|v| v.column(&self.pm))
+                            .collect()
+                    })
+                    .collect();
                 let mut dropped = vec![false; which.len()];
                 for c in (0..which.len()).rev() {
                     // Implicit rules are never dropped: they're always kept,
@@ -394,7 +427,12 @@ impl<'a> SketchSystem<'a> {
                         .zip(&dropped)
                         .filter(|&(_, &d)| !d)
                         .flat_map(|(range, _)| range.clone());
-                    if rank(&jac.select_rows(kept.collect::<Vec<_>>().iter())) == full_rank {
+                    let vanished = (0..which.len())
+                        .filter(|&k| dropped[k])
+                        .flat_map(|k| &owned[k])
+                        .filter(|col| (0..which.len()).all(|k| dropped[k] || !curve_param_reads[k].contains(col)))
+                        .count();
+                    if rank(&jac.select_rows(kept.collect::<Vec<_>>().iter())) + vanished == full_rank {
                         out.redundant.push(which[c]);
                     } else {
                         dropped[c] = false;
@@ -839,8 +877,13 @@ fn implicit_arc_rules(geometry: &GeometrySystem) -> Vec<Box<dyn Constraint>> {
     circular.chain(elliptical).collect()
 }
 
-/// Registers every Point, Circle, Arc, Ellipse and EllipticalArc, in a
-/// deterministic (sorted) order.
+/// Global columns of the curve parameters `c` owns.
+fn owned_columns(c: &dyn Constraint, pm: &VarRegistry) -> Vec<usize> {
+    c.curve_params().into_iter().filter_map(|id| Var::CurveParam(id).column(pm)).collect()
+}
+
+/// Registers every Point, Circle, Arc, Ellipse and EllipticalArc, then the
+/// constraints' curve parameters, in a deterministic (sorted) order.
 fn build_var_registry(geometry: &GeometrySystem) -> VarRegistry {
     let mut pm = VarRegistry::new();
 
@@ -876,6 +919,12 @@ fn build_var_registry(geometry: &GeometrySystem) -> VarRegistry {
             EntityType::EllipticalArc,
             &geometry.get_all_elliptical_arcs()[id],
         );
+    }
+
+    let mut param_ids: Vec<&String> = geometry.get_all_curve_params().keys().collect();
+    param_ids.sort();
+    for id in param_ids {
+        pm.register_entity(id.clone(), EntityType::CurveParam, &geometry.get_all_curve_params()[id]);
     }
 
     pm

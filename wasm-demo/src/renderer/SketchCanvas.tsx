@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type PointerEvent, type WheelEvent } from "react";
 
-import { isArc, isCircle, isEllipticalArc, isLine, isPoint } from "../core/model/types";
+import { isArc, isCircle, isEllipticalArc, isLine, isPoint, isSpline } from "../core/model/types";
+import { splineOutline } from "../core/model/spline";
 import {
   ellipseFrame,
   ellipseThrough,
@@ -352,6 +353,17 @@ export function SketchCanvas() {
           cx={sc.x}
           cy={sc.y}
           r={e.radius * viewport.scale}
+          constrained={constrained}
+          state={state}
+          onHover={setHovered}
+        />,
+      );
+    } else if (isSpline(e)) {
+      arcGlyphs.push(
+        <ArcGlyph
+          key={e.id}
+          id={e.id}
+          points={screenPolyline(toScreen, splineOutline(e, (id) => pointsById.get(id)))}
           constrained={constrained}
           state={state}
           onHover={setHovered}

@@ -9,10 +9,11 @@ use serde_json::{Value, json};
 
 /// A sketch holding one constraint of `spec`'s row, with fresh geometry for
 /// each of its fields: Points spread apart, Lines, radius-2 Circles and arcs
-/// (with their endpoints on them), 2.5 × 2 ellipses, scalars suited to the
-/// field, the major axis, and value fields referencing a fresh Circle's
-/// radius.
-fn sketch_for(spec: &ConstraintSpec) -> Value {
+/// (with their endpoints on them), 2.5 × 2 ellipses, splines on four
+/// Points (fit points when `interpolated`, else control points), scalars
+/// suited to the field, the major axis, and value fields referencing a
+/// fresh Circle's radius.
+fn sketch_for(spec: &ConstraintSpec, interpolated: bool) -> Value {
     let mut prims: Vec<Value> = Vec::new();
     let mut n = 0;
     let mut point = |prims: &mut Vec<Value>| {
@@ -95,6 +96,12 @@ fn sketch_for(spec: &ConstraintSpec) -> Value {
                                    "start_angle": t0, "end_angle": t1 }));
                 json!(id)
             }
+            FieldKind::Spline => {
+                // A spline on four fresh Points.
+                let handles: Vec<String> = (0..4).map(|_| point(&mut prims)).collect();
+                prims.push(json!({ "id": id, "type": "spline", "points": handles, "interpolated": interpolated }));
+                json!(id)
+            }
             FieldKind::Axis => json!("major"),
             FieldKind::Scalar => match name {
                 "side" | "count" => json!(1),
@@ -138,9 +145,18 @@ fn assert_converged(response: &str, what: &str) {
 
 #[test]
 fn every_row_solves_through_every_entry_point() {
-    for spec in specs() {
-        let request = sketch_for(spec).to_string();
-        let what = format!("{} {:?}", spec.json_type, spec.fields);
+    // Rows with a spline field run with each handle form.
+    let runs = specs().iter().flat_map(|spec| {
+        let forms: &[bool] = if spec.fields.iter().any(|&(_, k)| k == FieldKind::Spline) {
+            &[true, false]
+        } else {
+            &[true]
+        };
+        forms.iter().map(move |&interpolated| (spec, interpolated))
+    });
+    for (spec, interpolated) in runs {
+        let request = sketch_for(spec, interpolated).to_string();
+        let what = format!("{} {:?} (interpolated: {interpolated})", spec.json_type, spec.fields);
         let response = solve_sketch_json(&request).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert_converged(&response, &what);
         assert_eq!(acs_solve_sketch(&request), response, "{what}");

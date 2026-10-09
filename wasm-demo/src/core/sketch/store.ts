@@ -14,7 +14,7 @@ import type {
   Sketch,
   SketchEntity,
 } from "../model/types";
-import { isArc, isCircle, isEllipticalArc, isLine, isPoint } from "../model/types";
+import { isArc, isCircle, isEllipticalArc, isLine, isPoint, isSpline } from "../model/types";
 import { ellipseFrame, pointAt, sampleArc } from "../model/ellipse";
 import type { ISolverService, SolveOutcome } from "../solver/SolverService";
 
@@ -414,6 +414,8 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
         pointIds.add(e.focus);
         pointIds.add(e.start);
         pointIds.add(e.end);
+      } else if (isSpline(e)) {
+        for (const p of e.points) pointIds.add(p);
       } else pointIds.add(e.center);
     }
     set((s) => ({
@@ -428,7 +430,7 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
   setEntityFixed: (id, fixed) =>
     set((s) => ({
       entities: s.entities.map((e) =>
-        e.id === id && !isLine(e) ? { ...e, fixed } : e,
+        e.id === id && !isLine(e) && !isSpline(e) ? { ...e, fixed } : e,
       ),
     })),
 
@@ -477,6 +479,8 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
             ? [e.center, e.start, e.end]
             : isEllipticalArc(e)
               ? [e.center, e.focus, e.start, e.end]
+              : isSpline(e)
+              ? e.points
               : isCircle(e)
               ? [e.center]
               : [];
@@ -568,6 +572,13 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
       // feed solved positions back only when converged — never silently
       // apply non-converged results
       entities: outcome.ok ? outcome.entities : s.entities,
+      // keep spline contacts where they were for the next solve (a drag)
+      constraints: outcome.ok
+        ? s.constraints.map((c) => {
+            const curveParams = outcome.curveParams.get(c.id);
+            return curveParams === undefined ? c : { ...c, curveParams };
+          })
+        : s.constraints,
     }));
   },
 

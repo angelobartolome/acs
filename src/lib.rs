@@ -1,7 +1,7 @@
 //! ACS: a 2-D geometric constraint solver for CAD sketches.
 //!
-//! A sketch is geometry (points, lines, circles, arcs, ellipses and
-//! elliptical arcs) and constraints between it (coincident, tangent,
+//! A sketch is geometry (points, lines, circles, arcs, ellipses,
+//! elliptical arcs and splines) and constraints between it (coincident, tangent,
 //! distance, …): [geometric constraint
 //! solving](https://en.wikipedia.org/wiki/Geometric_constraint_solving). ACS moves the geometry until
 //! every constraint holds, and reports what it couldn't satisfy
@@ -78,6 +78,7 @@ pub mod sketch_solve;
 pub mod component_graph;
 mod sketch_system;
 pub mod constraint_catalog;
+pub mod spline;
 
 // The sketch solver C ABI, for the static library.
 #[cfg(feature = "c-abi")]

@@ -27,6 +27,7 @@ ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numer
 | Arcs (center, start and end points) | ✅ |
 | Ellipses (center and focus points, minor radius) | ✅ |
 | Elliptical arcs (an ellipse's center, focus and minor radius, plus start and end points at parametric angles) | ✅ |
+| Splines (cubic B-splines whose handles are points: fit points the curve passes through, or control points) | ✅ |
 
 ### Constraints
 
@@ -43,9 +44,9 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `direction` | line, or two points | Direction from +X (radians, counter-clockwise) |
 | `distance` | point–point, point–line (`extension?`), point–circle, point–arc (`internal?`), line–circle, line–arc (`extension?`), circle–circle, circle–arc, arc–arc (`internal?`), line–line | Point–point distance; point–segment distance (with `extension`, to the line's Extension); the gap from a point, segment (or Extension) or circle to a circle's outside (with `internal`, inside it), and to or between arcs the same way with the nearest points on each arc's span; two parallel lines `value` apart (both of `b`'s endpoints from `a`'s Extension) |
 | `offset` | point, line | Distance from a point to a line's Extension on a given side (Linked Offsets) |
-| `on` | point, line (`extension?`) / circle / arc / ellipse / elliptical arc | Point lies on the segment (or Extension), circle, arc's span, ellipse, or elliptical arc's span |
+| `on` | point, line (`extension?`) / circle / arc / ellipse / elliptical arc / spline | Point lies on the segment (or Extension), circle, arc's span, ellipse, elliptical arc's span, or spline (between its ends) |
 | `midpoint` | `entities`: [point, line], [line, line] (`extension?`) or [point, arc] | A point is the midpoint of a line; or the midpoint of one line lies on another line (or its Extension); or a point is the middle of an arc's span |
-| `tangent` | line–circle (`extension?`), line–arc, line–ellipse, line–elliptical arc, arc–elliptical arc (at a shared endpoint), circle–circle, circle–arc, arc–arc (`internal?`) | Tangency on the segment and on each arc's span; circles and arcs touch externally, or one inside the other with `internal: true`; arcs sharing an endpoint are tangent at it |
+| `tangent` | line–circle (`extension?`), line–arc, line–ellipse, line–elliptical arc, arc–elliptical arc (at a shared endpoint), circle–circle, circle–arc, arc–arc (`internal?`); a spline with a line, circle, arc, ellipse or spline | Tangency on the segment and on each arc's span; circles and arcs touch externally, or one inside the other with `internal: true`; arcs sharing an endpoint are tangent at it; a spline is touched between its ends, from either side, or at an end it shares |
 | `concentric` | circle/arc, circle/arc | Share a center |
 | `equal` | line–line, circle/arc–circle/arc, or values | Equal length, equal radius, or `a = b` |
 | `radius` | circle or arc | Fixed radius |
@@ -162,7 +163,7 @@ if (result.status === 'converged') {
 }
 ```
 
-The WASM function takes a JSON string and returns a JSON string. The output `primitives` array mirrors the input with the solved values (`x`, `y`, `radius`, arc angles, an ellipse's `radmin`, an elliptical arc's `radmin` and angles), alongside `status`, `conflicting`, `redundant`, `dof`, `fullyConstrained` and `stats`.
+The WASM function takes a JSON string and returns a JSON string. The output `primitives` array mirrors the input with the solved values (`x`, `y`, `radius`, arc angles, an ellipse's `radmin`, an elliptical arc's `radmin` and angles, and each spline's solved `curve`: degree, knots and control points), alongside `status`, `conflicting`, `redundant`, `dof`, `fullyConstrained` and `stats`.
 
 To drag, add constraints marked `temporary: true` that hold the dragged geometry at the cursor, such as `{ type: "x", id: "gx", point: "p", value: 6, temporary: true }`. A point on a line, dragged off it, slides along the line to the closest point. See [USAGE.md](USAGE.md#drags-soft-goals).
 

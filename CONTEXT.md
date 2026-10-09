@@ -45,7 +45,7 @@ _Avoid_: Duplicate, dependent
 ### Geometry
 
 **Entity**:
-A geometric object in a sketch: a Point, Line, Circle, Arc, or Ellipse. Referenced by a string ID.
+A geometric object in a sketch: a Point, Line, Circle, Arc, Ellipse, Elliptical arc or Spline. Referenced by a string ID.
 _Avoid_: Primitive (that's the JSON wire format), geometry, shape, object
 
 **Line**:
@@ -63,6 +63,14 @@ _Avoid_: Circular segment, partial circle
 **Ellipse**:
 A closed ellipse that references two Points, its center and one focus (which sets the direction of its major axis), and owns its minor radius. Its major radius and second focus follow from those. Its axis endpoints are not part of it: they are ordinary Points held at the ends of an axis by constraints.
 _Avoid_: Oval, conic
+
+**Spline**:
+A smooth open curve (a cubic B-spline) shaped by Points, its handles: either *fit points* it passes through or *control points* it is pulled toward; the same curve can be described either way. Like a Line, it owns no values: it moves with its handles, and constraints on the handles shape it.
+_Avoid_: Curve (too general), Bézier, NURBS (no weights)
+
+**Curve parameter**:
+Where along a Spline a constraint's contact point sits (a point `on` it, the touch of a `tangent`). An unknown the solver moves, owned by that constraint, not an Entity: it is never reported Fully constrained and leaves with its constraint.
+_Avoid_: Parameter (that's a named sketch value), t-value
 
 **Fixed**:
 A flag on an entity that stops the solver from changing that entity's *own* values (a Point's coordinates, a Circle's radius, an Arc's radius and start/end angles, an Ellipse's minor radius). It does not reach referenced entities: a fixed Circle whose center Point is free can still move. Reference Geometry (`isReference`) is always Fixed.

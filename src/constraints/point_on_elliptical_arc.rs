@@ -70,7 +70,7 @@ impl Constraint for PointOnEllipticalArcConstraint {
         // x = [px, py, cx, cy, fx, fy, b, α, β]
         let e = EllipseFrame::<9>::new(x, 2, 4, 6);
         let p = V2::point(x, 0);
-        let on = p.sub(e.focus).norm() + p.sub(e.focus2()).norm() - e.major_radius.scale(2.0);
+        let on = e.focal_residual(p);
         r[0] = on.v;
         on.write_row(j, 0);
 

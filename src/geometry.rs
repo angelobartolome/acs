@@ -1,7 +1,9 @@
 //! Sketch geometry: [`Point`]s, and the [`Line`]s, [`Circle`]s, [`Arc`]s,
-//! [`Ellipse`]s and [`EllipticalArc`]s that reference them by ID, held in a
-//! [`GeometrySystem`]. Each entity's own numbers (a point's coordinates, a
-//! radius, angles) are solver variables ([`VarEntity`]) unless `fixed`.
+//! [`Ellipse`]s, [`EllipticalArc`]s and [`Spline`]s that reference them by
+//! ID, held in a [`GeometrySystem`]. Each entity's own numbers (a point's
+//! coordinates, a radius, angles) are solver variables ([`VarEntity`])
+//! unless `fixed`. Constraints that place something on a Spline also own
+//! [`CurveParam`]s, the curve parameters of their contact points.
 
 use crate::var_registry::VarEntity;
 use std::collections::HashMap;
@@ -387,6 +389,90 @@ impl VarEntity for EllipticalArc {
     }
 }
 
+/// A Spline: a clamped [B-spline](https://en.wikipedia.org/wiki/B-spline)
+/// (a cubic) whose handles
+/// are Points. With `interpolated`, the handles are *fit points* the curve
+/// passes through; otherwise they are its *control points*. The curve is
+/// computed from the handles (`crate::spline`), so a Spline owns no
+/// variables: like a Line, it moves with its Points.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Spline {
+    /// Unique ID.
+    pub id: String,
+    /// Handle Point IDs, in order along the curve (at least 2).
+    pub points: Vec<String>,
+    /// Whether the handles are fit points (else control points).
+    pub interpolated: bool,
+    /// The clamped knot vector of a control-point Spline; `None` for
+    /// clamped uniform knots on `[0, 1]`. A fit-point Spline's knots follow
+    /// from its points.
+    pub knots: Option<Vec<f64>>,
+}
+
+impl Spline {
+    /// The entity with these values (IDs for the Points it references).
+    pub fn new(id: String, points: Vec<String>, interpolated: bool, knots: Option<Vec<f64>>) -> Self {
+        Self {
+            id,
+            points,
+            interpolated,
+            knots,
+        }
+    }
+
+    /// Why its points and knots don't make a curve (too few points, knots
+    /// on a fit-point Spline, a knot vector of the wrong length or not
+    /// clamped).
+    pub fn check(&self) -> Result<(), String> {
+        crate::spline::check(self.points.len(), self.interpolated, self.knots.as_deref())
+    }
+
+    /// The handle the curve starts at (its first fit or control point).
+    pub fn start(&self) -> &str {
+        &self.points[0]
+    }
+
+    /// The handle the curve ends at (its last fit or control point).
+    pub fn end(&self) -> &str {
+        &self.points[self.points.len() - 1]
+    }
+}
+
+/// The curve parameter of a contact point on a Spline, owned by the
+/// constraint that places it there (`Var::CurveParam`): a solver variable no
+/// sketch entity has, created by `ConstraintSolver::add_constraint`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurveParam {
+    /// Unique ID (the constraint's choice, such as `"k#0"`).
+    pub id: String,
+    /// The parameter.
+    pub value: f64,
+}
+
+impl VarEntity for CurveParam {
+    fn values(&self) -> Vec<f64> {
+        vec![self.value]
+    }
+
+    fn set_values(&mut self, params: &[f64]) -> Result<(), String> {
+        match params {
+            [v] => {
+                self.value = *v;
+                Ok(())
+            }
+            _ => Err(format!("CurveParam requires exactly 1 value, got {}", params.len())),
+        }
+    }
+
+    fn var_names(&self) -> Vec<String> {
+        vec![format!("{}.t", self.id)]
+    }
+
+    fn is_var_fixed(&self, index: usize) -> bool {
+        index != 0
+    }
+}
+
 /// Every entity of a sketch, by ID.
 #[derive(Debug)]
 pub struct GeometrySystem {
@@ -396,6 +482,8 @@ pub struct GeometrySystem {
     arcs: HashMap<String, Arc>,
     ellipses: HashMap<String, Ellipse>,
     elliptical_arcs: HashMap<String, EllipticalArc>,
+    splines: HashMap<String, Spline>,
+    curve_params: HashMap<String, CurveParam>,
 }
 
 impl Default for GeometrySystem {
@@ -414,6 +502,8 @@ impl GeometrySystem {
             arcs: HashMap::new(),
             ellipses: HashMap::new(),
             elliptical_arcs: HashMap::new(),
+            splines: HashMap::new(),
+            curve_params: HashMap::new(),
         }
     }
 
@@ -549,7 +639,57 @@ impl GeometrySystem {
         &mut self.elliptical_arcs
     }
 
+    /// Adds a spline (replacing one with the same ID) and returns its ID.
+    pub fn add_spline(&mut self, spline: Spline) -> String {
+        let id = spline.id.clone();
+        self.splines.insert(id.clone(), spline);
+        id
+    }
 
+    /// The spline with this ID.
+    pub fn get_spline(&self, id: &str) -> Option<&Spline> {
+        self.splines.get(id)
+    }
 
+    /// All splines, by ID.
+    pub fn get_all_splines(&self) -> &HashMap<String, Spline> {
+        &self.splines
+    }
 
+    /// Adds a curve parameter (replacing one with the same ID).
+    pub fn add_curve_param(&mut self, param: CurveParam) {
+        self.curve_params.insert(param.id.clone(), param);
+    }
+
+    /// Removes the curve parameter with this ID.
+    pub fn remove_curve_param(&mut self, id: &str) {
+        self.curve_params.remove(id);
+    }
+
+    /// The curve parameter with this ID.
+    pub fn get_curve_param(&self, id: &str) -> Option<&CurveParam> {
+        self.curve_params.get(id)
+    }
+
+    /// All curve parameters, by ID.
+    pub fn get_all_curve_params(&self) -> &HashMap<String, CurveParam> {
+        &self.curve_params
+    }
+
+    /// All curve parameters, by ID, to update in place.
+    pub fn get_all_curve_params_mut(&mut self) -> &mut HashMap<String, CurveParam> {
+        &mut self.curve_params
+    }
+
+    /// Whether any entity or curve parameter has this ID.
+    pub fn has_id(&self, id: &str) -> bool {
+        self.points.contains_key(id)
+            || self.lines.contains_key(id)
+            || self.circles.contains_key(id)
+            || self.arcs.contains_key(id)
+            || self.ellipses.contains_key(id)
+            || self.elliptical_arcs.contains_key(id)
+            || self.splines.contains_key(id)
+            || self.curve_params.contains_key(id)
+    }
 }

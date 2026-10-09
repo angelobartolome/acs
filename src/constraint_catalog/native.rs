@@ -21,7 +21,9 @@ use super::{
 };
 use crate::{ConstraintType, Operand};
 
-use FieldKind::{Arc, Axis, Circle, Ellipse, EllipticalArc, Line, Point, Scalar, Value as Val};
+use FieldKind::{
+    Arc, Axis, Circle, Ellipse, EllipticalArc, Line, Point, Scalar, Spline, Value as Val,
+};
 
 type Fields = &'static [(&'static str, FieldKind)];
 
@@ -243,6 +245,9 @@ pub(super) static SPECS: &[S] = &[
         let (center, focus, e) = a.e(0);
         ConstraintType::PointOnEllipticalArc(a.p(0), center, focus, e)
     }),
+    S::new("on", &[("point", Point), ("curve", Spline)], |a| {
+        ConstraintType::PointOnSpline(a.p(0), a.spline(0), a.curve_param(0))
+    }),
     S::new(
         "midpoint",
         &[("entities[0]", Point), ("entities[1]", Line)],
@@ -287,6 +292,22 @@ pub(super) static SPECS: &[S] = &[
         a.tangent_arc_elliptical_arc()
     })
     .check(super::arc_and_elliptical_arc_share_an_endpoint),
+    S::new("tangent", &[("a", Line), ("b", Spline)], |a| {
+        a.tangent_line_spline()
+    }),
+    S::new("tangent", &[("a", Circle), ("b", Spline)], |a| {
+        ConstraintType::TangentCircleSpline(a.center(0), a.c(0), a.spline(0), a.curve_param(0))
+    }),
+    S::new("tangent", &[("a", Arc), ("b", Spline)], |a| {
+        a.tangent_arc_spline()
+    }),
+    S::new("tangent", &[("a", Ellipse), ("b", Spline)], |a| {
+        let (center, focus, e) = a.e(0);
+        ConstraintType::TangentEllipseSpline(center, focus, e, a.spline(0), a.curve_param(0))
+    }),
+    S::new("tangent", &[("a", Spline), ("b", Spline)], |a| {
+        a.tangent_splines()
+    }),
     S::new("tangent", CC, |a| {
         ConstraintType::Tangent(a.center(0), a.c(0), a.center(1), a.c(1))
     })

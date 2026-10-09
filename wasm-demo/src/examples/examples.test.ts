@@ -245,3 +245,53 @@ describe("polygon built like a polygon tool", () => {
     expect(outcome.status).toBe("converged");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Splines: the demo draws the solver's `curve` (de Boor in model/spline.ts).
+// ---------------------------------------------------------------------------
+
+describe("spline example", () => {
+  it("draws a curve through its fit points, the line along its end tangent", async () => {
+    const { splinePoint, sampleSplineCurve } = await import("../core/model/spline");
+    const ents = solveExample("spline");
+    const sp1 = ents.get("sp1");
+    if (sp1 === undefined || sp1.kind !== "spline" || sp1.curve === undefined) {
+      throw new Error("sp1 has no solved curve");
+    }
+    const curve = sp1.curve;
+    const samples = sampleSplineCurve(curve, 2000);
+    for (const id of sp1.points) {
+      const p = xy(ents, id);
+      const d = Math.min(...samples.map((q) => Math.hypot(q.x - p.x, q.y - p.y)));
+      expect(d).toBeLessThan(0.05);
+    }
+    const end = splinePoint(curve, 1);
+    expect(end.x).toBeCloseTo(80, 9);
+    expect(end.y).toBeCloseTo(0, 9);
+    const before = splinePoint(curve, 1 - 1e-6);
+    const q = xy(ents, "q");
+    const cross = (end.x - before.x) * (q.y - end.y) - (end.y - before.y) * (q.x - end.x);
+    const norms = Math.hypot(end.x - before.x, end.y - before.y) * Math.hypot(q.x - end.x, q.y - end.y);
+    expect(Math.abs(cross / norms)).toBeLessThan(1e-4);
+  });
+
+  it("reports its contacts' curve parameters, which the next request sends back", async () => {
+    const { buildSolveRequest } = await import("../core/solver/SolverService");
+    const ex = EXAMPLES.find((e) => e.id === "spline");
+    if (ex === undefined) throw new Error("no spline example");
+    const outcome = service.solve(structuredClone(ex.sketch));
+    // `on` and the circle's tangent own one each; the shared-end tangents none.
+    expect(outcome.curveParams.get("k6")).toHaveLength(1);
+    expect(outcome.curveParams.get("k4")).toHaveLength(1);
+    expect(outcome.curveParams.has("k1")).toBe(false);
+    const constraints = ex.sketch.constraints.map((c) => ({
+      ...c,
+      curveParams: outcome.curveParams.get(c.id) ?? c.curveParams,
+    }));
+    const next = JSON.parse(buildSolveRequest({ entities: outcome.entities, constraints }));
+    const on = next.primitives.find((p: { id: string }) => p.id === "k6");
+    expect(on.curve_params).toEqual(outcome.curveParams.get("k6"));
+    const again = service.solve({ entities: outcome.entities, constraints });
+    expect(again.stats?.iterations).toBe(0);
+  });
+});

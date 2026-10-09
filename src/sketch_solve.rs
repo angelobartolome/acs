@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::{json, Value};
 
-use crate::geometry::{Arc as GeoArc, Circle, Ellipse, EllipticalArc, Line, Point};
+use crate::geometry::{Arc as GeoArc, Circle, Ellipse, EllipticalArc, Line, Point, Spline};
 use crate::constraint_catalog::{self, EllipticalArcPoints, References};
 use crate::{ConstraintSolver, ConstraintType, SolverResult};
 
@@ -17,7 +17,15 @@ fn as_string(v: &Value, key: &str) -> Option<String> {
     as_str(v, key).map(String::from)
 }
 
-const GEOMETRY_TYPES: &[&str] = &["point", "line", "circle", "arc", "ellipse", "elliptical_arc"];
+const GEOMETRY_TYPES: &[&str] = &[
+    "point",
+    "line",
+    "circle",
+    "arc",
+    "ellipse",
+    "elliptical_arc",
+    "spline",
+];
 
 fn is_geometry(t: &str) -> bool {
     GEOMETRY_TYPES.contains(&t)
@@ -96,6 +104,49 @@ fn build_elliptical_arcs(primitives: &[Value]) -> HashMap<String, EllipticalArcP
                 end: as_string(p, "end_id")?,
             };
             Some((as_string(p, "id")?, points))
+        })
+        .collect()
+}
+
+/// A `spline` primitive: `points` (handle Point IDs, at least 2),
+/// `interpolated` (whether they are fit points) and, for control points
+/// only, an optional clamped `knots` vector. Errors name the field.
+fn read_spline(id: &str, p: &Value) -> Result<Spline, String> {
+    let what = format!("spline {id}");
+    let points = p
+        .get("points")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{what}: missing field 'points'"))?
+        .iter()
+        .map(|v| v.as_str().map(String::from))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| format!("{what}: 'points' must be point IDs"))?;
+    let interpolated = p
+        .get("interpolated")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| format!("{what}: missing field 'interpolated'"))?;
+    let knots = match p.get("knots") {
+        None | Some(Value::Null) => None,
+        Some(k) => Some(
+            k.as_array()
+                .and_then(|k| k.iter().map(Value::as_f64).collect::<Option<Vec<_>>>())
+                .ok_or_else(|| format!("{what}: 'knots' must be an array of numbers"))?,
+        ),
+    };
+    let spline = Spline::new(id.to_string(), points, interpolated, knots);
+    spline.check().map_err(|e| format!("{what}: {e}"))?;
+    Ok(spline)
+}
+
+/// Spline IDs mapped to the Splines that read (others are rejected when
+/// registered).
+fn build_splines(primitives: &[Value]) -> HashMap<String, Spline> {
+    primitives
+        .iter()
+        .filter(|p| as_str(p, "type") == Some("spline"))
+        .filter_map(|p| {
+            let id = as_str(p, "id")?;
+            Some((id.to_string(), read_spline(id, p).ok()?))
         })
         .collect()
 }
@@ -184,6 +235,9 @@ fn register_geometry(cs: &mut ConstraintSolver, t: &str, id: &str, p: &Value) ->
                 fixed(p),
             ));
         }
+        "spline" => {
+            cs.add_spline(read_spline(&id, p)?);
+        }
         _ => unreachable!("not a geometry type: {t}"),
     }
     Ok(())
@@ -231,6 +285,19 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
             obj.insert("radmin".to_string(), json!(e.radmin));
             obj.insert("start_angle".to_string(), json!(e.start_angle));
             obj.insert("end_angle".to_string(), json!(e.end_angle));
+        } else if t == "spline"
+            && let Some(curve) = cs.spline_curve(id)
+            && let Some(obj) = p.as_object_mut()
+        {
+            // Output only (ignored in a request): the solved curve.
+            obj.insert(
+                "curve".to_string(),
+                json!({
+                    "degree": curve.degree,
+                    "knots": curve.knots,
+                    "control_points": curve.control_points,
+                }),
+            );
         }
     }
 }
@@ -242,7 +309,9 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
 /// both of its endpoints (`p1_id`, `p2_id`) are fully constrained. An ellipse's
 /// shape and place also depend on its center and focus Points, so it is reported
 /// only when its `radmin` and both of those Points are; an elliptical arc only
-/// when its `radmin`, angles, center, focus and endpoints are.
+/// when its `radmin`, angles, center, focus and endpoints are. A Spline
+/// owns no parameters either: it is reported when all its handle Points
+/// are.
 fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<String> {
     let mut constrained: std::collections::BTreeSet<String> =
         cs.fully_constrained_entity_ids().into_iter().collect();
@@ -251,6 +320,12 @@ fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<Str
         let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
             continue;
         };
+        if t == "spline"
+            && let (Some(id), Some(points)) = (as_string(p, "id"), p.get("points").and_then(Value::as_array))
+            && points.iter().all(|h| h.as_str().is_some_and(|h| constrained.contains(h)))
+        {
+            constrained.insert(id);
+        }
         let (keys, own_vars): (&[&str], bool) = match t {
             "line" => (&["p1_id", "p2_id"], false),
             "ellipse" => (&["c_id", "focus1_id"], true),
@@ -387,6 +462,7 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
         arc_endpoints: build_arc_endpoints(primitives),
         ellipses: build_ellipses(primitives),
         elliptical_arcs: build_elliptical_arcs(primitives),
+        splines: build_splines(primitives),
     };
 
     for &(t, id, p) in typed.iter().filter(|(t, ..)| is_geometry(t)) {
@@ -395,21 +471,24 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
     check_geometry_references(&cs, &typed)?;
     // JSON id of each constraint, by `ConstraintSolver` index.
     let mut constraint_ids: Vec<&str> = Vec::new();
+    let mut constraint_prims: Vec<&Value> = Vec::new();
     let mut constraints: Vec<(ConstraintType, bool)> = Vec::new();
     for &(t, id, p) in typed.iter().filter(|(t, ..)| !is_geometry(t) && *t != PARAM) {
         let temporary = p.get("temporary").and_then(Value::as_bool).unwrap_or(false);
         let ct = constraint_catalog::parse(t, p, &refs).map_err(|e| constraint_error(id, e))?;
         constraints.push((ct, temporary));
         constraint_ids.push(id);
+        constraint_prims.push(p);
     }
     constraint_catalog::tangent_at_held_endpoints(&mut constraints);
-    for ((ct, temporary), id) in constraints.into_iter().zip(&constraint_ids) {
+    for (index, ((ct, temporary), id)) in constraints.into_iter().zip(&constraint_ids).enumerate() {
         if temporary {
             cs.add_temporary_constraint(ct)
         } else {
             cs.add_constraint(ct)
         }
         .map_err(|e| constraint_error(id, e))?;
+        resume_curve_params(&mut cs, index, constraint_prims[index]);
     }
 
     let (converged, iterations, initial_error, final_error) = match cs.solve()? {
@@ -427,6 +506,7 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
 
     let mut out = primitives.clone();
     apply_solution_to_primitives(&mut out, &cs);
+    report_curve_params(&mut out, &cs, &constraint_ids);
 
     // Zero-DOF analysis is only meaningful at a solved configuration.
     let fully_constrained = if converged {
@@ -456,11 +536,66 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
     .to_string())
 }
 
+/// Starts constraint `index`'s curve parameters (a contact on a Spline)
+/// from its primitive's `curve_params`, the values a previous response
+/// reported, when it has one number per parameter; otherwise they start at
+/// the nearest contact. Carrying them from one request to the next (a drag's
+/// frames) keeps each contact where it was rather than letting it jump to
+/// another part of the curve that is about as near.
+fn resume_curve_params(cs: &mut ConstraintSolver, index: usize, p: &Value) {
+    let ids = cs.constraint_curve_params(index);
+    let Some(values) = p
+        .get("curve_params")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().map(Value::as_f64).collect::<Option<Vec<f64>>>())
+    else {
+        return;
+    };
+    if values.len() != ids.len() {
+        return;
+    }
+    for (id, v) in ids.iter().zip(values) {
+        // The IDs came from the solver: always known.
+        let _ = cs.set_curve_param(id, v);
+    }
+}
+
+/// Writes each constraint's solved curve parameters into its primitive as
+/// `curve_params` (constraints owning none are left alone).
+fn report_curve_params(out: &mut [Value], cs: &ConstraintSolver, constraint_ids: &[&str]) {
+    for (index, id) in constraint_ids.iter().enumerate() {
+        let values: Vec<f64> = cs
+            .constraint_curve_params(index)
+            .iter()
+            .filter_map(|p| cs.curve_param(p))
+            .collect();
+        if values.is_empty() {
+            continue;
+        }
+        if let Some(obj) = out
+            .iter_mut()
+            .find(|p| p.get("id").and_then(Value::as_str) == Some(id))
+            .and_then(Value::as_object_mut)
+        {
+            obj.insert("curve_params".to_string(), json!(values));
+        }
+    }
+}
+
 /// Lines' endpoints, circles' centers, arcs' centers and endpoints,
-/// ellipses' centers and foci and elliptical arcs' centers, foci and
-/// endpoints must be Points.
+/// ellipses' centers and foci, elliptical arcs' centers, foci and
+/// endpoints and splines' handles must be Points.
 fn check_geometry_references(cs: &ConstraintSolver, typed: &[(&str, &str, &Value)]) -> Result<(), String> {
     for &(t, id, p) in typed {
+        if t == "spline" {
+            for target in p["points"].as_array().into_iter().flatten() {
+                let target = target.as_str().unwrap_or_default();
+                if cs.get_point(target.to_string()).is_none() {
+                    return Err(format!("{t} {id}: '{target}' is not a point"));
+                }
+            }
+            continue;
+        }
         let keys: &[&str] = match t {
             "line" => &["p1_id", "p2_id"],
             "circle" => &["c_id"],
