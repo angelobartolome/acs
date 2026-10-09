@@ -156,7 +156,7 @@ describe("ConstraintRegistry", () => {
 
   it("offers spline constraints for a spline and round-trips them", () => {
     const S1: SketchEntity = { kind: "spline", id: "s1", points: ["p3", "p4", "p5"], interpolated: true };
-    const S2: SketchEntity = { kind: "spline", id: "s2", points: ["p5", "p6"], interpolated: false };
+    const S2: SketchEntity = { kind: "spline", id: "s2", points: ["p5", "p6", "p7", "p8"], interpolated: false };
     const C1: SketchEntity = { kind: "circle", id: "c1", center: "p7", radius: 1, fixed: false };
     expect(applicableConstraints([P1, S1]).map((d) => d.key)).toContain("on_spline");
     expect(applicableConstraints([L1, S1]).map((d) => d.key)).toContain("tangent_line_spline");

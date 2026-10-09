@@ -261,6 +261,18 @@ fn malformed_splines_are_rejected() {
     let one = [pt("a", 0.0, 0.0), json!({ "id": "s", "type": "spline", "points": ["a"], "interpolated": true })];
     assert!(reject(&one).contains("at least 2 points"));
 
+    let three_controls = [
+        pt("a", 0.0, 0.0),
+        pt("b", 1.0, 1.0),
+        pt("c", 2.0, 0.0),
+        json!({ "id": "s", "type": "spline", "points": ["a", "b", "c"], "interpolated": false }),
+    ];
+    assert!(reject(&three_controls).contains("at least 4 control points"));
+    // Three fit points are fine: five control points.
+    let mut three_fits = three_controls.to_vec();
+    three_fits[3]["interpolated"] = json!(true);
+    assert_eq!(solve(&three_fits)["status"], "converged");
+
     let mut knots_on_fit = spline_prims(true, false);
     knots_on_fit[5]["knots"] = json!([0, 0, 0, 0, 0.5, 1, 1, 1, 1]);
     assert!(reject(&knots_on_fit).contains("control-point spline"));

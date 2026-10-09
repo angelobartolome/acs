@@ -856,13 +856,13 @@ fn spline_jacobians_match_finite_differences() {
         cases.push(ConstraintType::TangentCircleSpline(s("c1_center"), s("c1"), short(n), s("#0")));
     }
     // Control points with a given (non-uniform, clamped) knot vector, and
-    // degree 2 (three control points).
+    // the fewest a control-point spline takes (four: one span).
     let knotted = Spline::new(s("sp1"), SPLINES[0].1.iter().map(|h| h.to_string()).collect(), false,
         Some(vec![0.0, 0.0, 0.0, 0.0, 0.3, 2.0, 2.0, 2.0, 2.0]));
     cases.push(ConstraintType::PointOnSpline(s("p0"), knotted.clone(), s("#0")));
     cases.push(ConstraintType::TangentLineSpline(s("p0"), s("p1"), knotted, s("#0")));
-    let quadratic = Spline::new(s("sp1"), SPLINES[0].1[..3].iter().map(|h| h.to_string()).collect(), false, None);
-    cases.push(ConstraintType::TangentEllipseSpline(s("e1_center"), s("e1_focus"), s("e1"), quadratic, s("#0")));
+    let bezier = Spline::new(s("sp1"), SPLINES[0].1[..4].iter().map(|h| h.to_string()).collect(), false, None);
+    cases.push(ConstraintType::TangentEllipseSpline(s("e1_center"), s("e1_focus"), s("e1"), bezier, s("#0")));
 
     let mut failures = Vec::new();
     for ct in cases {

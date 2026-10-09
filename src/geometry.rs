@@ -390,7 +390,7 @@ impl VarEntity for EllipticalArc {
 }
 
 /// A Spline: a clamped [B-spline](https://en.wikipedia.org/wiki/B-spline)
-/// (a cubic; lower degree with fewer than 4 control points) whose handles
+/// (a cubic) whose handles
 /// are Points. With `interpolated`, the handles are *fit points* the curve
 /// passes through; otherwise they are its *control points*. The curve is
 /// computed from the handles (`crate::spline`), so a Spline owns no

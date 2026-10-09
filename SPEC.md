@@ -836,9 +836,11 @@ handles, so a free spline has `2n` degrees of freedom for `n` handles and
 every point constraint (`coincident`, `fixed`, drags, …) works on them
 unchanged.
 
-- **Control points** (`interpolated: false`): degree `p = min(3, n − 1)`,
-  knots as given (validated: `n + p + 1` of them, non-decreasing, clamped)
-  or clamped uniform on `[0, 1]`. `∂C/∂Pᵢ = Nᵢ(t)`.
+- **Control points** (`interpolated: false`, `n ≥ 4`): a cubic (`p = 3`),
+  knots as given (validated: `n + 4` of them, non-decreasing, clamped) or
+  clamped uniform on `[0, 1]`. `∂C/∂Pᵢ = Nᵢ(t)`. Fewer than 4 control points
+  are rejected rather than lowering the degree: a Spline is always a cubic
+  (a fit-point Spline has `n + 2 ≥ 4`).
 - **Fit points** (`interpolated: true`, `n ≥ 2`): a cubic through
   `Q₀ … Qₙ₋₁` at centripetal parameters `u₀ = 0`, `uᵢ = Σ_{k<i} Δₖ / ΣΔ`,
   `uₙ₋₁ = 1`, `Δₖ = (|Qₖ₊₁ − Qₖ|² + ε²)^¼` (ε = 1e-12: coincident fit points

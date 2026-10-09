@@ -2,9 +2,8 @@
 //! [B-spline](https://en.wikipedia.org/wiki/B-spline) built from its handle
 //! Points, either as its control points or as fit points it passes through.
 //!
-//! - **Control points**: degree `min(3, n − 1)` for `n` points, clamped
-//!   uniform knots on `[0, 1]` unless the Spline gives a (clamped) knot
-//!   vector.
+//! - **Control points** (`n ≥ 4`): a cubic, clamped uniform knots on
+//!   `[0, 1]` unless the Spline gives a (clamped) knot vector.
 //! - **Fit points** (`interpolated`): a cubic through the `n ≥ 2` points, at
 //!   [centripetal](https://en.wikipedia.org/wiki/Centripetal_Catmull%E2%80%93Rom_spline)
 //!   parameters `u₀ = 0 < … < uₙ₋₁ = 1` (steps `√|Qᵢ₊₁ − Qᵢ|`, normalized),
@@ -251,7 +250,7 @@ impl<S: Scalar> P2<S> {
 /// A clamped B-spline over [`Scalar`]s.
 #[derive(Debug, Clone)]
 pub struct Curve<S> {
-    /// Its degree (3, or less for fewer than 4 control points).
+    /// Its degree, 3.
     pub degree: usize,
     /// Knot vector, `control.len() + degree + 1` long, clamped.
     pub knots: Vec<S>,
@@ -264,13 +263,20 @@ pub fn check(handles: usize, interpolated: bool, knots: Option<&[f64]>) -> Resul
     if handles < 2 {
         return Err(format!("a spline needs at least 2 points, got {handles}"));
     }
+    // A cubic has at least 4 control points; a fit-point spline has n + 2.
+    if !interpolated && handles <= DEGREE {
+        return Err(format!(
+            "a control-point spline needs at least {} control points (it is a cubic), got {handles}",
+            DEGREE + 1
+        ));
+    }
     let Some(knots) = knots else {
         return Ok(());
     };
     if interpolated {
         return Err("'knots' applies only to a control-point spline (interpolated: false)".into());
     }
-    let p = DEGREE.min(handles - 1);
+    let p = DEGREE;
     if knots.len() != handles + p + 1 {
         return Err(format!(
             "a degree-{p} spline with {handles} control points needs {} knots, got {}",
@@ -303,7 +309,7 @@ impl<S: Scalar> Curve<S> {
             return Self::interpolate(&handles);
         }
         let n = handles.len();
-        let degree = DEGREE.min(n - 1);
+        let degree = DEGREE;
         let knots = match knots {
             Some(k) => k.iter().map(|&k| S::cst(k)).collect(),
             None => {
