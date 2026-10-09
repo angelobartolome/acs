@@ -226,6 +226,31 @@ impl ConstraintSolver {
         self.geometry.get_elliptical_arc(&id)
     }
 
+    /// IDs of the curve parameters constraint `index` owns, in its order
+    /// (none for a constraint that owns none, or an index past the last).
+    pub fn constraint_curve_params(&self, index: usize) -> Vec<String> {
+        self.constraints
+            .get(index)
+            .map(|c| c.curve_params().into_iter().map(String::from).collect())
+            .unwrap_or_default()
+    }
+
+    /// The current value of the curve parameter with this ID.
+    pub fn curve_param(&self, id: &str) -> Option<f64> {
+        self.geometry.get_curve_param(id).map(|p| p.value)
+    }
+
+    /// Sets a curve parameter's value, such as the one a previous solve
+    /// reported, to start the next solve from that contact instead of the
+    /// nearest one. Fails for an unknown ID.
+    pub fn set_curve_param(&mut self, id: &str, value: f64) -> Result<(), String> {
+        if self.geometry.get_curve_param(id).is_none() {
+            return Err(format!("'{id}' is not a curve parameter"));
+        }
+        self.geometry.add_curve_param(CurveParam { id: id.to_string(), value });
+        Ok(())
+    }
+
     /// The spline with this ID.
     pub fn get_spline(&self, id: String) -> Option<&Spline> {
         self.geometry.get_spline(&id)

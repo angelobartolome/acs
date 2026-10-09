@@ -471,21 +471,24 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
     check_geometry_references(&cs, &typed)?;
     // JSON id of each constraint, by `ConstraintSolver` index.
     let mut constraint_ids: Vec<&str> = Vec::new();
+    let mut constraint_prims: Vec<&Value> = Vec::new();
     let mut constraints: Vec<(ConstraintType, bool)> = Vec::new();
     for &(t, id, p) in typed.iter().filter(|(t, ..)| !is_geometry(t) && *t != PARAM) {
         let temporary = p.get("temporary").and_then(Value::as_bool).unwrap_or(false);
         let ct = constraint_catalog::parse(t, p, &refs).map_err(|e| constraint_error(id, e))?;
         constraints.push((ct, temporary));
         constraint_ids.push(id);
+        constraint_prims.push(p);
     }
     constraint_catalog::tangent_at_held_endpoints(&mut constraints);
-    for ((ct, temporary), id) in constraints.into_iter().zip(&constraint_ids) {
+    for (index, ((ct, temporary), id)) in constraints.into_iter().zip(&constraint_ids).enumerate() {
         if temporary {
             cs.add_temporary_constraint(ct)
         } else {
             cs.add_constraint(ct)
         }
         .map_err(|e| constraint_error(id, e))?;
+        resume_curve_params(&mut cs, index, constraint_prims[index]);
     }
 
     let (converged, iterations, initial_error, final_error) = match cs.solve()? {
@@ -503,6 +506,7 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
 
     let mut out = primitives.clone();
     apply_solution_to_primitives(&mut out, &cs);
+    report_curve_params(&mut out, &cs, &constraint_ids);
 
     // Zero-DOF analysis is only meaningful at a solved configuration.
     let fully_constrained = if converged {
@@ -530,6 +534,52 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
         },
     })
     .to_string())
+}
+
+/// Starts constraint `index`'s curve parameters (a contact on a Spline)
+/// from its primitive's `curve_params`, the values a previous response
+/// reported, when it has one number per parameter; otherwise they start at
+/// the nearest contact. Carrying them from one request to the next (a drag's
+/// frames) keeps each contact where it was rather than letting it jump to
+/// another part of the curve that is about as near.
+fn resume_curve_params(cs: &mut ConstraintSolver, index: usize, p: &Value) {
+    let ids = cs.constraint_curve_params(index);
+    let Some(values) = p
+        .get("curve_params")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().map(Value::as_f64).collect::<Option<Vec<f64>>>())
+    else {
+        return;
+    };
+    if values.len() != ids.len() {
+        return;
+    }
+    for (id, v) in ids.iter().zip(values) {
+        // The IDs came from the solver: always known.
+        let _ = cs.set_curve_param(id, v);
+    }
+}
+
+/// Writes each constraint's solved curve parameters into its primitive as
+/// `curve_params` (constraints owning none are left alone).
+fn report_curve_params(out: &mut [Value], cs: &ConstraintSolver, constraint_ids: &[&str]) {
+    for (index, id) in constraint_ids.iter().enumerate() {
+        let values: Vec<f64> = cs
+            .constraint_curve_params(index)
+            .iter()
+            .filter_map(|p| cs.curve_param(p))
+            .collect();
+        if values.is_empty() {
+            continue;
+        }
+        if let Some(obj) = out
+            .iter_mut()
+            .find(|p| p.get("id").and_then(Value::as_str) == Some(id))
+            .and_then(Value::as_object_mut)
+        {
+            obj.insert("curve_params".to_string(), json!(values));
+        }
+    }
 }
 
 /// Lines' endpoints, circles' centers, arcs' centers and endpoints,

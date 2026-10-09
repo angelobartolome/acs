@@ -274,4 +274,24 @@ describe("spline example", () => {
     const norms = Math.hypot(end.x - before.x, end.y - before.y) * Math.hypot(q.x - end.x, q.y - end.y);
     expect(Math.abs(cross / norms)).toBeLessThan(1e-4);
   });
+
+  it("reports its contacts' curve parameters, which the next request sends back", async () => {
+    const { buildSolveRequest } = await import("../core/solver/SolverService");
+    const ex = EXAMPLES.find((e) => e.id === "spline");
+    if (ex === undefined) throw new Error("no spline example");
+    const outcome = service.solve(structuredClone(ex.sketch));
+    // `on` and the circle's tangent own one each; the shared-end tangents none.
+    expect(outcome.curveParams.get("k6")).toHaveLength(1);
+    expect(outcome.curveParams.get("k4")).toHaveLength(1);
+    expect(outcome.curveParams.has("k1")).toBe(false);
+    const constraints = ex.sketch.constraints.map((c) => ({
+      ...c,
+      curveParams: outcome.curveParams.get(c.id) ?? c.curveParams,
+    }));
+    const next = JSON.parse(buildSolveRequest({ entities: outcome.entities, constraints }));
+    const on = next.primitives.find((p: { id: string }) => p.id === "k6");
+    expect(on.curve_params).toEqual(outcome.curveParams.get("k6"));
+    const again = service.solve({ entities: outcome.entities, constraints });
+    expect(again.stats?.iterations).toBe(0);
+  });
 });

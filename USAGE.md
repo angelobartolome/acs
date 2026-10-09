@@ -184,6 +184,8 @@ With `l` running along y = 0, `p` slides along the line to (6, 0), the closest i
 
 Each `spline` primitive comes back with an extra field, `curve`: `{ "degree", "knots", "control_points": [[x, y], …] }`, its solved B-spline (for a fit-point spline, the control points and knots it was computed with). It is output only: a request ignores it, so a response can be sent back as the next request.
 
+Each `on` or `tangent` against a spline comes back with `curve_params`: where its contact sits along the curve (one number per spline it touches, `t` in the curve's knot range). Send it back with the constraint in the next request (a drag's next frame does, if it sends the last response's primitives) and the solve starts the contact there; without it, or with the wrong number of values, the contact starts at the nearest point of the curve, which can be on another part of the curve that is about as near.
+
 A failed solve is a normal response, not an error.
 
 ### Rejected requests

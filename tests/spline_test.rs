@@ -608,3 +608,53 @@ fn tangents_solve_from_poor_starts() {
         assert!(resp["stats"]["iterations"].as_u64().unwrap() <= 30, "{name}: {}", resp["stats"]);
     }
 }
+
+/// A U through four pinned fit points, and a free point `p` held on it,
+/// nearer the left arm.
+fn u_with_point_on(curve_params: Option<Value>) -> Vec<Value> {
+    let mut prims = vec![
+        fixed("u0", -2.0, 3.0),
+        fixed("u1", -1.0, 0.0),
+        fixed("u2", 1.0, 0.0),
+        fixed("u3", 2.0, 3.0),
+        json!({ "id": "u", "type": "spline", "points": ["u0", "u1", "u2", "u3"], "interpolated": true }),
+        pt("p", -0.9, 2.0),
+    ];
+    let mut on = json!({ "id": "on", "type": "on", "point": "p", "curve": "u" });
+    if let Some(c) = curve_params {
+        on["curve_params"] = c;
+    }
+    prims.push(on);
+    prims
+}
+
+#[test]
+fn the_response_reports_each_contacts_curve_parameter() {
+    let resp = solve(&u_with_point_on(None));
+    assert_eq!(resp["status"], "converged");
+    let t = prim(&resp, "on")["curve_params"].as_array().unwrap();
+    assert_eq!(t.len(), 1);
+    let t = t[0].as_f64().unwrap();
+    // On the left arm, at p.
+    assert!(t < 0.5, "{t}");
+    let q = curve(&resp, "u").point(t);
+    let p = xy(&resp, "p");
+    assert!((q[0] - p[0]).hypot(q[1] - p[1]) < 1e-9);
+    // Constraints without a contact get none.
+    assert!(prim(&resp, "u").get("curve_params").is_none());
+}
+
+#[test]
+fn a_given_curve_parameter_keeps_the_contact_where_it_was() {
+    // Nearest, p lands on the left arm; seeded on the right arm (as a drag's
+    // previous frame would report it), it stays there.
+    let nearest = solve(&u_with_point_on(None));
+    assert!(xy(&nearest, "p")[0] < 0.0);
+    let resumed = solve(&u_with_point_on(Some(json!([0.85]))));
+    assert_eq!(resumed["status"], "converged");
+    assert!(xy(&resumed, "p")[0] > 0.0, "{resumed}");
+    assert!(prim(&resumed, "on")["curve_params"][0].as_f64().unwrap() > 0.5);
+    // A list of the wrong length is ignored: the nearest contact again.
+    let ignored = solve(&u_with_point_on(Some(json!([0.85, 0.2]))));
+    assert_eq!(xy(&ignored, "p"), xy(&nearest, "p"));
+}

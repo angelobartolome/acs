@@ -572,6 +572,13 @@ export const sketchStore = createStore<SketchState>()((set, get) => ({
       // feed solved positions back only when converged — never silently
       // apply non-converged results
       entities: outcome.ok ? outcome.entities : s.entities,
+      // keep spline contacts where they were for the next solve (a drag)
+      constraints: outcome.ok
+        ? s.constraints.map((c) => {
+            const curveParams = outcome.curveParams.get(c.id);
+            return curveParams === undefined ? c : { ...c, curveParams };
+          })
+        : s.constraints,
     }));
   },
 

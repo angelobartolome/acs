@@ -1397,6 +1397,7 @@ export function constraintToPrimitive(c: ConstraintInstance): JsonPrimitive {
   for (const p of def.scalarParams ?? []) {
     prim[p.key] = c.params[p.key] ?? 0;
   }
+  if (c.curveParams !== undefined) prim.curve_params = c.curveParams;
   return prim;
 }
 

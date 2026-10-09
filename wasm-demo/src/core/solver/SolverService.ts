@@ -51,6 +51,8 @@ export interface SolveOutcome {
   dof: number | null;
   /** IDs of entities that are fully constrained (degrees of freedom = 0) */
   fullyConstrainedIds: string[];
+  /** each spline contact's solved curve parameters, by constraint id */
+  curveParams: Map<string, number[]>;
   error: string | null;
   stats: SolveStats | null;
   durationMs: number;
@@ -400,6 +402,20 @@ export function applySolvedPrimitives(
   });
 }
 
+/** The `curve_params` the response reports, by constraint id. */
+function solvedCurveParams(solvedPrims: readonly unknown[]): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  for (const raw of solvedPrims) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const o = raw as Record<string, unknown>;
+    const id = asString(o.id);
+    if (id !== null && Array.isArray(o.curve_params)) {
+      out.set(id, o.curve_params.filter((v): v is number => typeof v === "number"));
+    }
+  }
+  return out;
+}
+
 function invalidOutcome(
   inputEntities: readonly SketchEntity[],
   error: string,
@@ -416,6 +432,7 @@ function invalidOutcome(
     rejectedConstraintId: null,
     dof: null,
     fullyConstrainedIds: [],
+    curveParams: new Map(),
     error,
     stats: null,
     durationMs,
@@ -491,6 +508,7 @@ export function parseSolveResponse(
     dof: typeof o.dof === "number" ? o.dof : null,
     // Only meaningful on a converged solve; the solver returns [] otherwise.
     fullyConstrainedIds: ok ? stringArray(o.fullyConstrained) : [],
+    curveParams: ok ? solvedCurveParams(solvedPrims) : new Map(),
     error,
     stats: parseStats(o.stats),
     durationMs,

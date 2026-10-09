@@ -879,7 +879,10 @@ parameter** (`Var::CurveParam`, a `CurveParam` entity), owned by the constraint
 that places the contact, the way an Arc holds its angles (and as GCS holds
 a point's B-spline parameter). `ConstraintSolver::add_constraint` creates it
 under an ID the constraint names (the catalog uses `"<constraint id>#k"`;
-an ID an entity already has is rejected) and starts it at the nearest
+an ID an entity already has is rejected). The JSON response reports each
+constraint's parameters as `curve_params`, and a request that sends them
+back starts there (`ConstraintSolver::set_curve_param`), so a drag's
+frames keep each contact where it was. Otherwise it starts at the nearest
 contact: for `on`, the point's closest point on the curve (sampling plus
 Newton); for `tangent`, the best of a sampling, refined by Gauss–Newton on
 the constraint's own rows over its parameters alone, so a sketch that
