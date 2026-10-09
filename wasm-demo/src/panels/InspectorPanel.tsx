@@ -1,4 +1,4 @@
-import { isArc, isCircle, isEllipticalArc, isLine, isPoint } from "../core/model/types";
+import { isArc, isCircle, isEllipticalArc, isLine, isPoint, isSpline } from "../core/model/types";
 import { useSketchStore } from "../hooks/useSketchStore";
 import { NumberField } from "./NumberField";
 
@@ -46,7 +46,7 @@ export function InspectorPanel() {
       <div className="flex items-center gap-2 text-xs">
         <span className="font-medium text-slate-200">{e.kind}</span>
         <span className="text-slate-500">{e.id}</span>
-        {!isLine(e) && (
+        {!isLine(e) && !isSpline(e) && (
           <label className="ml-auto flex items-center gap-1 text-slate-300">
             <input
               type="checkbox"
@@ -116,6 +116,13 @@ export function InspectorPanel() {
             center: {e.center}, start: {e.start}, end: {e.end}
           </div>
         </>
+      )}
+      {isSpline(e) && (
+        <div className="text-xs text-slate-500">
+          {e.interpolated ? "fit points" : "control points"}: {e.points.join(", ")}
+          {e.curve !== undefined &&
+            ` (degree ${e.curve.degree}, ${e.curve.controlPoints.length} control points)`}
+        </div>
       )}
       {isEllipticalArc(e) && (
         <>

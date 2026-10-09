@@ -10,7 +10,8 @@
 //! kinds, and how to build an internal [`ConstraintType`] from them. Field
 //! resolution is shared: a Line field expands to its two endpoint Points, a
 //! Circle or Arc field also resolves its center Point and an Ellipse field
-//! its center and focus Points; a Scalar field takes
+//! its center and focus Points and a Spline field its handle Points; a
+//! Scalar field takes
 //! a number or a Parameter id; a Value field also takes a property reference,
 //! which becomes a solver variable. The JSON API, the catalog returned by
 //! [`catalog_json`] and the Jacobian test all read this table, so
@@ -23,7 +24,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 
-use crate::{ArcEnd, ConstraintType, EllipseAxis, Operand};
+use crate::{ArcEnd, ConstraintType, EllipseAxis, Operand, Spline, SplineAt};
 
 pub mod native;
 
@@ -107,10 +108,38 @@ pub fn field_value<'v>(c: &'v Value, name: &str) -> Option<&'v Value> {
 /// Line's first endpoint is used. Likewise a Line–ellipse or Line–elliptical
 /// arc tangency whose endpoint a real `on` holds on that same ellipse or
 /// elliptical arc becomes `TangentLineEllipseAtPoint` (the Line along the
-/// ellipse's tangent at that endpoint). `constraints` pairs each constraint
+/// ellipse's tangent at that endpoint). And a Line–Spline tangency whose
+/// endpoint a real `on` holds on that same Spline becomes
+/// `TangentLineSplineAtPoint` at that `on`'s curve parameter (the Line along
+/// the curve's tangent there). `constraints` pairs each constraint
 /// with whether it is temporary; temporaries neither trigger nor get the
 /// rewrite.
 pub fn tangent_at_held_endpoints(constraints: &mut [(ConstraintType, bool)]) {
+    let on_spline: HashMap<(String, String), String> = constraints
+        .iter()
+        .filter(|(_, temporary)| !temporary)
+        .filter_map(|(ct, _)| match ct {
+            ConstraintType::PointOnSpline(p, s, t) => Some(((p.clone(), s.id.clone()), t.clone())),
+            _ => None,
+        })
+        .collect();
+    for (ct, temporary) in constraints.iter_mut() {
+        if *temporary {
+            continue;
+        }
+        let ConstraintType::TangentLineSpline(a, b, spline, _) = &*ct else {
+            continue;
+        };
+        let held = |p: &String| on_spline.get(&(p.clone(), spline.id.clone())).cloned();
+        let (p, other, t) = if let Some(t) = held(a) {
+            (a, b, t)
+        } else if let Some(t) = held(b) {
+            (b, a, t)
+        } else {
+            continue;
+        };
+        *ct = ConstraintType::TangentLineSplineAtPoint(p.clone(), other.clone(), spline.clone(), SplineAt::Param(t));
+    }
     let held: std::collections::HashSet<(String, String)> = constraints
         .iter()
         .filter(|(_, temporary)| !temporary)
@@ -181,6 +210,8 @@ pub enum FieldKind {
     /// An EllipticalArc; resolves like an Ellipse (center and focus Points),
     /// plus its start and end Points.
     EllipticalArc,
+    /// A Spline; resolves its handle Points.
+    Spline,
     /// One of an Ellipse's axes: the string `major` or `minor`.
     Axis,
     /// A constant: a number, a numeric string or a Parameter id.
@@ -205,6 +236,7 @@ impl FieldKind {
             FieldKind::Arc => "arc",
             FieldKind::Ellipse => "ellipse",
             FieldKind::EllipticalArc => "elliptical_arc",
+            FieldKind::Spline => "spline",
             FieldKind::Axis => "axis",
             FieldKind::Scalar => "scalar",
             FieldKind::Value => "value",
@@ -240,6 +272,11 @@ pub struct Args {
     pub elliptical_arc_ends: Vec<(String, String)>,
     /// Each Axis field, in field order.
     pub axes: Vec<EllipseAxis>,
+    /// Each Spline field, in field order.
+    pub splines: Vec<Spline>,
+    /// The constraint's JSON `id`: curve parameters it owns are named
+    /// after it (`"<id>#0"`, `"<id>#1"`).
+    pub id: String,
 }
 
 /// An Ellipse field resolved: the ellipse and its center and focus Points.
@@ -319,6 +356,65 @@ impl Args {
     fn axis(&self, i: usize) -> EllipseAxis {
         self.axes[i]
     }
+    fn spline(&self, i: usize) -> Spline {
+        self.splines[i].clone()
+    }
+    /// The ID of curve parameter `k` the constraint owns.
+    fn param(&self, k: usize) -> String {
+        format!("{}#{k}", self.id)
+    }
+    /// Which end of Spline field `i` the Point `p` is, if it is its first or
+    /// last handle (the curve starts and ends there).
+    fn spline_end(&self, i: usize, p: &str) -> Option<SplineAt> {
+        let s = &self.splines[i];
+        if p == s.start() {
+            Some(SplineAt::Start)
+        } else if p == s.end() {
+            Some(SplineAt::End)
+        } else {
+            None
+        }
+    }
+    /// The Line (points 0 and 1) tangent to Spline field 0: along its
+    /// tangent at an end the Line shares (`TangentLineSplineAtPoint`), as
+    /// `tangent_line_arc`; otherwise touching the segment and the curve
+    /// (`TangentLineSpline`).
+    fn tangent_line_spline(&self) -> ConstraintType {
+        let (a, b, s) = (self.p(0), self.p(1), self.spline(0));
+        if let Some(at) = self.spline_end(0, &a) {
+            ConstraintType::TangentLineSplineAtPoint(a, b, s, at)
+        } else if let Some(at) = self.spline_end(0, &b) {
+            ConstraintType::TangentLineSplineAtPoint(b, a, s, at)
+        } else {
+            ConstraintType::TangentLineSpline(a, b, s, self.param(0))
+        }
+    }
+    /// Arc field 0 tangent to Spline field 0: at an endpoint they share
+    /// (`TangentArcSplineAtPoint`), else touching anywhere on the arc's span
+    /// (`TangentArcSpline`).
+    fn tangent_arc_spline(&self) -> ConstraintType {
+        let s = self.spline(0);
+        match [self.arc_start(0), self.arc_end(0)]
+            .into_iter()
+            .find_map(|p| self.spline_end(0, &p).map(|at| (p, at)))
+        {
+            Some((p, at)) => ConstraintType::TangentArcSplineAtPoint(p, self.center(0), s, at),
+            None => ConstraintType::TangentArcSpline(self.center(0), self.c(0), s, self.param(0)),
+        }
+    }
+    /// Spline fields 0 and 1 tangent: at an end they share
+    /// (`TangentSplinesAtPoint`), else touching anywhere
+    /// (`TangentSplines`).
+    fn tangent_splines(&self) -> ConstraintType {
+        let (s0, s1) = (self.spline(0), self.spline(1));
+        let shared = [s1.start(), s1.end()]
+            .into_iter()
+            .find_map(|p| Some((self.spline_end(0, p)?, self.spline_end(1, p)?)));
+        match shared {
+            Some((at0, at1)) => ConstraintType::TangentSplinesAtPoint(s0, at0, s1, at1),
+            None => ConstraintType::TangentSplines(s0, self.param(0), s1, self.param(1)),
+        }
+    }
     /// The endpoint of EllipticalArc field 0 that `p` is, if it is one.
     fn elliptical_arc_end(&self, p: &str) -> Option<ArcEnd> {
         let (start, end) = &self.elliptical_arc_ends[0];
@@ -394,6 +490,8 @@ pub struct References {
     pub ellipses: HashMap<String, (String, String)>,
     /// EllipticalArc ID → its Points.
     pub elliptical_arcs: HashMap<String, EllipticalArcPoints>,
+    /// Spline ID → the Spline.
+    pub splines: HashMap<String, Spline>,
 }
 
 /// The Point IDs an EllipticalArc references.
@@ -593,7 +691,10 @@ impl ConstraintSpec {
     /// row's check, if any, and builds the constraint. Errors name the
     /// missing field, unknown reference or failed check.
     pub fn parse(&self, c: &Value, refs: &References) -> Result<ConstraintType, String> {
-        let mut args = Args::default();
+        let mut args = Args {
+            id: c.get("id").and_then(Value::as_str).unwrap_or_default().to_string(),
+            ..Args::default()
+        };
         for &(name, kind) in self.fields {
             let field = field_value(c, name).ok_or_else(|| format!("missing field '{name}'"))?;
             match kind {
@@ -666,6 +767,14 @@ impl ConstraintSpec {
                         focus: points.focus,
                     });
                     args.elliptical_arc_ends.push((points.start, points.end));
+                }
+                FieldKind::Spline => {
+                    let spline = refs
+                        .splines
+                        .get(&id)
+                        .cloned()
+                        .ok_or_else(|| format!("'{id}' is not a spline"))?;
+                    args.splines.push(spline);
                 }
                 FieldKind::Scalar | FieldKind::Value | FieldKind::Axis => unreachable!(),
             }

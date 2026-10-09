@@ -79,12 +79,36 @@ export interface EllipticalArcEntity {
   fixed: boolean;
 }
 
+/** A spline's solved B-spline, as the solver's response reports it (`curve`). */
+export interface SplineCurve {
+  degree: number;
+  knots: number[];
+  controlPoints: [number, number][];
+}
+
+/**
+ * A spline: a cubic B-spline whose handles are points, either fit points the
+ * curve passes through (`interpolated`) or its control points. It has no
+ * values of its own; the solver computes the curve from the handles and
+ * reports it back (`curve`, absent until the first solve), which is what the
+ * demo draws.
+ */
+export interface SplineEntity {
+  kind: "spline";
+  id: EntityId;
+  /** handle point ids, in order along the curve */
+  points: EntityId[];
+  interpolated: boolean;
+  curve?: SplineCurve;
+}
+
 export type SketchEntity =
   | PointEntity
   | LineEntity
   | CircleEntity
   | ArcEntity
-  | EllipticalArcEntity;
+  | EllipticalArcEntity
+  | SplineEntity;
 export type EntityKind = SketchEntity["kind"];
 
 /** An applied constraint. `entities` is ordered per the registry selection spec. */
@@ -122,4 +146,7 @@ export function isArc(e: SketchEntity): e is ArcEntity {
 }
 export function isEllipticalArc(e: SketchEntity): e is EllipticalArcEntity {
   return e.kind === "elliptical_arc";
+}
+export function isSpline(e: SketchEntity): e is SplineEntity {
+  return e.kind === "spline";
 }

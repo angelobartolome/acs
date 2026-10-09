@@ -71,6 +71,10 @@ function earc(
     fixed,
   };
 }
+/** A spline through fit points (`interpolated`) or on control points. */
+function spl(id: string, points: EntityId[], interpolated = true): SketchEntity {
+  return { kind: "spline", id, points, interpolated };
+}
 /** A constraint by registry key (a native type's variant). */
 function k(
   id: string,
@@ -766,6 +770,39 @@ export const EXAMPLES: readonly Example[] = [
         k("k3", "tangent_arc_elliptical_arc", ["a1", "ea1"]),
         k("k4", "radius_arc", ["a1"], { value: 15 }),
         k("k5", "on_elliptical_arc", ["m", "ea1"]),
+      ],
+    },
+  },
+  {
+    id: "spline",
+    label: "Spline",
+    description:
+      "A fit-point spline between two fixed ends: a line leaves its right end along its tangent, a control-point spline continues its left end smoothly, a circle of radius 12 rests on it and a point is held on it. Drag the fit points to reshape it",
+    sketch: {
+      entities: [
+        pt("s0", -80, 0, true),
+        pt("s1", -40, 35),
+        pt("s2", 0, 10),
+        pt("s3", 40, 40),
+        pt("s4", 80, 0, true),
+        spl("sp1", ["s0", "s1", "s2", "s3", "s4"]),
+        pt("q", 120, -30),
+        ln("l1", "s4", "q"),
+        pt("c1", -105, -35),
+        pt("c2", -130, 10),
+        pt("c3", -160, -20, true),
+        spl("sp2", ["s0", "c1", "c2", "c3"], false),
+        pt("cc", 0, 45),
+        circ("circ", "cc", 12),
+        pt("m", 20, 15),
+      ],
+      constraints: [
+        k("k1", "tangent_line_spline", ["l1", "sp1"]),
+        k("k2", "length_line", ["l1"], { value: 45 }),
+        k("k3", "tangent_splines", ["sp1", "sp2"]),
+        k("k4", "tangent_circle_spline", ["circ", "sp1"]),
+        k("k5", "radius_circle", ["circ"], { value: 12 }),
+        k("k6", "on_spline", ["m", "sp1"]),
       ],
     },
   },

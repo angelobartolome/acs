@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 
 /// A sketch holding one constraint of `spec`'s row, with fresh geometry for
 /// each of its fields: Points spread apart, Lines, radius-2 Circles and arcs
-/// (with their endpoints on them), 2.5 × 2 ellipses, scalars suited to the
+/// (with their endpoints on them), 2.5 × 2 ellipses, fit-point splines
+/// through four Points, scalars suited to the
 /// field, the major axis, and value fields referencing a fresh Circle's
 /// radius.
 fn sketch_for(spec: &ConstraintSpec) -> Value {
@@ -93,6 +94,12 @@ fn sketch_for(spec: &ConstraintSpec) -> Value {
                 prims.push(json!({ "id": id, "type": "elliptical_arc", "c_id": c, "focus1_id": f,
                                    "start_id": s, "end_id": e, "radmin": b,
                                    "start_angle": t0, "end_angle": t1 }));
+                json!(id)
+            }
+            FieldKind::Spline => {
+                // A fit-point spline through four fresh Points.
+                let handles: Vec<String> = (0..4).map(|_| point(&mut prims)).collect();
+                prims.push(json!({ "id": id, "type": "spline", "points": handles, "interpolated": true }));
                 json!(id)
             }
             FieldKind::Axis => json!("major"),

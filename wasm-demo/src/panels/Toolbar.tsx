@@ -1,4 +1,4 @@
-import type { LineEntity, SketchEntity } from "../core/model/types";
+import type { LineEntity, SketchEntity, SplineEntity } from "../core/model/types";
 import { useSketchStore } from "../hooks/useSketchStore";
 import { TOOLS, getTool } from "../tools";
 
@@ -14,7 +14,8 @@ export function Toolbar() {
   const zoomToFit = useSketchStore((s) => s.zoomToFit);
 
   const fixables = selectedEntities().filter(
-    (e): e is Exclude<SketchEntity, LineEntity> => e.kind !== "line",
+    (e): e is Exclude<SketchEntity, LineEntity | SplineEntity> =>
+      e.kind !== "line" && e.kind !== "spline",
   );
   const allFixed = fixables.length > 0 && fixables.every((e) => e.fixed);
 

@@ -175,6 +175,7 @@ const C = (count: number): SelectionSlot => ({ kind: "circle", count });
 const A = (count: number): SelectionSlot => ({ kind: "arc", count });
 const E = (count: number): SelectionSlot => ({ kind: "ellipse", count });
 const EA = (count: number): SelectionSlot => ({ kind: "elliptical_arc", count });
+const S = (count: number): SelectionSlot => ({ kind: "spline", count });
 
 function lineAngle(ents: SketchEntity[], resolve: EntityResolver): number {
   const [a, b] = lineEndpoints(ents[0], resolve);
@@ -695,6 +696,15 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     entityFields: ["point", "curve"],
   },
   {
+    key: "on_spline",
+    type: "on",
+    label: "Point on Spline",
+    badge: "⋅S",
+    description: "Point lies on the spline, between its ends",
+    selection: [P(1), S(1)],
+    entityFields: ["point", "curve"],
+  },
+  {
     key: "midpoint",
     type: "midpoint",
     label: "Midpoint",
@@ -787,6 +797,52 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     badge: "tan",
     description: "Arc and elliptical arc are tangent at an endpoint they share",
     selection: [A(1), EA(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_line_spline",
+    type: "tangent",
+    label: "Tangent",
+    badge: "tan",
+    description:
+      "Line is tangent to the spline, touching within the segment (or along its tangent at an end they share)",
+    selection: [L(1), S(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_circle_spline",
+    type: "tangent",
+    label: "Tangent",
+    badge: "tan",
+    description: "Circle touches the spline, from either side",
+    selection: [C(1), S(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_arc_spline",
+    type: "tangent",
+    label: "Tangent",
+    badge: "tan",
+    description: "Arc touches the spline on its span (or at an end they share)",
+    selection: [A(1), S(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_ellipse_spline",
+    type: "tangent",
+    label: "Tangent",
+    badge: "tan",
+    description: "Ellipse touches the spline",
+    selection: [E(1), S(1)],
+    entityFields: ["a", "b"],
+  },
+  {
+    key: "tangent_splines",
+    type: "tangent",
+    label: "Tangent",
+    badge: "tan",
+    description: "Two splines touch with a common tangent (or are tangent at an end they share)",
+    selection: [S(2)],
     entityFields: ["a", "b"],
   },
   {
@@ -1240,6 +1296,7 @@ export function matchSelection(
     circle: [],
     arc: [],
     elliptical_arc: [],
+    spline: [],
   };
   for (const e of selected) pools[e.kind].push(e.id);
 

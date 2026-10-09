@@ -827,6 +827,141 @@ the origin); `overshoot` contributes `(∂/∂t, ∂/∂α, ∂/∂β)` from
 `span_overshoot`, chained through `t(p)` or `t(T)`. `tests/jacobian_fd_test.rs`
 checks every kernel, the rules included.
 
+### 25  Splines
+
+A **Spline** is a clamped [B-spline](https://en.wikipedia.org/wiki/B-spline)
+`C(t)` whose handles are Points (`src/spline.rs`, `src/geometry.rs`
+`Spline`). It owns no solver variables: the curve is a function of its
+handles, so a free spline has `2n` degrees of freedom for `n` handles and
+every point constraint (`coincident`, `fixed`, drags, …) works on them
+unchanged.
+
+- **Control points** (`interpolated: false`): degree `p = min(3, n − 1)`,
+  knots as given (validated: `n + p + 1` of them, non-decreasing, clamped)
+  or clamped uniform on `[0, 1]`. `∂C/∂Pᵢ = Nᵢ(t)`.
+- **Fit points** (`interpolated: true`, `n ≥ 2`): a cubic through
+  `Q₀ … Qₙ₋₁` at centripetal parameters `u₀ = 0`, `uᵢ = Σ_{k<i} Δₖ / ΣΔ`,
+  `uₙ₋₁ = 1`, `Δₖ = (|Qₖ₊₁ − Qₖ|² + ε²)^¼` (ε = 1e-12: coincident fit points
+  give a 1e-6 step rather than a repeated knot, and `Δ` stays smooth at 0),
+  knots `[0,0,0,0, u₁ … uₙ₋₂, 1,1,1,1]`, and natural end conditions. The
+  `n + 2` control points solve `A(u)·P = [0; Q₀; …; Qₙ₋₁; 0]`, rows
+  `C″(0) = 0`, `C(uᵢ) = Qᵢ`, `C″(1) = 0`. Two fit points give a straight
+  segment.
+
+The JSON response reports each spline's `curve` (degree, knots, control
+points), so either form can be rebuilt from the other: a fit-point spline's
+`curve`, sent as a control-point spline, is the same curve
+(`tests/spline_test.rs`).
+
+**Jacobians: exact, through the parameterisation.** The control points of
+a fit-point spline depend on its fit points both linearly (the right-hand
+side) and nonlinearly (`A` depends on the knots, which are the centripetal
+parameters, which depend on the chord lengths). Nothing is held fixed
+within an iteration: the curve is built and evaluated in forward mode
+(`Dv`, a value with a dynamic vector of partials, the `D<N>` of §21 sized at
+run time), through the parameters, the knots, the basis functions and their
+derivatives ([The NURBS Book](https://en.wikipedia.org/wiki/Non-uniform_rational_B-spline)
+A2.3, with knots as variables), and Gaussian elimination with partial
+pivoting (pivots chosen by value, piecewise constant). `tests/jacobian_fd_test.rs`
+checks every kernel in both forms.
+
+**Past the ends.** Evaluated outside `[t₀, t₁]`, the curve continues along
+its end tangent, `C(t₁) + (t − t₁)·C′(t₁)` (C¹). A contact parameter a step
+carries past an end then lands on a gently varying curve while its span row
+(below) brings it back; continuing the end spans' cubics instead swings away
+fast enough to stall Dog-Leg from a poor start.
+
+**Curve parameters (design note).** `on` and `tangent` need to know *where*
+on the curve the contact is. ACS holds that as a solver variable, a **curve
+parameter** (`Var::Param`, a `CurveParam` entity), owned by the constraint
+that places the contact, the way an Arc holds its angles (and as GCS holds
+a point's B-spline parameter). `ConstraintSolver::add_constraint` creates it
+under an ID the constraint names (the catalog uses `"<constraint id>#k"`;
+an ID an entity already has is rejected) and starts it at the nearest
+contact: for `on`, the point's closest point on the curve (sampling plus
+Newton); for `tangent`, the best of a sampling, refined by Gauss–Newton on
+the constraint's own rows over its parameters alone, so a sketch that
+already holds starts exactly at its contact and the pre-solver skips it.
+The alternative, finding the contact inside `eval` (a projection) with the
+partials by the envelope theorem, needs no new variable but re-picks the
+contact at every evaluation: a branch can jump mid-solve, the tangency of
+two splines (a two-dimensional critical point) has no robust choice, and
+a circle could only touch from the side the nearest point is on. With the
+parameter as an unknown the contact moves smoothly and every form is a set
+of plain equations.
+
+The parameter enters the analysis like any free variable, with three rules
+for what it isn't (an entity's value):
+
+- `dof` counts a real constraint's parameters as free variables, which its
+  own rows take back (`on`: two equations, one parameter: one degree of
+  freedom less). Parameters of temporary constraints are left out, like
+  their rows.
+- `fullyConstrained` never lists a parameter. A spline is listed when all
+  its handles are.
+- Redundant (§ `SketchSystem::diagnose`): dropping a constraint also drops
+  each parameter it owns that no kept constraint reads, so the rank
+  test is `rank(J_kept) + (vanished parameters) = rank(J)`. A second `on`
+  holding the same point on the same spline brings two rows and a
+  parameter, rank one more, and is reported Redundant. No other constraint
+  owns a parameter, so nothing else changes.
+
+**Residuals.** `q = C(t)`, `τ̂ = C′(t)/|C′(t)|`, `n̂ = rot90(τ̂)`;
+`span(t)` = `t − t₀` before the domain, `t − t₁` past it, 0 inside (an Arc's
+span overshoot for a parameter); `∠(u, τ̂)` the angle from `τ̂` to the unit
+direction `u` modulo `π`, in `(−π/2, π/2]` (0 when parallel either way;
+derivative 1 except at the jump at perpendicular); `S` the length of the
+spline's control polygon (with partials), which weighs an angle against
+distances.
+
+| Constraint (JSON) | Residuals |
+|-------------------|-----------|
+| `PointOnSpline(p, C, t)` (`on`) | `R₀,₁ = p − q`, `R₂ = span(t)` |
+| `TangentLineSpline(a, b, C, t)` (`tangent` line–spline) | with `g = (b − a)/\|b − a\|`, `σ = g·(q − a)`, `f = a + σ·g`: `R₀ = n̂·(f − q)`, `R₁ = S·∠(g, τ̂)`, `R₂` = overshoot of `σ` past `[0, \|b − a\|]` (the segment row of `TangentLineCircle`), `R₃ = span(t)` |
+| `TangentCircleSpline(c, Γ, C, t)` (`tangent` circle–spline) | with `v = q − c`: `R₀ = \|v\| − r`, `R₁ = v·τ̂`, `R₂ = span(t)` |
+| `TangentArcSpline(c, Γ, C, t)` (`tangent` arc–spline) | the circle's rows, and `R₃ = r·A(atan2(v); α, β)` (§20) |
+| `TangentEllipseSpline(c, f, E, C, t)` (`tangent` ellipse–spline) | `R₀ = \|q − f\| + \|q − f₂\| − 2A` (§21), `R₁ = S·∠(rot90(m̂), τ̂)`, `m = (q − f)/\|q − f\| + (q − f₂)/\|q − f₂\|` (the ellipse's normal at `q`), `R₂ = span(t)` |
+| `TangentSplines(C, t, D, s)` (`tangent` spline–spline) | with `w = D(s) − q`: `R₀ = n̂·w`, `R₁ = τ̂·w`, `R₂ = S·∠(τ̂_D, τ̂)`, `R₃ = span(t)`, `R₄ = span_D(s)` |
+| `TangentLineSplineAtPoint(p, o, C, at)` (line ending at the spline's end, or held `on` it) | `R = ∠((o − p)/\|o − p\|, τ̂(t_at))` |
+| `TangentArcSplineAtPoint(p, k, C, at)` (arc and spline sharing an end) | `R = ∠(rot90((p − k)/\|p − k\|), τ̂(t_at))` |
+| `TangentSplinesAtPoint(C, at, D, at₂)` (splines sharing an end) | `R = ∠(τ̂_D(t_at₂), τ̂(t_at))` |
+
+`at` is the start (`t₀`), the end (`t₁`) or a curve parameter another
+constraint owns (`SplineAt`). Each general form has one equation more than
+the parameters it owns and removes one degree of freedom; the span and
+segment rows are 0 with zero rows inside, like an Arc's.
+
+The rows are chosen to converge from poor starts (`tests/spline_test.rs`
+`tangents_solve_from_poor_starts`: segments, ellipses and splines far from
+the curve and at the wrong angle, in under 30 iterations). Earlier forms
+took hundreds of iterations or stalled, for reasons worth keeping:
+
+- *A gap measured where sliding the contact changes it to first order*
+  (`ν·(q − a)` against the line's normal, or `C(t) − D(s)` for two
+  splines): Gauss–Newton zeroes it by sliding the contact along the
+  curve's tangent, which the curve doesn't follow, and the trust region
+  collapses. Measured along the spline's own normal (`n̂·(f − q)`,
+  `n̂·w`) or as a distance to a foot point (`|v| − r` with `v·τ̂ = 0`), it
+  doesn't change as the contact slides.
+- *The sine or cosine of an angle* (`g × τ̂`, `n̂·τ̂`) has a zero derivative
+  at perpendicular, a false minimum. The angle itself doesn't.
+- *A row scaled by the line's length* (`n̂·(b − a)`): the solve shrinks the
+  line to a point on the curve instead.
+- *An angle row against length rows unweighted*: Dog-Leg's steepest-descent
+  step is lopsided; `S·∠` fixes it.
+
+Through a point already on the curve, the general line form is degenerate
+(as §20's distance forms are), so the catalog builds the at-point forms
+when a line or arc *ends* at the spline's first or last handle or two
+splines share an end handle, and `constraint_catalog::tangent_at_held_endpoints`
+rewrites a line–spline `tangent` whose line endpoint a real `on` holds on
+that spline to `TangentLineSplineAtPoint` at that `on`'s parameter.
+
+Not supported: `distance` to a spline, tangency with an elliptical arc,
+closed (periodic) splines, weights (NURBS). A contact that settles exactly
+at the end of the curve has its span row active, so `dof` reports one
+fewer there (an Arc's span row does the same at its ends).
+
 ## ConstraintType Enum Summary (updated)
 
 ```rust
@@ -909,6 +1044,17 @@ pub enum ConstraintType {
     DistanceLineArc(String, String, String, String, f64), // line_pa, line_pb, arc_center_id, arc_id, gap
     DistanceExtensionArc(String, String, String, String, f64), // line_pa, line_pb, arc_center_id, arc_id, gap
     DistanceLineLine(String, String, String, String, f64),  // a_p1, a_p2, b_p1, b_p2, distance
+
+    // Splines (§25): curve parameters are IDs the constraint owns; SplineAt is Start | End | Param(id)
+    PointOnSpline(String, Spline, String),                  // point_id, spline, param_id
+    TangentLineSpline(String, String, Spline, String),      // line_pa, line_pb, spline, param_id
+    TangentCircleSpline(String, String, Spline, String),    // circle_center_id, circle_id, spline, param_id
+    TangentArcSpline(String, String, Spline, String),       // arc_center_id, arc_id, spline, param_id
+    TangentEllipseSpline(String, String, String, Spline, String), // center_id, focus1_id, ellipse_id, spline, param_id
+    TangentSplines(Spline, String, Spline, String),         // spline1, param1_id, spline2, param2_id
+    TangentLineSplineAtPoint(String, String, Spline, SplineAt), // point_id, other_line_end_id, spline, at
+    TangentArcSplineAtPoint(String, String, Spline, SplineAt),  // point_id, arc_center_id, spline, at
+    TangentSplinesAtPoint(Spline, SplineAt, Spline, SplineAt),  // spline1, at1, spline2, at2
 }
 ```
 

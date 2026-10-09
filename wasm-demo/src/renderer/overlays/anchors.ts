@@ -3,7 +3,8 @@ import type {
   EntityId,
   SketchEntity,
 } from "../../core/model/types";
-import { isArc, isCircle, isEllipticalArc, isLine, isPoint } from "../../core/model/types";
+import { isArc, isCircle, isEllipticalArc, isLine, isPoint, isSpline } from "../../core/model/types";
+import { splineOutline } from "../../core/model/spline";
 import { ellipseFrame, pointAt } from "../../core/model/ellipse";
 import { getConstraintDef } from "../../core/constraints/registry";
 import type { Vec2 } from "../../core/sketch/store";
@@ -25,6 +26,14 @@ function entityAnchor(id: EntityId, resolve: Resolver): Vec2 | null {
   if (isCircle(e) || isArc(e)) {
     const c = resolve(e.center);
     if (c !== undefined && isPoint(c)) return { x: c.x, y: c.y };
+  }
+  if (isSpline(e)) {
+    // the middle of the curve (by parameter)
+    const outline = splineOutline(e, (p) => {
+      const q = resolve(p);
+      return q !== undefined && isPoint(q) ? q : undefined;
+    });
+    return outline.length > 0 ? outline[Math.floor(outline.length / 2)] : null;
   }
   if (isEllipticalArc(e)) {
     // the middle of its span

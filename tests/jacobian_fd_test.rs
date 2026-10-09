@@ -10,10 +10,10 @@ use acs::constraint_catalog::{
     Args, ConstraintSpec, EllipseRef, FieldKind, specs, tangent_at_held_endpoints,
 };
 use acs::constraints::{
-    Constraint, ConstraintType, EllipseAxis, Operand, create_constraint, reads,
+    Constraint, ConstraintType, EllipseAxis, Operand, SplineAt, create_constraint, reads,
 };
 use nalgebra::DMatrix;
-use acs::geometry::{Arc, Circle, Ellipse, EllipticalArc, Point};
+use acs::geometry::{Arc, Circle, CurveParam, Ellipse, EllipticalArc, Point, Spline};
 use acs::var_registry::{EntityType, VarRegistry};
 
 const POINTS: [&str; 6] = ["p0", "p1", "p2", "p3", "p4", "p5"];
@@ -130,7 +130,35 @@ fn build_pm(seed: u64) -> VarRegistry {
             ),
         );
     }
+    // Splines' handles, and the curve parameters (`"#0"`, `"#1"`: a
+    // catalog-built constraint with no JSON id names its own so) inside
+    // their domains.
+    for (_, handles) in SPLINES {
+        for p in handles {
+            let (x, y) = (rng.range(-5.0, 5.0), rng.range(-5.0, 5.0));
+            pm.register_entity(p.to_string(), EntityType::Point, &Point::new(p.to_string(), x, y, false));
+        }
+    }
+    for id in PARAMS {
+        let value = rng.range(0.15, 0.85);
+        pm.register_entity(id.to_string(), EntityType::Param, &CurveParam { id: id.to_string(), value });
+    }
     pm
+}
+
+/// (spline, handle Points) of the splines in `build_pm`.
+const SPLINES: [(&str, &[&str]); 2] = [
+    ("sp1", &["sp1_0", "sp1_1", "sp1_2", "sp1_3", "sp1_4"]),
+    ("sp2", &["sp2_0", "sp2_1", "sp2_2", "sp2_3"]),
+];
+
+/// The curve parameters in `build_pm`.
+const PARAMS: [&str; 2] = ["#0", "#1"];
+
+/// Spline `i` of `build_pm`, fit points or control points.
+fn spline(i: usize, interpolated: bool) -> Spline {
+    let (id, handles) = SPLINES[i];
+    Spline::new(id.into(), handles.iter().map(|h| h.to_string()).collect(), interpolated, None)
 }
 
 /// (elliptical arc, center, focus, start, end) IDs of the elliptical arcs in
@@ -159,6 +187,8 @@ fn all_constraints() -> Vec<ConstraintType> {
     let mut seen = std::collections::HashSet::new();
     let built: Vec<ConstraintType> = specs().iter().flat_map(build_from_spec).collect();
     let rewritten: Vec<ConstraintType> = built.iter().filter_map(held_endpoint_rewrite).collect();
+    // The rows build only fit-point Splines; every form, end and shared case
+    // is checked in `spline_jacobians_match_finite_differences`.
     built
         .into_iter()
         .chain(rewritten)
@@ -176,6 +206,9 @@ fn held_endpoint_rewrite(ct: &ConstraintType) -> Option<ConstraintType> {
         }
         ConstraintType::TangentLineEllipticalArc(p, _, c, f, e) => {
             ConstraintType::PointOnEllipticalArc(p.clone(), c.clone(), f.clone(), e.clone())
+        }
+        ConstraintType::TangentLineSpline(p, _, s, _) => {
+            ConstraintType::PointOnSpline(p.clone(), s.clone(), "#1".into())
         }
         _ => return None,
     };
@@ -238,6 +271,9 @@ fn args_for(spec: &ConstraintSpec) -> Args {
         if kind == FieldKind::Axis {
             args.axes.push(EllipseAxis::Major);
         }
+        if kind == FieldKind::Spline {
+            args.splines.push(spline(args.splines.len(), true));
+        }
         if kind == FieldKind::Scalar {
             args.scalars.push(1.3);
         }
@@ -266,6 +302,22 @@ fn build_from_spec(spec: &ConstraintSpec) -> Vec<ConstraintType> {
         let mut shared = args.clone();
         shared.arc_ends[1].0 = shared.arc_ends[0].0.clone();
         out.push(spec.build(&shared));
+    }
+    // A Line or an Arc sharing the spline's start, and two splines sharing
+    // an end: the at-point forms.
+    if kinds.contains(&FieldKind::Spline) {
+        let first = args.splines[0].points[0].clone();
+        let mut shared = args.clone();
+        if kinds.contains(&FieldKind::Line) {
+            shared.points[0] = first;
+            out.push(spec.build(&shared));
+        } else if kinds.contains(&FieldKind::Arc) {
+            shared.arc_ends[0].1 = first;
+            out.push(spec.build(&shared));
+        } else if kinds.iter().filter(|&&k| k == FieldKind::Spline).count() == 2 {
+            shared.splines[1].points[0] = first;
+            out.push(spec.build(&shared));
+        }
     }
     // A Line or an Arc sharing the elliptical arc's start, then its end.
     if kinds.contains(&FieldKind::EllipticalArc)
@@ -353,9 +405,18 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         DistanceCircleArc(..) => "DistanceCircleArc",
         DistanceArcs(..) => "DistanceArcs",
         DistanceLineLine(..) => "DistanceLineLine",
+        PointOnSpline(..) => "PointOnSpline",
+        TangentLineSpline(..) => "TangentLineSpline",
+        TangentCircleSpline(..) => "TangentCircleSpline",
+        TangentArcSpline(..) => "TangentArcSpline",
+        TangentEllipseSpline(..) => "TangentEllipseSpline",
+        TangentSplines(..) => "TangentSplines",
+        TangentLineSplineAtPoint(..) => "TangentLineSplineAtPoint",
+        TangentArcSplineAtPoint(..) => "TangentArcSplineAtPoint",
+        TangentSplinesAtPoint(..) => "TangentSplinesAtPoint",
     }
 }
-const ALL_VARIANTS: [&str; 62] = [
+const ALL_VARIANTS: [&str; 71] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -418,6 +479,15 @@ const ALL_VARIANTS: [&str; 62] = [
     "DistanceCircleArc",
     "DistanceArcs",
     "DistanceLineLine",
+    "PointOnSpline",
+    "TangentLineSpline",
+    "TangentCircleSpline",
+    "TangentArcSpline",
+    "TangentEllipseSpline",
+    "TangentSplines",
+    "TangentLineSplineAtPoint",
+    "TangentArcSplineAtPoint",
+    "TangentSplinesAtPoint",
 ];
 
 #[test]
@@ -730,4 +800,60 @@ fn elliptical_arc_rules_jacobian_matches_finite_differences() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Every Spline kernel in both handle forms (fit points, whose control
+/// points come from a linear solve at centripetal parameters, and control
+/// points), at either end and at a curve parameter, and with shared Points.
+#[test]
+fn spline_jacobians_match_finite_differences() {
+    let s = |x: &str| x.to_string();
+    let mut cases = Vec::new();
+    for form in [true, false] {
+        let (a, b) = (spline(0, form), spline(1, form));
+        let a_start = a.points[0].clone();
+        cases.extend([
+            ConstraintType::PointOnSpline(s("p0"), a.clone(), s("#0")),
+            ConstraintType::PointOnSpline(a.points[2].clone(), a.clone(), s("#0")),
+            ConstraintType::TangentLineSpline(s("p0"), s("p1"), a.clone(), s("#0")),
+            ConstraintType::TangentLineSpline(a.points[1].clone(), s("p1"), a.clone(), s("#0")),
+            ConstraintType::TangentCircleSpline(s("c1_center"), s("c1"), a.clone(), s("#0")),
+            ConstraintType::TangentArcSpline(s("a1_center"), s("a1"), a.clone(), s("#0")),
+            ConstraintType::TangentEllipseSpline(s("e1_center"), s("e1_focus"), s("e1"), a.clone(), s("#0")),
+            ConstraintType::TangentSplines(a.clone(), s("#0"), b.clone(), s("#1")),
+            ConstraintType::TangentSplines(a.clone(), s("#0"), a.clone(), s("#1")),
+        ]);
+        for at in [SplineAt::Start, SplineAt::End, SplineAt::Param(s("#1"))] {
+            cases.extend([
+                ConstraintType::TangentLineSplineAtPoint(a_start.clone(), s("p1"), a.clone(), at.clone()),
+                ConstraintType::TangentArcSplineAtPoint(a_start.clone(), s("a1_center"), a.clone(), at.clone()),
+                ConstraintType::TangentSplinesAtPoint(a.clone(), at.clone(), b.clone(), SplineAt::Start),
+                ConstraintType::TangentSplinesAtPoint(b.clone(), SplineAt::End, a.clone(), at.clone()),
+            ]);
+        }
+    }
+    // A two-point fit spline (a straight cubic) and a three-point one.
+    let short = |n: usize| Spline::new(s("sp1"), SPLINES[0].1[..n].iter().map(|h| h.to_string()).collect(), true, None);
+    for n in [2, 3] {
+        cases.push(ConstraintType::PointOnSpline(s("p0"), short(n), s("#0")));
+        cases.push(ConstraintType::TangentCircleSpline(s("c1_center"), s("c1"), short(n), s("#0")));
+    }
+    // Control points with a given (non-uniform, clamped) knot vector, and
+    // degree 2 (three control points).
+    let knotted = Spline::new(s("sp1"), SPLINES[0].1.iter().map(|h| h.to_string()).collect(), false,
+        Some(vec![0.0, 0.0, 0.0, 0.0, 0.3, 2.0, 2.0, 2.0, 2.0]));
+    cases.push(ConstraintType::PointOnSpline(s("p0"), knotted.clone(), s("#0")));
+    cases.push(ConstraintType::TangentLineSpline(s("p0"), s("p1"), knotted, s("#0")));
+    let quadratic = Spline::new(s("sp1"), SPLINES[0].1[..3].iter().map(|h| h.to_string()).collect(), false, None);
+    cases.push(ConstraintType::TangentEllipseSpline(s("e1_center"), s("e1_focus"), s("e1"), quadratic, s("#0")));
+
+    let mut failures = Vec::new();
+    for ct in cases {
+        for seed in [1, 2, 3, 42, 1234] {
+            for m in fd_mismatches(&ct, seed) {
+                failures.push(format!("{ct:?}: {m}"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }

@@ -19,6 +19,8 @@ import type {
   PointEntity,
   Sketch,
   SketchEntity,
+  SplineCurve,
+  SplineEntity,
 } from "../model/types";
 import {
   constraintToPrimitive,
@@ -105,7 +107,31 @@ export function entityToPrimitive(e: SketchEntity): JsonPrimitive {
         end_angle: e.endAngle,
         fixed: e.fixed,
       };
+    case "spline":
+      return {
+        id: e.id,
+        type: "spline",
+        points: e.points,
+        interpolated: e.interpolated,
+      };
   }
+}
+
+/** A response's `curve` of a spline, if it reads as one. */
+function splineCurve(v: unknown): SplineCurve | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const o = v as Record<string, unknown>;
+  const knots = Array.isArray(o.knots) ? o.knots.filter((k): k is number => typeof k === "number") : [];
+  const cps = Array.isArray(o.control_points)
+    ? o.control_points.filter(
+        (p): p is [number, number] =>
+          Array.isArray(p) && typeof p[0] === "number" && typeof p[1] === "number",
+      )
+    : [];
+  if (typeof o.degree !== "number" || cps.length < 2 || knots.length !== cps.length + o.degree + 1) {
+    return undefined;
+  }
+  return { degree: o.degree, knots, controlPoints: cps };
 }
 
 export function sketchToPrimitives(sketch: Sketch): JsonPrimitive[] {
@@ -264,6 +290,22 @@ export function primitivesToSketch(prims: readonly unknown[]): ImportResult {
         entities.push(ea);
         break;
       }
+      case "spline": {
+        const points = stringArray(prim.points);
+        if (id === null || points.length < 2 || typeof prim.interpolated !== "boolean") {
+          warnings.push(`Skipped malformed spline ${id ?? "?"}`);
+          break;
+        }
+        const s: SplineEntity = {
+          kind: "spline",
+          id,
+          points,
+          interpolated: prim.interpolated,
+          curve: splineCurve((prim as Record<string, unknown>).curve),
+        };
+        entities.push(s);
+        break;
+      }
       default:
         constraintPrims.push(prim);
     }
@@ -350,6 +392,8 @@ export function applySolvedPrimitives(
           startAngle: asNumber(solved.start_angle, e.startAngle),
           endAngle: asNumber(solved.end_angle, e.endAngle),
         };
+      case "spline":
+        return { ...e, curve: splineCurve(solved.curve) ?? e.curve };
       case "line":
         return e;
     }

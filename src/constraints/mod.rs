@@ -66,6 +66,9 @@ pub mod distance_circle_circle;
 pub mod distance_point_arc;
 pub mod distance_line_arc;
 pub mod distance_line_line;
+pub mod point_on_spline;
+pub mod tangent_spline;
+pub mod tangent_spline_at_point;
 
 pub use angle::*;
 pub use base::*;
@@ -127,3 +130,6 @@ pub use distance_circle_circle::*;
 pub use distance_point_arc::*;
 pub use distance_line_arc::*;
 pub use distance_line_line::*;
+pub use point_on_spline::*;
+pub use tangent_spline::*;
+pub use tangent_spline_at_point::*;
