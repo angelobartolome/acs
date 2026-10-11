@@ -326,14 +326,17 @@ fn curve_json(curve: &BSpline) -> Value {
 pub fn spline_curve_json(request: &str) -> Result<String, String> {
     spline_curve(request)
         .map(|curve| json!({ "version": 1, "curve": curve_json(&curve) }).to_string())
-        .map_err(|error| json!({ "version": 1, "error": error }).to_string())
+        .map_err(|error| curve_error(&error))
+}
+
+/// [`spline_curve_json`]'s `{ "version": 1, "error" }` response.
+pub(crate) fn curve_error(error: &str) -> String {
+    json!({ "version": 1, "error": error }).to_string()
 }
 
 fn spline_curve(request: &str) -> Result<BSpline, String> {
     let root: Value = serde_json::from_str(request).map_err(|e| format!("invalid JSON: {e}"))?;
-    if root.get("version").and_then(Value::as_f64) != Some(1.0) {
-        return Err("unsupported request version".into());
-    }
+    check_version(&root)?;
     let handles = root
         .get("handles")
         .and_then(Value::as_array)
@@ -448,6 +451,14 @@ fn constraint_error(id: &str, error: impl std::fmt::Display) -> Rejection {
     }
 }
 
+/// Rejects a request whose `version` isn't 1.
+fn check_version(root: &Value) -> Result<(), &'static str> {
+    match root.get("version").and_then(Value::as_f64) {
+        Some(1.0) => Ok(()),
+        _ => Err("unsupported request version"),
+    }
+}
+
 /// The `{ version: 1, status: "invalid", error, constraintId? }` response for
 /// a request that couldn't be read.
 fn error_response(r: Rejection) -> String {
@@ -482,9 +493,7 @@ pub fn solve_sketch_json(request: &str) -> Result<String, String> {
 
 fn solve_request(request: &str) -> Result<String, Rejection> {
     let root: Value = serde_json::from_str(request).map_err(|e| format!("invalid JSON: {e}"))?;
-    if root.get("version").and_then(Value::as_f64) != Some(1.0) {
-        return Err("unsupported request version".into());
-    }
+    check_version(&root)?;
     let primitives = root
         .get("primitives")
         .and_then(Value::as_array)

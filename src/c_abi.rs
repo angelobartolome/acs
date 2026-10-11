@@ -13,15 +13,10 @@ use std::panic::{self, AssertUnwindSafe};
 
 use serde_json::json;
 
-use crate::sketch_solve::{solve_sketch_json, spline_curve_json};
+use crate::sketch_solve::{curve_error, solve_sketch_json, spline_curve_json};
 
 fn invalid(error: &str) -> String {
     json!({ "version": 1, "status": "invalid", "error": error }).to_string()
-}
-
-/// `P3DSpline_Curve`'s response for a request it couldn't read.
-fn no_curve(error: &str) -> String {
-    json!({ "version": 1, "error": error }).to_string()
 }
 
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
@@ -113,7 +108,7 @@ pub unsafe extern "C" fn P3DSpline_Curve(
     response_json: *mut *mut c_char,
 ) -> c_int {
     // SAFETY: the caller's guarantees, passed on.
-    unsafe { respond(request_json, response_json, spline_curve_json, no_curve) }
+    unsafe { respond(request_json, response_json, spline_curve_json, curve_error) }
 }
 
 /// Releases a string returned by [`P3DSketch_Solve`] or [`P3DSpline_Curve`].
