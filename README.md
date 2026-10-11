@@ -167,7 +167,7 @@ The WASM function takes a JSON string and returns a JSON string. The output `pri
 
 To drag, add constraints marked `temporary: true` that hold the dragged geometry at the cursor, such as `{ type: "x", id: "gx", point: "p", value: 6, temporary: true }`. A point on a line, dragged off it, slides along the line to the closest point. See [USAGE.md](USAGE.md#drags-soft-goals).
 
-`acsConstraintCatalog()` returns the constraint types and fields as JSON. For the full JSON input/output format, constraint type strings, and performance tips see [USAGE.md](USAGE.md).
+`acsSplineCurve(request)` builds a spline's curve from its handles without solving (the `curve` a solve would report; C: `P3DSpline_Curve`). `acsConstraintCatalog()` returns the constraint types and fields as JSON. For the full JSON input/output format, constraint type strings, and performance tips see [USAGE.md](USAGE.md).
 
 ---
 

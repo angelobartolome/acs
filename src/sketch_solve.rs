@@ -1,4 +1,6 @@
-//! JSON sketch API: parses primitives, solves, and builds the response.
+//! JSON sketch API: parses primitives, solves, and builds the response
+//! ([`solve_sketch_json`]); and a Spline's curve without solving
+//! ([`spline_curve_json`]).
 //! Constraint types and their fields are declared in `constraint_catalog`.
 
 use std::collections::{HashMap, HashSet};
@@ -6,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use serde_json::{json, Value};
 
 use crate::geometry::{Arc as GeoArc, Circle, Ellipse, EllipticalArc, Line, Point, Spline};
+use crate::spline::BSpline;
 use crate::constraint_catalog::{self, EllipticalArcPoints, References};
 use crate::{ConstraintSolver, ConstraintType, SolverResult};
 
@@ -290,16 +293,72 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
             && let Some(obj) = p.as_object_mut()
         {
             // Output only (ignored in a request): the solved curve.
-            obj.insert(
-                "curve".to_string(),
-                json!({
-                    "degree": curve.degree,
-                    "knots": curve.knots,
-                    "control_points": curve.control_points,
-                }),
-            );
+            obj.insert("curve".to_string(), curve_json(&curve));
         }
     }
+}
+
+/// A Spline's `curve` as a response reports it: `{degree, knots,
+/// control_points}`.
+fn curve_json(curve: &BSpline) -> Value {
+    json!({
+        "degree": curve.degree,
+        "knots": curve.knots,
+        "control_points": curve.control_points,
+    })
+}
+
+/// A Spline's curve from its handles, without solving (`acsSplineCurve`,
+/// `P3DSpline_Curve`), with this contract:
+///
+/// - Request: `{ "version": 1, "handles": [[x, y], ...], "interpolated":
+///   bool, "knots"?: [...] }`, a `spline` primitive's fields with the
+///   handles' positions in place of Point IDs.
+/// - Response: `{ "version": 1, "curve": { "degree", "knots",
+///   "control_points" } }`, the `curve` a solve reports for that Spline
+///   ([`BSpline::new`]).
+///
+/// Returns `Err` with `{ "version": 1, "error": "..." }` for a request it
+/// can't read or handles and knots that make no curve ([`spline::check`]'s
+/// message, as a sketch's Spline is rejected).
+///
+/// [`spline::check`]: crate::spline::check
+pub fn spline_curve_json(request: &str) -> Result<String, String> {
+    spline_curve(request)
+        .map(|curve| json!({ "version": 1, "curve": curve_json(&curve) }).to_string())
+        .map_err(|error| json!({ "version": 1, "error": error }).to_string())
+}
+
+fn spline_curve(request: &str) -> Result<BSpline, String> {
+    let root: Value = serde_json::from_str(request).map_err(|e| format!("invalid JSON: {e}"))?;
+    if root.get("version").and_then(Value::as_f64) != Some(1.0) {
+        return Err("unsupported request version".into());
+    }
+    let handles = root
+        .get("handles")
+        .and_then(Value::as_array)
+        .ok_or("missing field 'handles'")?
+        .iter()
+        .map(|h| match h.as_array().map(Vec::as_slice) {
+            Some([x, y]) => Some([x.as_f64()?, y.as_f64()?]),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or("'handles' must be [x, y] pairs of numbers")?;
+    let interpolated = root
+        .get("interpolated")
+        .ok_or("missing field 'interpolated'")?
+        .as_bool()
+        .ok_or("'interpolated' must be true or false")?;
+    let knots = match root.get("knots") {
+        None | Some(Value::Null) => None,
+        Some(k) => Some(
+            k.as_array()
+                .and_then(|k| k.iter().map(Value::as_f64).collect::<Option<Vec<_>>>())
+                .ok_or("'knots' must be an array of numbers")?,
+        ),
+    };
+    BSpline::new(&handles, interpolated, knots.as_deref())
 }
 
 /// Computes the set of fully-constrained (DOF = 0) entity IDs, including lines.
