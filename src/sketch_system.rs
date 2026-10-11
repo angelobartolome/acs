@@ -74,7 +74,8 @@ struct Component {
 }
 
 /// Constraints found Conflicting or Redundant, as sorted indices into the
-/// sketch's constraint list (see `ConstraintSolver::diagnose` for the rule).
+/// sketch's constraint list (see `ConstraintSolver::diagnose`; the rule is on
+/// `SketchSystem::analyze`).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Diagnosis {
     /// Constraints that can't all hold: dependent ones carrying residual in
@@ -250,84 +251,37 @@ impl<'a> SketchSystem<'a> {
         Ok(())
     }
 
-    /// IDs of the Points, Circles, Arcs and Ellipses with zero degrees of freedom at the
-    /// current variables, sorted. Meaningful only at a solved configuration.
+    /// The degrees-of-freedom analysis and the diagnosis at the current
+    /// variables, which should be the solved position. One pass per
+    /// Component over the Jacobian J of its diagnosed constraints: one
+    /// [eigen-decomposition](https://en.wikipedia.org/wiki/Eigendecomposition_of_a_matrix)
+    /// of JᵀJ gives its rank and null space (degrees of freedom, full
+    /// constraint), and one of JJᵀ gives the left null space (diagnosis); the
+    /// Redundant walk takes the rank of J with each candidate dropped.
     ///
-    /// A free variable is locked when no motion in its Component's Jacobian
+    /// **Degrees of freedom**: free variables minus the
+    /// [rank](https://en.wikipedia.org/wiki/Rank_(linear_algebra)) of each
+    /// Component's [Jacobian](https://en.wikipedia.org/wiki/Jacobian_matrix_and_determinant). Free variables
+    /// no constraint reads count in full. Temporary constraints don't count,
+    /// here or in full constraint, nor do the curve parameters they own. A
+    /// real constraint's curve parameter is a free variable its own rows
+    /// take back (a point `on` a Spline: two equations, one parameter, one
+    /// degree of freedom less).
+    ///
+    /// **Fully constrained**: IDs of the Points, Circles, Arcs and Ellipses
+    /// with zero degrees of freedom, sorted; meaningful only at a solved
+    /// configuration. A free variable is locked when no motion in its
+    /// Component's Jacobian
     /// [null space](https://en.wikipedia.org/wiki/Kernel_(linear_algebra)) moves it; fixed variables are always locked; free
     /// variables no constraint reads are not. An entity is fully constrained
     /// when all of its variables are locked. Lines and Splines have no
     /// variables of their own; callers decide them from their Points.
     /// Constraints' curve parameters are not entities and never listed.
-    pub(crate) fn fully_constrained_entity_ids(&self) -> Vec<String> {
-        let info = self.pm.var_info();
-        let mut locked: Vec<bool> = info.iter().map(|p| p.is_fixed).collect();
-
-        for comp in &self.components {
-            let Some((jac, eig)) = self.normal_eigen(comp) else {
-                continue;
-            };
-
-            let mut null_motion_sq = vec![0.0f64; comp.columns.len()];
-            for (k, &lambda) in eig.eigenvalues.iter().enumerate() {
-                if lambda.abs() <= ZERO_EIG {
-                    let v = eig.eigenvectors.column(k);
-                    for (m, sq) in null_motion_sq.iter_mut().enumerate() {
-                        *sq += v[m] * v[m];
-                    }
-                }
-            }
-
-            for (local, &global) in comp.columns.iter().enumerate() {
-                let touched = jac.column(local).iter().any(|&x| x != 0.0);
-                if touched && null_motion_sq[local].sqrt() <= MOTION_EPS {
-                    locked[global] = true;
-                }
-            }
-        }
-
-        let mut per_entity: BTreeMap<&str, bool> = BTreeMap::new();
-        for p in info.iter().filter(|p| p.entity_type != EntityType::CurveParam) {
-            *per_entity.entry(&p.entity_id).or_insert(true) &= locked[p.global_index];
-        }
-        per_entity
-            .into_iter()
-            .filter(|&(_, all_locked)| all_locked)
-            .map(|(id, _)| id.to_string())
-            .collect()
-    }
-
-    /// Degrees of freedom the constraints leave at the current values: free
-    /// variables minus the [rank](https://en.wikipedia.org/wiki/Rank_(linear_algebra)) of each
-    /// Component's [Jacobian](https://en.wikipedia.org/wiki/Jacobian_matrix_and_determinant). Free variables
-    /// no constraint reads count in full. Temporary constraints don't count,
-    /// here or in `fully_constrained_entity_ids`, nor do the curve
-    /// parameters they own. A real constraint's curve parameter is a free
-    /// variable its own rows take back (a point `on` a Spline: two
-    /// equations, one parameter, one degree of freedom less).
-    pub(crate) fn dof(&self) -> usize {
-        let free = self
-            .pm
-            .var_info()
-            .iter()
-            .filter(|p| !p.is_fixed && !self.goal_curve_params.contains(&p.global_index))
-            .count();
-        let rank: usize = self
-            .components
-            .iter()
-            .filter_map(|comp| self.normal_eigen(comp))
-            .map(|(_, eig)| eig.eigenvalues.iter().filter(|l| l.abs() > ZERO_EIG).count())
-            .sum();
-        free - rank
-    }
-
-    /// Conflicting and Redundant constraints at the current variables, which
-    /// should be the solved position: a sketch that only looks conflicting
-    /// where it started isn't. Temporary constraints are outside the
-    /// diagnosed system: their rows are left out and they're never reported.
     ///
-    /// Per Component, over the Jacobian J and residuals r of its diagnosed
-    /// constraints. Rows are *dependent* when some combination of them
+    /// **Diagnosis**: Conflicting and Redundant constraints. A sketch that
+    /// only looks conflicting where it started isn't. Temporary constraints
+    /// are outside the diagnosed system: their rows are left out and they're
+    /// never reported. Rows are *dependent* when some combination of them
     /// vanishes, i.e. they have weight in a vector w with wᵀJ = 0 (the [left
     /// null space](https://en.wikipedia.org/wiki/Kernel_(linear_algebra)#Left_null_space) of J, from the
     /// zero eigenvalues of JJᵀ).
@@ -349,6 +303,7 @@ impl<'a> SketchSystem<'a> {
     ///   neither the solution nor the degrees of freedom; of two duplicates,
     ///   the later is reported. Nothing is Conflicting.
     ///
+    ///
     /// A constraint over fixed variables only has a zero row, so it is
     /// Conflicting when it doesn't hold and Redundant when it does.
     ///
@@ -356,106 +311,165 @@ impl<'a> SketchSystem<'a> {
     /// reported (they have no sketch index): a contradiction with them
     /// reports only the sketch constraints involved, and the Redundant walk
     /// never drops them, as if they came first.
-    pub(crate) fn diagnose(&self) -> Diagnosis {
-        let mut out = Diagnosis::default();
+    pub(crate) fn analyze(&self) -> Analysis {
+        let info = self.pm.var_info();
+        let mut locked: Vec<bool> = info.iter().map(|p| p.is_fixed).collect();
+        let mut rank_sum = 0;
+        let mut diagnosis = Diagnosis::default();
+
         for comp in &self.components {
             let which = &comp.diagnosed;
             if which.is_empty() {
                 continue;
             }
             let (r, jac) = evaluate(&self.pm, &self.constraints, comp, which);
-            // Row range of each diagnosed constraint.
-            let mut rows = Vec::with_capacity(which.len());
-            let mut start = 0;
-            for &i in which {
-                let n = self.constraints.get(i).num_residuals();
-                rows.push(start..start + n);
-                start += n;
-            }
 
-            let eig = SymmetricEigen::new(&jac * jac.transpose());
-            let null: Vec<usize> = (0..eig.eigenvalues.len())
-                .filter(|&k| eig.eigenvalues[k].abs() <= ZERO_EIG)
-                .collect();
-            if null.is_empty() {
+            let rank = if comp.columns.is_empty() {
+                0
+            } else {
+                let eig = SymmetricEigen::new(jac.transpose() * &jac);
+                let mut null_motion_sq = vec![0.0f64; comp.columns.len()];
+                for (k, &lambda) in eig.eigenvalues.iter().enumerate() {
+                    if lambda.abs() <= ZERO_EIG {
+                        let v = eig.eigenvectors.column(k);
+                        for (m, sq) in null_motion_sq.iter_mut().enumerate() {
+                            *sq += v[m] * v[m];
+                        }
+                    }
+                }
+                for (local, &global) in comp.columns.iter().enumerate() {
+                    let touched = jac.column(local).iter().any(|&x| x != 0.0);
+                    if touched && null_motion_sq[local].sqrt() <= MOTION_EPS {
+                        locked[global] = true;
+                    }
+                }
+                eig.eigenvalues.iter().filter(|l| l.abs() > ZERO_EIG).count()
+            };
+            rank_sum += rank;
+            self.diagnose_component(which, &r, &jac, rank, &mut diagnosis);
+        }
+        diagnosis.conflicting.sort_unstable();
+        diagnosis.redundant.sort_unstable();
+
+        let free = info
+            .iter()
+            .filter(|p| !p.is_fixed && !self.goal_curve_params.contains(&p.global_index))
+            .count();
+
+        let mut per_entity: BTreeMap<&str, bool> = BTreeMap::new();
+        for p in info.iter().filter(|p| p.entity_type != EntityType::CurveParam) {
+            *per_entity.entry(&p.entity_id).or_insert(true) &= locked[p.global_index];
+        }
+        let fully_constrained = per_entity
+            .into_iter()
+            .filter(|&(_, all_locked)| all_locked)
+            .map(|(id, _)| id.to_string())
+            .collect();
+
+        Analysis {
+            dof: free - rank_sum,
+            fully_constrained,
+            diagnosis,
+        }
+    }
+
+    /// One Component's Conflicting and Redundant constraints (the rule is on
+    /// [`Self::analyze`]), from its diagnosed constraints `which`, their
+    /// residuals `r`, Jacobian `jac` and its rank `full_rank`.
+    fn diagnose_component(
+        &self,
+        which: &[usize],
+        r: &DVector<f64>,
+        jac: &DMatrix<f64>,
+        full_rank: usize,
+        out: &mut Diagnosis,
+    ) {
+        // Row range of each diagnosed constraint.
+        let mut rows = Vec::with_capacity(which.len());
+        let mut start = 0;
+        for &i in which {
+            let n = self.constraints.get(i).num_residuals();
+            rows.push(start..start + n);
+            start += n;
+        }
+
+        let eig = SymmetricEigen::new(jac * jac.transpose());
+        let null: Vec<usize> = (0..eig.eigenvalues.len())
+            .filter(|&k| eig.eigenvalues[k].abs() <= ZERO_EIG)
+            .collect();
+        if null.is_empty() {
+            return;
+        }
+
+        if r.amax() > TOLF {
+            let mut r_null = DVector::zeros(r.len());
+            for &k in &null {
+                let w = eig.eigenvectors.column(k);
+                r_null += w * w.dot(r);
+            }
+            for (&i, range) in which.iter().zip(&rows) {
+                if !self.constraints.is_implicit(i) && range.clone().any(|row| r_null[row].abs() > TOLF) {
+                    out.conflicting.push(i);
+                }
+            }
+            return;
+        }
+
+        let dependent = |range: &std::ops::Range<usize>| {
+            range.clone().any(|row| {
+                let weight: f64 = null.iter().map(|&k| eig.eigenvectors[(row, k)].powi(2)).sum();
+                weight.sqrt() > MOTION_EPS
+            })
+        };
+        let owned: Vec<Vec<usize>> = which.iter().map(|&i| owned_columns(self.constraints.get(i), &self.pm)).collect();
+        let curve_param_reads: Vec<HashSet<usize>> = which
+            .iter()
+            .map(|&i| {
+                reads(self.constraints.get(i))
+                    .iter()
+                    .filter(|v| matches!(v, Var::CurveParam(_)))
+                    .filter_map(|v| v.column(&self.pm))
+                    .collect()
+            })
+            .collect();
+        let mut dropped = vec![false; which.len()];
+        for c in (0..which.len()).rev() {
+            // Implicit rules are never dropped: they're always kept, as if
+            // first in sketch order.
+            if self.constraints.is_implicit(which[c]) || !dependent(&rows[c]) {
                 continue;
             }
-
-            if r.amax() > TOLF {
-                let mut r_null = DVector::zeros(r.len());
-                for &k in &null {
-                    let w = eig.eigenvectors.column(k);
-                    r_null += w * w.dot(&r);
-                }
-                for (&i, range) in which.iter().zip(&rows) {
-                    if !self.constraints.is_implicit(i) && range.clone().any(|row| r_null[row].abs() > TOLF) {
-                        out.conflicting.push(i);
-                    }
-                }
+            dropped[c] = true;
+            let kept = rows
+                .iter()
+                .zip(&dropped)
+                .filter(|&(_, &d)| !d)
+                .flat_map(|(range, _)| range.clone());
+            let vanished = (0..which.len())
+                .filter(|&k| dropped[k])
+                .flat_map(|k| &owned[k])
+                .filter(|col| (0..which.len()).all(|k| dropped[k] || !curve_param_reads[k].contains(col)))
+                .count();
+            if rank(&jac.select_rows(kept.collect::<Vec<_>>().iter())) + vanished == full_rank {
+                out.redundant.push(which[c]);
             } else {
-                let dependent = |range: &std::ops::Range<usize>| {
-                    range.clone().any(|row| {
-                        let weight: f64 = null.iter().map(|&k| eig.eigenvectors[(row, k)].powi(2)).sum();
-                        weight.sqrt() > MOTION_EPS
-                    })
-                };
-                let full_rank = rank(&jac);
-                let owned: Vec<Vec<usize>> = which
-                    .iter()
-                    .map(|&i| owned_columns(self.constraints.get(i), &self.pm))
-                    .collect();
-                let curve_param_reads: Vec<HashSet<usize>> = which
-                    .iter()
-                    .map(|&i| {
-                        reads(self.constraints.get(i))
-                            .iter()
-                            .filter(|v| matches!(v, Var::CurveParam(_)))
-                            .filter_map(|v| v.column(&self.pm))
-                            .collect()
-                    })
-                    .collect();
-                let mut dropped = vec![false; which.len()];
-                for c in (0..which.len()).rev() {
-                    // Implicit rules are never dropped: they're always kept,
-                    // as if first in sketch order.
-                    if self.constraints.is_implicit(which[c]) || !dependent(&rows[c]) {
-                        continue;
-                    }
-                    dropped[c] = true;
-                    let kept = rows
-                        .iter()
-                        .zip(&dropped)
-                        .filter(|&(_, &d)| !d)
-                        .flat_map(|(range, _)| range.clone());
-                    let vanished = (0..which.len())
-                        .filter(|&k| dropped[k])
-                        .flat_map(|k| &owned[k])
-                        .filter(|col| (0..which.len()).all(|k| dropped[k] || !curve_param_reads[k].contains(col)))
-                        .count();
-                    if rank(&jac.select_rows(kept.collect::<Vec<_>>().iter())) + vanished == full_rank {
-                        out.redundant.push(which[c]);
-                    } else {
-                        dropped[c] = false;
-                    }
-                }
+                dropped[c] = false;
             }
         }
-        out.conflicting.sort_unstable();
-        out.redundant.sort_unstable();
-        out
     }
+}
 
-    /// A Component's Jacobian J (diagnosed constraints only) and the
-    /// [eigen-decomposition](https://en.wikipedia.org/wiki/Eigendecomposition_of_a_matrix) of JᵀJ, whose zero eigenvalues span the motions
-    /// the constraints allow. `None` for a Component with no free variables.
-    fn normal_eigen(&self, comp: &Component) -> Option<(DMatrix<f64>, SymmetricEigen<f64, nalgebra::Dyn>)> {
-        if comp.columns.is_empty() {
-            return None;
-        }
-        let (_, jac) = evaluate(&self.pm, &self.constraints, comp, &comp.diagnosed);
-        let eig = SymmetricEigen::new(jac.transpose() * &jac);
-        Some((jac, eig))
-    }
+/// The degrees-of-freedom analysis and diagnosis of a sketch at its current
+/// configuration (see `ConstraintSolver::analyze`).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Analysis {
+    /// Degrees of freedom the real constraints leave.
+    pub dof: usize,
+    /// IDs of the Points, Circles, Arcs and Ellipses with zero degrees of
+    /// freedom, sorted. Lines and Splines own no variables and aren't listed.
+    pub fully_constrained: Vec<String>,
+    /// Conflicting and Redundant constraints.
+    pub diagnosis: Diagnosis,
 }
 
 /// Threshold for a zero eigenvalue of JᵀJ (null space), consistent with the
@@ -482,8 +496,8 @@ fn rank(jac: &DMatrix<f64>) -> usize {
     if jac.ncols() == 0 || jac.nrows() == 0 {
         return 0;
     }
-    SymmetricEigen::new(jac.transpose() * jac)
-        .eigenvalues
+    (jac.transpose() * jac)
+        .symmetric_eigenvalues()
         .iter()
         .filter(|l| l.abs() > ZERO_EIG)
         .count()

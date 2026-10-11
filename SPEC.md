@@ -913,7 +913,7 @@ for what it isn't (an entity's value):
   their rows.
 - `fullyConstrained` never lists a parameter. A spline is listed when all
   its handles are.
-- Redundant (§ `SketchSystem::diagnose`): dropping a constraint also drops
+- Redundant (§ `SketchSystem::analyze`): dropping a constraint also drops
   each parameter it owns that no kept constraint reads, so the rank
   test is `rank(J_kept) + (vanished parameters) = rank(J)`. A second `on`
   holding the same point on the same spline brings two rows and a

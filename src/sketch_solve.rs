@@ -374,9 +374,8 @@ fn spline_curve(request: &str) -> Result<BSpline, String> {
 /// when its `radmin`, angles, center, focus and endpoints are. A Spline
 /// owns no parameters either: it is reported when all its handle Points
 /// are.
-fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<String> {
-    let mut constrained: std::collections::BTreeSet<String> =
-        cs.fully_constrained_entity_ids().into_iter().collect();
+fn fully_constrained_ids(entity_ids: Vec<String>, primitives: &[Value]) -> Vec<String> {
+    let mut constrained: std::collections::BTreeSet<String> = entity_ids.into_iter().collect();
 
     for p in primitives {
         let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
@@ -597,18 +596,18 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
         },
     });
     if analyze {
+        // Analysed at the solved position, after the solve.
+        let analysis = cs.analyze();
         // Zero-DOF analysis is only meaningful at a solved configuration.
         let fully_constrained = if converged {
-            fully_constrained_ids(&cs, primitives)
+            fully_constrained_ids(analysis.fully_constrained, primitives)
         } else {
             Vec::new()
         };
-        // Diagnosed at the solved position, after the solve.
-        let diagnosis = cs.diagnose();
         let to_ids = |indices: &[usize]| -> Vec<&str> { indices.iter().map(|&i| constraint_ids[i]).collect() };
-        response["conflicting"] = json!(to_ids(&diagnosis.conflicting));
-        response["redundant"] = json!(to_ids(&diagnosis.redundant));
-        response["dof"] = json!(cs.dof());
+        response["conflicting"] = json!(to_ids(&analysis.diagnosis.conflicting));
+        response["redundant"] = json!(to_ids(&analysis.diagnosis.redundant));
+        response["dof"] = json!(analysis.dof);
         response["fullyConstrained"] = json!(fully_constrained);
     }
     Ok(response.to_string())
