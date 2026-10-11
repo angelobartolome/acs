@@ -182,7 +182,7 @@ With `l` running along y = 0, `p` slides along the line to (6, 0), the closest i
 | `fullyConstrained` | *ACS extension.* IDs of entities with zero degrees of freedom; a line is included when both its endpoints are, a spline when all its handles are, an ellipse when its `radmin` and its center and focus points are, an elliptical arc when its `radmin`, angles, center, focus and endpoints are. Only populated on a converged solve; `[]` otherwise |
 | `stats` | *ACS extension.* `iterations` (summed across components), `initialError`, `finalError` (max across components) |
 
-`conflicting` and `redundant` are diagnosed per component at the solved position, so a sketch that only disagrees at its starting position reports nothing. Temporary constraints are never listed and their rows are left out of the diagnosis. A constraint between fixed geometry only is conflicting if it doesn't hold and redundant if it does.
+`conflicting` and `redundant` are diagnosed per component at the solved position, so a sketch that only disagrees at its starting position reports nothing. Temporary constraints are never listed and their rows are left out of the diagnosis. A constraint between fixed geometry only is conflicting if it doesn't hold and redundant if it does. `dof`, `conflicting`, `redundant` and `fullyConstrained` of a solved component don't depend on the sketch's scale: the same sketch in mm or in m gets the same analysis.
 
 Each `spline` primitive comes back with an extra field, `curve`: `{ "degree", "knots", "control_points": [[x, y], …] }`, its solved B-spline (for a fit-point spline, the control points and knots it was computed with). It is output only: a request ignores it, so a response can be sent back as the next request.
 

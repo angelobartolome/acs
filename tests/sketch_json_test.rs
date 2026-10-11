@@ -596,6 +596,43 @@ fn rectangle_with(extra: Value) -> Value {
     request(Value::Array(prims))
 }
 
+/// `req` with every coordinate and distance multiplied by `k`.
+fn scaled(mut req: Value, k: f64) -> Value {
+    for p in req["primitives"].as_array_mut().unwrap() {
+        let keys: &[&str] = match p["type"].as_str().unwrap() {
+            "point" => &["x", "y"],
+            "distance" => &["value"],
+            _ => &[],
+        };
+        for key in keys {
+            p[*key] = json!(p[*key].as_f64().unwrap() * k);
+        }
+    }
+    req
+}
+
+#[test]
+fn diagnosis_is_the_same_at_any_scale() {
+    // Perpendicular and parallel rows grow with the lengths they multiply,
+    // and their rounding noise with them: unequilibrated, a sketch in the
+    // thousands read noise as rank.
+    let req = rectangle_with(json!([
+        { "id": "k7", "type": "perpendicular", "a": "ab", "b": "bc" },
+        { "id": "k8", "type": "parallel", "a": "ab", "b": "cd" }
+    ]));
+    let unit = solve(req.clone());
+    assert_eq!(unit["status"], "converged");
+    assert_eq!(ids(&unit["redundant"]), ["k7", "k8"]);
+    assert_eq!(unit["dof"], 0);
+    for k in [0.01, 100.0, 1000.0, 10000.0] {
+        let resp = solve(scaled(req.clone(), k));
+        assert_eq!(resp["status"], "converged", "scale {k}");
+        for key in ["conflicting", "redundant", "dof", "fullyConstrained"] {
+            assert_eq!(resp[key], unit[key], "{key} at scale {k}");
+        }
+    }
+}
+
 #[test]
 fn incompatible_distances_are_both_conflicting() {
     let resp = solve(request(json!([

@@ -323,6 +323,8 @@ impl<'a> SketchSystem<'a> {
                 continue;
             }
             let (r, jac) = evaluate(&self.pm, &self.constraints, comp, which);
+            let solved = r.amax() <= TOLF;
+            let (r, jac) = equilibrate(r, jac);
 
             let rank = if comp.columns.is_empty() {
                 0
@@ -346,7 +348,7 @@ impl<'a> SketchSystem<'a> {
                 eig.eigenvalues.iter().filter(|l| l.abs() > ZERO_EIG).count()
             };
             rank_sum += rank;
-            self.diagnose_component(which, &r, &jac, rank, &mut diagnosis);
+            self.diagnose_component(which, solved, &r, &jac, rank, &mut diagnosis);
         }
         diagnosis.conflicting.sort_unstable();
         diagnosis.redundant.sort_unstable();
@@ -374,11 +376,13 @@ impl<'a> SketchSystem<'a> {
     }
 
     /// One Component's Conflicting and Redundant constraints (the rule is on
-    /// [`Self::analyze`]), from its diagnosed constraints `which`, their
-    /// residuals `r`, Jacobian `jac` and its rank `full_rank`.
+    /// [`Self::analyze`]), from its diagnosed constraints `which`, whether
+    /// they all hold (`solved`), their residuals `r` and Jacobian `jac` (both
+    /// [equilibrated](equilibrate)) and its rank `full_rank`.
     fn diagnose_component(
         &self,
         which: &[usize],
+        solved: bool,
         r: &DVector<f64>,
         jac: &DMatrix<f64>,
         full_rank: usize,
@@ -401,7 +405,7 @@ impl<'a> SketchSystem<'a> {
             return;
         }
 
-        if r.amax() > TOLF {
+        if !solved {
             let mut r_null = DVector::zeros(r.len());
             for &k in &null {
                 let w = eig.eigenvectors.column(k);
@@ -489,6 +493,37 @@ const FD_STEP: f64 = 1e-5;
 /// Reduced-Hessian eigenvalues within this fraction of the largest are
 /// treated as zero curvature (finite-difference noise is far below it).
 const CURVATURE_EPS: f64 = 1e-6;
+
+/// `jac` with its rows, then its columns, scaled to unit length, and `r`
+/// with the row scales: the system the analysis works on.
+///
+/// Constraints' rows come in different units (a distance's gradient is
+/// unitless, a cross product's grows with the lengths it multiplies), so
+/// JᵀJ's eigenvalues, and their rounding noise, grow with the sketch's
+/// scale, and the absolute `ZERO_EIG` would read noise as rank in a sketch
+/// a hundred times larger. Scaling rows and columns by nonzero factors
+/// changes neither the rank nor which rows a dependency involves nor which
+/// variables a null motion moves, so degrees of freedom, diagnosis and
+/// full constraint mean the same at every scale. A row or column with norm
+/// at most √`ZERO_EIG` is numerically zero and is left as it is (scaling
+/// it up would turn rounding noise into a direction).
+fn equilibrate(mut r: DVector<f64>, mut jac: DMatrix<f64>) -> (DVector<f64>, DMatrix<f64>) {
+    let floor = ZERO_EIG.sqrt();
+    for i in 0..jac.nrows() {
+        let n = jac.row(i).norm();
+        if n > floor {
+            jac.row_mut(i).unscale_mut(n);
+            r[i] /= n;
+        }
+    }
+    for k in 0..jac.ncols() {
+        let n = jac.column(k).norm();
+        if n > floor {
+            jac.column_mut(k).unscale_mut(n);
+        }
+    }
+    (r, jac)
+}
 
 /// Numerical rank of `jac`: the eigenvalues of JᵀJ above `ZERO_EIG`, as in
 /// the degrees-of-freedom analysis.
