@@ -472,17 +472,23 @@ fn error_response(r: Rejection) -> String {
 /// Solves one sketch (`acsSolveSketch`, `P3DSketch_Solve`), with this
 /// contract:
 ///
-/// - Request: `{ "version": 1, "primitives": [...], "maxIterations"?: n }`.
+/// - Request: `{ "version": 1, "primitives": [...], "maxIterations"?: n,
+///   "analyze"?: bool }`.
 /// - Response: `{ "version": 1, "status": "converged" | "failed",
 ///   "primitives": [...], "conflicting": [...], "redundant": [...], "dof": n }`
 ///   with the request's primitives in the same order and their solved values.
 ///   ACS also adds `stats` (`iterations`, `initialError`, `finalError`) and
 ///   `fullyConstrained` (entity IDs with zero degrees of freedom, only on a
 ///   converged solve).
+/// - `"analyze": false` (default `true`) leaves out `conflicting`,
+///   `redundant`, `dof` and `fullyConstrained`: absent means not analysed,
+///   empty means analysed and none. The solve is the same; the analysis is
+///   most of a solve's cost, so a drag's frames skip it and the release
+///   request runs it.
 ///
 /// Returns `Ok(response)` when the request was understood, whatever the solve
 /// status, and `Err(response)` with `status: "invalid"` and an `error` naming
-/// the problem otherwise: malformed JSON, a wrong version or `maxIterations`,
+/// the problem otherwise: malformed JSON, a wrong version, `maxIterations` or `analyze`,
 /// a duplicate id, an unknown or unsupported type, a missing field, a
 /// reference to a missing entity or a combination of entity kinds
 /// no variant of the type takes. When the problem is a constraint, the
@@ -506,6 +512,10 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
             .ok_or("maxIterations must be a non-negative whole number")?;
         cs.set_max_iterations(n as usize);
     }
+    let analyze = match root.get("analyze") {
+        None => true,
+        Some(v) => v.as_bool().ok_or("analyze must be true or false")?,
+    };
 
     let mut seen = HashSet::new();
     let mut typed: Vec<(&str, &str, &Value)> = Vec::with_capacity(primitives.len());
@@ -576,32 +586,32 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
     apply_solution_to_primitives(&mut out, &cs);
     report_curve_params(&mut out, &cs, &constraint_ids);
 
-    // Zero-DOF analysis is only meaningful at a solved configuration.
-    let fully_constrained = if converged {
-        fully_constrained_ids(&cs, primitives)
-    } else {
-        Vec::new()
-    };
-
-    // Diagnosed at the solved position, after the solve.
-    let diagnosis = cs.diagnose();
-    let to_ids = |indices: &[usize]| -> Vec<&str> { indices.iter().map(|&i| constraint_ids[i]).collect() };
-
-    Ok(json!({
+    let mut response = json!({
         "version": 1,
         "status": if converged { "converged" } else { "failed" },
         "primitives": out,
-        "conflicting": to_ids(&diagnosis.conflicting),
-        "redundant": to_ids(&diagnosis.redundant),
-        "dof": cs.dof(),
-        "fullyConstrained": fully_constrained,
         "stats": {
             "iterations": iterations,
             "initialError": initial_error,
             "finalError": final_error,
         },
-    })
-    .to_string())
+    });
+    if analyze {
+        // Zero-DOF analysis is only meaningful at a solved configuration.
+        let fully_constrained = if converged {
+            fully_constrained_ids(&cs, primitives)
+        } else {
+            Vec::new()
+        };
+        // Diagnosed at the solved position, after the solve.
+        let diagnosis = cs.diagnose();
+        let to_ids = |indices: &[usize]| -> Vec<&str> { indices.iter().map(|&i| constraint_ids[i]).collect() };
+        response["conflicting"] = json!(to_ids(&diagnosis.conflicting));
+        response["redundant"] = json!(to_ids(&diagnosis.redundant));
+        response["dof"] = json!(cs.dof());
+        response["fullyConstrained"] = json!(fully_constrained);
+    }
+    Ok(response.to_string())
 }
 
 /// Starts constraint `index`'s curve parameters (a contact on a Spline)

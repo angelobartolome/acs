@@ -330,6 +330,45 @@ fn max_iterations_must_be_a_whole_number() {
 }
 
 #[test]
+fn analyze_false_skips_the_diagnostics_but_not_the_solve() {
+    // A drag: a fully constrained point with a goal it can't reach, plus a
+    // duplicate constraint so the full analysis has something to report.
+    let mut req = request(json!([
+        { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
+        { "id": "p2", "type": "point", "x": 3.0, "y": 4.0 },
+        { "id": "k1", "type": "x", "point": "p2", "value": 5.0 },
+        { "id": "k2", "type": "y", "point": "p2", "value": 5.0 },
+        { "id": "k3", "type": "y", "point": "p2", "value": 5.0 },
+        { "id": "g", "type": "x", "point": "p2", "value": 9.0, "temporary": true }
+    ]));
+    let full = solve(req.clone());
+    assert_eq!(full["redundant"], json!(["k3"]));
+    assert_eq!(full["fullyConstrained"], json!(["p1", "p2"]));
+
+    req["analyze"] = json!(false);
+    let quick = solve(req.clone());
+    for key in ["conflicting", "redundant", "dof", "fullyConstrained"] {
+        assert!(quick.get(key).is_none(), "{key} should be left out");
+    }
+    assert_eq!(quick["status"], full["status"]);
+    assert_eq!(quick["primitives"], full["primitives"]);
+    assert_eq!(quick["stats"], full["stats"]);
+
+    req["analyze"] = json!(true);
+    assert_eq!(solve(req), full);
+}
+
+#[test]
+fn analyze_must_be_a_boolean() {
+    for bad in [json!(0), json!("false"), json!(null)] {
+        let mut req = request(json!([{ "id": "p", "type": "point", "x": 0.0, "y": 0.0 }]));
+        req["analyze"] = bad;
+        let resp = reject(&req.to_string());
+        assert!(resp["error"].as_str().unwrap().contains("analyze"));
+    }
+}
+
+#[test]
 fn duplicate_ids_are_rejected() {
     let resp = reject(
         &request(json!([

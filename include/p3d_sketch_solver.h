@@ -4,10 +4,13 @@
  * Solver-neutral: any solver library can implement these functions. The request and
  * response are versioned JSON in the sketch primitive format.
  *
- * Request:  { "version": 1, "primitives": [...], "maxIterations"?: n }
+ * Request:  { "version": 1, "primitives": [...], "maxIterations"?: n, "analyze"?: bool }
  * Response: { "version": 1, "status": "converged" | "failed" | "invalid",
  *             "primitives": [...], "conflicting": [...], "redundant": [...], "dof": n,
  *             "error"?: "..." }
+ *
+ * "analyze": false (default true) leaves conflicting, redundant and dof out of the
+ * response: absent means not analysed, empty means analysed and none.
  *
  * Every solver keeps Reference Geometry (`isReference`) fixed, radii included, resolves
  * `param` primitives by id, and reports conflicts and redundancies at the solved position.
