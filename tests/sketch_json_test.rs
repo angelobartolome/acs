@@ -330,6 +330,45 @@ fn max_iterations_must_be_a_whole_number() {
 }
 
 #[test]
+fn analyze_false_skips_the_diagnostics_but_not_the_solve() {
+    // A drag: a fully constrained point with a goal it can't reach, plus a
+    // duplicate constraint so the full analysis has something to report.
+    let mut req = request(json!([
+        { "id": "p1", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
+        { "id": "p2", "type": "point", "x": 3.0, "y": 4.0 },
+        { "id": "k1", "type": "x", "point": "p2", "value": 5.0 },
+        { "id": "k2", "type": "y", "point": "p2", "value": 5.0 },
+        { "id": "k3", "type": "y", "point": "p2", "value": 5.0 },
+        { "id": "g", "type": "x", "point": "p2", "value": 9.0, "temporary": true }
+    ]));
+    let full = solve(req.clone());
+    assert_eq!(full["redundant"], json!(["k3"]));
+    assert_eq!(full["fullyConstrained"], json!(["p1", "p2"]));
+
+    req["analyze"] = json!(false);
+    let quick = solve(req.clone());
+    for key in ["conflicting", "redundant", "dof", "fullyConstrained"] {
+        assert!(quick.get(key).is_none(), "{key} should be left out");
+    }
+    assert_eq!(quick["status"], full["status"]);
+    assert_eq!(quick["primitives"], full["primitives"]);
+    assert_eq!(quick["stats"], full["stats"]);
+
+    req["analyze"] = json!(true);
+    assert_eq!(solve(req), full);
+}
+
+#[test]
+fn analyze_must_be_a_boolean() {
+    for bad in [json!(0), json!("false"), json!(null)] {
+        let mut req = request(json!([{ "id": "p", "type": "point", "x": 0.0, "y": 0.0 }]));
+        req["analyze"] = bad;
+        let resp = reject(&req.to_string());
+        assert!(resp["error"].as_str().unwrap().contains("analyze"));
+    }
+}
+
+#[test]
 fn duplicate_ids_are_rejected() {
     let resp = reject(
         &request(json!([
@@ -555,6 +594,43 @@ fn rectangle_with(extra: Value) -> Value {
     let mut prims = rectangle();
     prims.extend(extra.as_array().unwrap().iter().cloned());
     request(Value::Array(prims))
+}
+
+/// `req` with every coordinate and distance multiplied by `k`.
+fn scaled(mut req: Value, k: f64) -> Value {
+    for p in req["primitives"].as_array_mut().unwrap() {
+        let keys: &[&str] = match p["type"].as_str().unwrap() {
+            "point" => &["x", "y"],
+            "distance" => &["value"],
+            _ => &[],
+        };
+        for key in keys {
+            p[*key] = json!(p[*key].as_f64().unwrap() * k);
+        }
+    }
+    req
+}
+
+#[test]
+fn diagnosis_is_the_same_at_any_scale() {
+    // Perpendicular and parallel rows grow with the lengths they multiply,
+    // and their rounding noise with them: unequilibrated, a sketch in the
+    // thousands read noise as rank.
+    let req = rectangle_with(json!([
+        { "id": "k7", "type": "perpendicular", "a": "ab", "b": "bc" },
+        { "id": "k8", "type": "parallel", "a": "ab", "b": "cd" }
+    ]));
+    let unit = solve(req.clone());
+    assert_eq!(unit["status"], "converged");
+    assert_eq!(ids(&unit["redundant"]), ["k7", "k8"]);
+    assert_eq!(unit["dof"], 0);
+    for k in [0.01, 100.0, 1000.0, 10000.0] {
+        let resp = solve(scaled(req.clone(), k));
+        assert_eq!(resp["status"], "converged", "scale {k}");
+        for key in ["conflicting", "redundant", "dof", "fullyConstrained"] {
+            assert_eq!(resp[key], unit[key], "{key} at scale {k}");
+        }
+    }
 }
 
 #[test]

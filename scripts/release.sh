@@ -89,6 +89,11 @@ if $BUILD_WASM; then
   WASM_PID=$!
 fi
 
+# The native libraries build at opt-level 3, not the profile's "s" (kept for the WASM package's
+# size): a solve with its analysis runs about a third faster natively at 3; in WASM the gain is
+# about an eighth, for a quarter more bytes.
+NATIVE_OPT_LEVEL=3
+
 if [ ${#TARGET_PLATFORMS[@]} -gt 0 ]; then
   # One cargo invocation builds every requested Apple target, scheduling all of them across the
   # cores and sharing the host artifacts (build scripts, proc macros).
@@ -109,14 +114,14 @@ if [ ${#TARGET_PLATFORMS[@]} -gt 0 ]; then
     export CARGO_PROFILE_RELEASE_STRIP=false
   fi
   echo "Building the libraries for ${TARGET_PLATFORMS[*]}..."
-  cargo build --release --lib --features c-abi "${target_args[@]}"
+  CARGO_PROFILE_RELEASE_OPT_LEVEL=$NATIVE_OPT_LEVEL cargo build --release --lib --features c-abi "${target_args[@]}"
 fi
 
 if $BUILD_LINUX; then
   target="$(target_of linux-x86_64)"
   rustup target list --installed | grep -qx "$target" || rustup target add "$target"
   echo "Building the static library for linux-x86_64..."
-  cargo rustc --release --lib --features c-abi --target "$target" --crate-type staticlib
+  CARGO_PROFILE_RELEASE_OPT_LEVEL=$NATIVE_OPT_LEVEL cargo rustc --release --lib --features c-abi --target "$target" --crate-type staticlib
 fi
 
 if [ ${#PLATFORMS[@]} -gt 0 ]; then

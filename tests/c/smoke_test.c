@@ -2,8 +2,9 @@
  * C smoke test for the sketch solver C ABI (include/p3d_sketch_solver.h).
  *
  * Reads a request from stdin (or passes NULL with --null), solves it with
- * P3DSketch_Solve, writes the response to stdout, releases it with P3DSketch_Free,
- * and exits with P3DSketch_Solve's return value.
+ * P3DSketch_Solve (or builds a Spline's curve with P3DSpline_Curve, with --curve),
+ * writes the response to stdout, releases it with P3DSketch_Free, and exits with
+ * the call's return value.
  * Built and driven by tests/c_abi_test.rs.
  */
 #include <stdio.h>
@@ -31,9 +32,10 @@ static char *read_stdin(void) {
 }
 
 int main(int argc, char **argv) {
-    int null_request = 0;
+    int null_request = 0, curve = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--null") == 0) null_request = 1;
+        if (strcmp(argv[i], "--curve") == 0) curve = 1;
     }
 
     char *request = NULL;
@@ -43,7 +45,8 @@ int main(int argc, char **argv) {
     }
 
     char *response = NULL;
-    int code = P3DSketch_Solve(request, &response);
+    int code = curve ? P3DSpline_Curve(request, &response)
+                     : P3DSketch_Solve(request, &response);
     free(request);
     if (!response) return 101;
 

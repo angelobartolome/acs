@@ -8,17 +8,24 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use acs::c_abi::{P3DSketch_Free, P3DSketch_Solve};
-use acs::sketch_solve::solve_sketch_json;
+use acs::c_abi::{P3DSketch_Free, P3DSketch_Solve, P3DSpline_Curve};
+use acs::sketch_solve::{solve_sketch_json, spline_curve_json};
 use serde_json::{Value, json};
+
+type Entry = unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> i32;
 
 /// Calls `P3DSketch_Solve` with `request` (null when `None`) and returns its
 /// return code and response, released with `P3DSketch_Free`.
 fn call_raw(request: Option<&[u8]>) -> (i32, String) {
+    call_entry(P3DSketch_Solve, request)
+}
+
+/// Calls `entry` as C does, releasing the response with `P3DSketch_Free`.
+fn call_entry(entry: Entry, request: Option<&[u8]>) -> (i32, String) {
     let owned = request.map(|bytes| CString::new(bytes).unwrap());
     let ptr = owned.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
     let mut response: *mut c_char = std::ptr::null_mut();
-    let code = unsafe { P3DSketch_Solve(ptr, &mut response) };
+    let code = unsafe { entry(ptr, &mut response) };
     assert!(!response.is_null(), "response must always be set");
     let text = unsafe { CStr::from_ptr(response) }
         .to_str()
@@ -71,6 +78,57 @@ fn malformed_requests() -> Vec<String> {
         ]})
         .to_string(),
     ]
+}
+
+/// Spline curve requests: ones with a curve and ones without.
+fn curve_requests() -> Vec<String> {
+    let handles = [[0.0, 0.0], [1.0, 2.0], [3.0, 2.5], [4.0, -1.0], [6.5, 0.3]];
+    vec![
+        json!({ "version": 1, "handles": handles, "interpolated": true }).to_string(),
+        json!({ "version": 1, "handles": handles, "interpolated": false }).to_string(),
+        json!({ "version": 1, "handles": handles, "interpolated": false,
+                "knots": [0, 0, 0, 0, 0.3, 1, 1, 1, 1] })
+        .to_string(),
+    ]
+}
+
+fn curve_rejections() -> Vec<String> {
+    vec![
+        "not json".to_string(),
+        json!({ "version": 1, "handles": [[0, 0]], "interpolated": true }).to_string(),
+        json!({ "version": 1, "handles": [[0, 0], [1, 1]], "interpolated": false }).to_string(),
+    ]
+}
+
+fn assert_curve_error(response: &str) {
+    let resp: Value = serde_json::from_str(response).expect("response should be JSON");
+    assert_eq!(resp["version"], 1);
+    assert!(resp["error"].is_string(), "{resp}");
+}
+
+#[test]
+fn spline_curve_answers_as_the_json_api() {
+    for request in curve_requests() {
+        let (code, response) = call_entry(P3DSpline_Curve, Some(request.as_bytes()));
+        assert_eq!(code, 0, "{request}");
+        assert_eq!(response, spline_curve_json(&request).unwrap());
+    }
+    for request in curve_rejections() {
+        let (code, response) = call_entry(P3DSpline_Curve, Some(request.as_bytes()));
+        assert_ne!(code, 0, "{request}");
+        assert_eq!(response, spline_curve_json(&request).unwrap_err());
+    }
+}
+
+#[test]
+fn spline_curve_rejects_a_null_or_non_utf8_request() {
+    for request in [None, Some(&b"{\"version\": 1, \"handles\": [\xff]}"[..])] {
+        let (code, response) = call_entry(P3DSpline_Curve, request);
+        assert_ne!(code, 0);
+        assert_curve_error(&response);
+    }
+    let request = CString::new(curve_requests()[0].clone()).unwrap();
+    assert_ne!(unsafe { P3DSpline_Curve(request.as_ptr(), std::ptr::null_mut()) }, 0);
 }
 
 #[test]
@@ -207,4 +265,16 @@ fn c_smoke_test_gets_the_json_api_responses() {
     let out = Command::new(&exe).arg("--null").output().unwrap();
     assert_ne!(out.status.code().expect("must not crash"), 0);
     assert_invalid(&String::from_utf8(out.stdout).unwrap());
+
+    // P3DSpline_Curve, from C.
+    for request in curve_requests() {
+        let (code, response) = run_c(&exe, &["--curve"], &request);
+        assert_eq!(code, 0, "{request}");
+        assert_eq!(response, spline_curve_json(&request).unwrap());
+    }
+    for request in curve_rejections() {
+        let (code, response) = run_c(&exe, &["--curve"], &request);
+        assert_ne!(code, 0, "{request}");
+        assert_eq!(response, spline_curve_json(&request).unwrap_err());
+    }
 }

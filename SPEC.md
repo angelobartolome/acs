@@ -855,6 +855,15 @@ points), so either form can be rebuilt from the other: a fit-point spline's
 `curve`, sent as a control-point spline, is the same curve
 (`tests/spline_test.rs`).
 
+The curve is also available without a solve: `spline_curve_json`
+(`acsSplineCurve`, C `P3DSpline_Curve`) takes `{version: 1, handles:
+[[x, y], …], interpolated, knots?}` and answers `{version: 1, curve}`, built
+by the same `BSpline::new` as a solve's `curve` (so equal handles give an
+equal `curve`, `tests/spline_curve_test.rs`), or `{version: 1, error}` with
+`spline::check`'s message for handles and knots a sketch's Spline is
+rejected for. It only builds: evaluation, closest points and splitting are
+left to the caller's B-spline code.
+
 **Jacobians: exact, through the parameterisation.** The control points of
 a fit-point spline depend on its fit points both linearly (the right-hand
 side) and nonlinearly (`A` depends on the knots, which are the centripetal
@@ -904,7 +913,7 @@ for what it isn't (an entity's value):
   their rows.
 - `fullyConstrained` never lists a parameter. A spline is listed when all
   its handles are.
-- Redundant (§ `SketchSystem::diagnose`): dropping a constraint also drops
+- Redundant (§ `SketchSystem::analyze`): dropping a constraint also drops
   each parameter it owns that no kept constraint reads, so the rank
   test is `rank(J_kept) + (vanished parameters) = rank(J)`. A second `on`
   holding the same point on the same spline brings two rows and a

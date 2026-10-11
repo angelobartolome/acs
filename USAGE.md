@@ -7,7 +7,7 @@ ACS exposes two integration paths:
 | Path | Use when |
 |------|----------|
 | **WASM JSON API** (`acsSolveSketch`) | Browser / JS frontend — send a JSON description of the sketch in ACS's native constraint vocabulary, receive updated positions back |
-| **C ABI** (`P3DSketch_Solve`) | Native code linking the static library — the same JSON contract (see *C ABI* below) |
+| **C ABI** (`P3DSketch_Solve`, `P3DSpline_Curve`) | Native code linking the static library — the same JSON contract (see *C ABI* below) |
 | **Rust native API** (`ConstraintSolver`) | Server-side Rust or embedding ACS as a Rust crate |
 
 Both paths run the same dogleg solver with the same pre-solver optimization. The sections below cover each path and explain how to get the most out of the pre-solver.
@@ -35,9 +35,11 @@ const response = JSON.parse(acsSolveSketch(JSON.stringify(sketchInput)));
 |---|---|
 | `acsSolveSketch(request)` | solves a sketch |
 | `acsConstraintCatalog()` | the constraint catalog |
+| `acsSplineCurve(request)` | a spline's curve, without solving (see *Spline curves*) |
 | `P3DSketch_Solve` (C ABI, `--features c-abi`) | solves a sketch |
+| `P3DSpline_Curve` (C ABI, `--features c-abi`) | a spline's curve, without solving |
 
-In Rust: `sketch_solve::solve_sketch_json(request)`.
+In Rust: `sketch_solve::solve_sketch_json(request)` and `sketch_solve::spline_curve_json(request)`.
 
 ### Input format
 
@@ -49,7 +51,7 @@ In Rust: `sketch_solve::solve_sketch_json(request)`.
 }
 ```
 
-`version` must be `1`. `maxIterations` is optional (default 100). Extra primitive fields (`isReference`, `isConstruction`, `group`) are accepted and passed through; `isReference: true` also holds the entity fixed (see below). A constraint with `"temporary": true` (such as one holding a dragged point) is a soft goal: the other (real) constraints hold exactly, and temporary ones are met as closely as those allow (a point on a Line dragged off it stays on the Line, at the closest point to the cursor; a fully constrained point doesn't move). `status` is about the real constraints only, so a temporary goal that can't be met never makes a solve `failed`; temporary constraints are also left out of `conflicting`, `redundant`, `dof` and `fullyConstrained`.
+`version` must be `1`. `maxIterations` is optional (default 100). `analyze` is optional (default `true`): `"analyze": false` solves the same way but leaves `conflicting`, `redundant`, `dof` and `fullyConstrained` out of the response (absent means not analysed; `[]` means analysed and none). That analysis is most of a solve's cost on a sketch of more than a few entities, so a drag's frames can skip it, keep showing the last analysed values, and analyse once on release. Extra primitive fields (`isReference`, `isConstruction`, `group`) are accepted and passed through; `isReference: true` also holds the entity fixed (see below). A constraint with `"temporary": true` (such as one holding a dragged point) is a soft goal: the other (real) constraints hold exactly, and temporary ones are met as closely as those allow (a point on a Line dragged off it stays on the Line, at the closest point to the cursor; a fully constrained point doesn't move). `status` is about the real constraints only, so a temporary goal that can't be met never makes a solve `failed`; temporary constraints are also left out of `conflicting`, `redundant`, `dof` and `fullyConstrained`.
 
 All primitives live in one flat array — geometry first, then constraints, though order within each group does not matter.
 
@@ -180,7 +182,7 @@ With `l` running along y = 0, `p` slides along the line to (6, 0), the closest i
 | `fullyConstrained` | *ACS extension.* IDs of entities with zero degrees of freedom; a line is included when both its endpoints are, a spline when all its handles are, an ellipse when its `radmin` and its center and focus points are, an elliptical arc when its `radmin`, angles, center, focus and endpoints are. Only populated on a converged solve; `[]` otherwise |
 | `stats` | *ACS extension.* `iterations` (summed across components), `initialError`, `finalError` (max across components) |
 
-`conflicting` and `redundant` are diagnosed per component at the solved position, so a sketch that only disagrees at its starting position reports nothing. Temporary constraints are never listed and their rows are left out of the diagnosis. A constraint between fixed geometry only is conflicting if it doesn't hold and redundant if it does.
+`conflicting` and `redundant` are diagnosed per component at the solved position, so a sketch that only disagrees at its starting position reports nothing. Temporary constraints are never listed and their rows are left out of the diagnosis. A constraint between fixed geometry only is conflicting if it doesn't hold and redundant if it does. `dof`, `conflicting`, `redundant` and `fullyConstrained` of a solved component don't depend on the sketch's scale: the same sketch in mm or in m gets the same analysis.
 
 Each `spline` primitive comes back with an extra field, `curve`: `{ "degree", "knots", "control_points": [[x, y], …] }`, its solved B-spline (for a fit-point spline, the control points and knots it was computed with). It is output only: a request ignores it, so a response can be sent back as the next request.
 
@@ -195,6 +197,22 @@ A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..
 ### C ABI
 
 The same contract is exported to C from the static library built with `--features c-abi` (header: `include/p3d_sketch_solver.h`). `P3DSketch_Solve(request, &response)` answers exactly as `acsSolveSketch`. (Before 0.1.7 it took a `vocabulary` argument between the request and the response pointer. The symbol name is unchanged, so nothing catches a caller built against the old header at link time: rebuild it against the new one.) It returns `0` with the response for an understood request (whatever the solve `status`) and non-zero with the `invalid` response above for a malformed one. A null or non-UTF-8 request, or an internal panic, is also answered with an `invalid` response, never a crash. `*response` is always set and must be released with `P3DSketch_Free`. No state is kept between calls.
+
+### Spline curves
+
+`acsSplineCurve(request)` (C: `P3DSpline_Curve(request, &response)`, released with `P3DSketch_Free`) builds a spline's curve from its handles without solving anything, for drawing a spline while it is being edited or making its edge when no sketch is solved. It is the `curve` a solve reports for a `spline` primitive with those handles (the same code builds both), so the two never differ.
+
+```jsonc
+// Request: a spline primitive's fields, with the handles' positions in place of point IDs
+{ "version": 1, "handles": [[0, 0], [1, 2], [3, 2.5], [4, -1]], "interpolated": true }
+{ "version": 1, "handles": [[0, 0], [1, 2], [3, 2.5], [4, -1], [6, 0]], "interpolated": false,
+  "knots": [0, 0, 0, 0, 0.4, 1, 1, 1, 1] }
+// Response
+{ "version": 1, "curve": { "degree": 3, "knots": [...], "control_points": [[x, y], ...] } }
+{ "version": 1, "error": "a control-point spline needs at least 4 control points (it is a cubic), got 3" }
+```
+
+`handles`, `interpolated` (required) and `knots` (optional, control points only; `null` is no knots) mean what they mean on a `spline` primitive. Handles and knots a sketch's spline would be rejected for get the same message, as `error`, and no `curve`; so does a request it can't read (a wrong `version`, a missing or malformed field). The C function returns `0` with a curve and non-zero with an `error`; a null or non-UTF-8 request, or an internal panic, is an `error` response too. It only builds the curve: evaluate it, find closest points or split it with any B-spline library (degree, clamped knots and control points are all it needs).
 
 ### Full example: a constrained square
 

@@ -4,7 +4,7 @@
 use crate::constraints::{geometry_value, reads};
 use crate::geometry::{Arc as GeoArc, Circle, CurveParam, Ellipse, EllipticalArc, Line, Spline};
 use crate::sketch_system::{Role, SketchSystem};
-pub use crate::sketch_system::Diagnosis;
+pub use crate::sketch_system::{Analysis, Diagnosis};
 use crate::{
     Constraint, ConstraintType, GeometrySystem, ParametricDogLegSolver, Point, check_vars,
     create_constraint,
@@ -182,23 +182,32 @@ impl ConstraintSolver {
     /// owns no variables; callers treat it as fully constrained when both
     /// endpoints are. Meaningful only at a solved configuration.
     pub fn fully_constrained_entity_ids(&self) -> Vec<String> {
-        self.system().fully_constrained_entity_ids()
+        self.analyze().fully_constrained
     }
 
     /// Degrees of freedom the constraints leave at the current configuration:
     /// free variables minus the rank of each Component's Jacobian.
     pub fn dof(&self) -> usize {
-        self.system().dof()
+        self.analyze().dof
     }
 
     /// Conflicting and Redundant constraints at the current configuration
     /// (call it after [`Self::solve`]), by constraint index. Temporary
     /// constraints are never reported. The rule is documented on
-    /// `SketchSystem::diagnose`: dependent constraints carrying residual in
+    /// `SketchSystem::analyze`: dependent constraints carrying residual in
     /// an unsolved Component are Conflicting; in a Solved Component, a
     /// minimal set of dependent constraints, latest first, is Redundant.
     pub fn diagnose(&self) -> Diagnosis {
-        self.system().diagnose()
+        self.analyze().diagnosis
+    }
+
+    /// Degrees of freedom, fully constrained entities and diagnosis together
+    /// at the current configuration (call it after [`Self::solve`]): what
+    /// [`Self::dof`], [`Self::fully_constrained_entity_ids`] and
+    /// [`Self::diagnose`] report, from one pass that shares its
+    /// decompositions, so cheaper than calling them in turn.
+    pub fn analyze(&self) -> Analysis {
+        self.system().analyze()
     }
 
     /// The point with this ID.

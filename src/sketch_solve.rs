@@ -1,4 +1,6 @@
-//! JSON sketch API: parses primitives, solves, and builds the response.
+//! JSON sketch API: parses primitives, solves, and builds the response
+//! ([`solve_sketch_json`]); and a Spline's curve without solving
+//! ([`spline_curve_json`]).
 //! Constraint types and their fields are declared in `constraint_catalog`.
 
 use std::collections::{HashMap, HashSet};
@@ -6,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use serde_json::{json, Value};
 
 use crate::geometry::{Arc as GeoArc, Circle, Ellipse, EllipticalArc, Line, Point, Spline};
+use crate::spline::BSpline;
 use crate::constraint_catalog::{self, EllipticalArcPoints, References};
 use crate::{ConstraintSolver, ConstraintType, SolverResult};
 
@@ -290,16 +293,75 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
             && let Some(obj) = p.as_object_mut()
         {
             // Output only (ignored in a request): the solved curve.
-            obj.insert(
-                "curve".to_string(),
-                json!({
-                    "degree": curve.degree,
-                    "knots": curve.knots,
-                    "control_points": curve.control_points,
-                }),
-            );
+            obj.insert("curve".to_string(), curve_json(&curve));
         }
     }
+}
+
+/// A Spline's `curve` as a response reports it: `{degree, knots,
+/// control_points}`.
+fn curve_json(curve: &BSpline) -> Value {
+    json!({
+        "degree": curve.degree,
+        "knots": curve.knots,
+        "control_points": curve.control_points,
+    })
+}
+
+/// A Spline's curve from its handles, without solving (`acsSplineCurve`,
+/// `P3DSpline_Curve`), with this contract:
+///
+/// - Request: `{ "version": 1, "handles": [[x, y], ...], "interpolated":
+///   bool, "knots"?: [...] }`, a `spline` primitive's fields with the
+///   handles' positions in place of Point IDs.
+/// - Response: `{ "version": 1, "curve": { "degree", "knots",
+///   "control_points" } }`, the `curve` a solve reports for that Spline
+///   ([`BSpline::new`]).
+///
+/// Returns `Err` with `{ "version": 1, "error": "..." }` for a request it
+/// can't read or handles and knots that make no curve ([`spline::check`]'s
+/// message, as a sketch's Spline is rejected).
+///
+/// [`spline::check`]: crate::spline::check
+pub fn spline_curve_json(request: &str) -> Result<String, String> {
+    spline_curve(request)
+        .map(|curve| json!({ "version": 1, "curve": curve_json(&curve) }).to_string())
+        .map_err(|error| curve_error(&error))
+}
+
+/// [`spline_curve_json`]'s `{ "version": 1, "error" }` response.
+pub(crate) fn curve_error(error: &str) -> String {
+    json!({ "version": 1, "error": error }).to_string()
+}
+
+fn spline_curve(request: &str) -> Result<BSpline, String> {
+    let root: Value = serde_json::from_str(request).map_err(|e| format!("invalid JSON: {e}"))?;
+    check_version(&root)?;
+    let handles = root
+        .get("handles")
+        .and_then(Value::as_array)
+        .ok_or("missing field 'handles'")?
+        .iter()
+        .map(|h| match h.as_array().map(Vec::as_slice) {
+            Some([x, y]) => Some([x.as_f64()?, y.as_f64()?]),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or("'handles' must be [x, y] pairs of numbers")?;
+    let interpolated = root
+        .get("interpolated")
+        .ok_or("missing field 'interpolated'")?
+        .as_bool()
+        .ok_or("'interpolated' must be true or false")?;
+    let knots = match root.get("knots") {
+        None | Some(Value::Null) => None,
+        Some(k) => Some(
+            k.as_array()
+                .and_then(|k| k.iter().map(Value::as_f64).collect::<Option<Vec<_>>>())
+                .ok_or("'knots' must be an array of numbers")?,
+        ),
+    };
+    BSpline::new(&handles, interpolated, knots.as_deref())
 }
 
 /// Computes the set of fully-constrained (DOF = 0) entity IDs, including lines.
@@ -312,9 +374,8 @@ fn apply_solution_to_primitives(out: &mut [Value], cs: &ConstraintSolver) {
 /// when its `radmin`, angles, center, focus and endpoints are. A Spline
 /// owns no parameters either: it is reported when all its handle Points
 /// are.
-fn fully_constrained_ids(cs: &ConstraintSolver, primitives: &[Value]) -> Vec<String> {
-    let mut constrained: std::collections::BTreeSet<String> =
-        cs.fully_constrained_entity_ids().into_iter().collect();
+fn fully_constrained_ids(entity_ids: Vec<String>, primitives: &[Value]) -> Vec<String> {
+    let mut constrained: std::collections::BTreeSet<String> = entity_ids.into_iter().collect();
 
     for p in primitives {
         let Some(t) = p.get("type").and_then(|x| x.as_str()) else {
@@ -389,6 +450,14 @@ fn constraint_error(id: &str, error: impl std::fmt::Display) -> Rejection {
     }
 }
 
+/// Rejects a request whose `version` isn't 1.
+fn check_version(root: &Value) -> Result<(), &'static str> {
+    match root.get("version").and_then(Value::as_f64) {
+        Some(1.0) => Ok(()),
+        _ => Err("unsupported request version"),
+    }
+}
+
 /// The `{ version: 1, status: "invalid", error, constraintId? }` response for
 /// a request that couldn't be read.
 fn error_response(r: Rejection) -> String {
@@ -402,17 +471,23 @@ fn error_response(r: Rejection) -> String {
 /// Solves one sketch (`acsSolveSketch`, `P3DSketch_Solve`), with this
 /// contract:
 ///
-/// - Request: `{ "version": 1, "primitives": [...], "maxIterations"?: n }`.
+/// - Request: `{ "version": 1, "primitives": [...], "maxIterations"?: n,
+///   "analyze"?: bool }`.
 /// - Response: `{ "version": 1, "status": "converged" | "failed",
 ///   "primitives": [...], "conflicting": [...], "redundant": [...], "dof": n }`
 ///   with the request's primitives in the same order and their solved values.
 ///   ACS also adds `stats` (`iterations`, `initialError`, `finalError`) and
 ///   `fullyConstrained` (entity IDs with zero degrees of freedom, only on a
 ///   converged solve).
+/// - `"analyze": false` (default `true`) leaves out `conflicting`,
+///   `redundant`, `dof` and `fullyConstrained`: absent means not analysed,
+///   empty means analysed and none. The solve is the same; the analysis is
+///   most of a solve's cost, so a drag's frames skip it and the release
+///   request runs it.
 ///
 /// Returns `Ok(response)` when the request was understood, whatever the solve
 /// status, and `Err(response)` with `status: "invalid"` and an `error` naming
-/// the problem otherwise: malformed JSON, a wrong version or `maxIterations`,
+/// the problem otherwise: malformed JSON, a wrong version, `maxIterations` or `analyze`,
 /// a duplicate id, an unknown or unsupported type, a missing field, a
 /// reference to a missing entity or a combination of entity kinds
 /// no variant of the type takes. When the problem is a constraint, the
@@ -423,9 +498,7 @@ pub fn solve_sketch_json(request: &str) -> Result<String, String> {
 
 fn solve_request(request: &str) -> Result<String, Rejection> {
     let root: Value = serde_json::from_str(request).map_err(|e| format!("invalid JSON: {e}"))?;
-    if root.get("version").and_then(Value::as_f64) != Some(1.0) {
-        return Err("unsupported request version".into());
-    }
+    check_version(&root)?;
     let primitives = root
         .get("primitives")
         .and_then(Value::as_array)
@@ -438,6 +511,10 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
             .ok_or("maxIterations must be a non-negative whole number")?;
         cs.set_max_iterations(n as usize);
     }
+    let analyze = match root.get("analyze") {
+        None => true,
+        Some(v) => v.as_bool().ok_or("analyze must be true or false")?,
+    };
 
     let mut seen = HashSet::new();
     let mut typed: Vec<(&str, &str, &Value)> = Vec::with_capacity(primitives.len());
@@ -508,32 +585,32 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
     apply_solution_to_primitives(&mut out, &cs);
     report_curve_params(&mut out, &cs, &constraint_ids);
 
-    // Zero-DOF analysis is only meaningful at a solved configuration.
-    let fully_constrained = if converged {
-        fully_constrained_ids(&cs, primitives)
-    } else {
-        Vec::new()
-    };
-
-    // Diagnosed at the solved position, after the solve.
-    let diagnosis = cs.diagnose();
-    let to_ids = |indices: &[usize]| -> Vec<&str> { indices.iter().map(|&i| constraint_ids[i]).collect() };
-
-    Ok(json!({
+    let mut response = json!({
         "version": 1,
         "status": if converged { "converged" } else { "failed" },
         "primitives": out,
-        "conflicting": to_ids(&diagnosis.conflicting),
-        "redundant": to_ids(&diagnosis.redundant),
-        "dof": cs.dof(),
-        "fullyConstrained": fully_constrained,
         "stats": {
             "iterations": iterations,
             "initialError": initial_error,
             "finalError": final_error,
         },
-    })
-    .to_string())
+    });
+    if analyze {
+        // Analysed at the solved position, after the solve.
+        let analysis = cs.analyze();
+        // Zero-DOF analysis is only meaningful at a solved configuration.
+        let fully_constrained = if converged {
+            fully_constrained_ids(analysis.fully_constrained, primitives)
+        } else {
+            Vec::new()
+        };
+        let to_ids = |indices: &[usize]| -> Vec<&str> { indices.iter().map(|&i| constraint_ids[i]).collect() };
+        response["conflicting"] = json!(to_ids(&analysis.diagnosis.conflicting));
+        response["redundant"] = json!(to_ids(&analysis.diagnosis.redundant));
+        response["dof"] = json!(analysis.dof);
+        response["fullyConstrained"] = json!(fully_constrained);
+    }
+    Ok(response.to_string())
 }
 
 /// Starts constraint `index`'s curve parameters (a contact on a Spline)
