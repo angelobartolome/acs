@@ -130,3 +130,29 @@ fn a_malformed_request_is_rejected_naming_the_problem() {
         assert!(error.contains(needle), "{req}: {error}");
     }
 }
+
+#[test]
+fn a_malformed_field_gets_the_message_a_sketch_s_spline_gets() {
+    let fields = [
+        json!({ "interpolated": "yes" }),
+        json!({}),
+        json!({ "interpolated": false, "knots": [0, "a"] }),
+        json!({ "interpolated": false, "knots": 1 }),
+    ];
+    for f in fields {
+        let mut req = json!({ "version": 1, "handles": FIT });
+        let mut prims: Vec<Value> = (0..FIT.len())
+            .map(|i| json!({ "id": format!("h{i}"), "type": "point", "x": FIT[i][0], "y": FIT[i][1] }))
+            .collect();
+        let mut s = json!({ "id": "s", "type": "spline",
+                            "points": (0..FIT.len()).map(|i| format!("h{i}")).collect::<Vec<_>>() });
+        for (k, v) in f.as_object().unwrap() {
+            req[k] = v.clone();
+            s[k] = v.clone();
+        }
+        prims.push(s);
+        let sketch = solve_sketch_json(&json!({ "version": 1, "primitives": prims }).to_string()).unwrap_err();
+        let sketch: Value = serde_json::from_str(&sketch).unwrap();
+        assert_eq!(sketch["error"].as_str().unwrap(), format!("spline s: {}", error_of(&req.to_string())), "{f}");
+    }
+}

@@ -63,9 +63,10 @@ unsafe fn respond(
             reject(&format!("internal error: {}", panic_message(&*payload))),
         ),
     };
-    // serde_json escapes NUL inside strings, so a response never contains one.
-    let response = CString::new(response)
-        .unwrap_or_else(|_| CString::new(reject("response contained NUL")).unwrap_or_default());
+    // serde_json escapes NUL inside strings, so a response never contains
+    // one; were one there, escaping it keeps the response (and JSON) whole.
+    // With no NUL left, `CString::new` can't fail.
+    let response = CString::new(response.replace('\0', "\\u0000")).unwrap_or_default();
     // SAFETY: checked non-null above; the caller makes it valid for writes.
     unsafe { *response_json = response.into_raw() };
     code

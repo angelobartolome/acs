@@ -2,7 +2,7 @@
 
 ## Overview
 
-ACS exposes two integration paths:
+ACS exposes three integration paths:
 
 | Path | Use when |
 |------|----------|
@@ -10,7 +10,7 @@ ACS exposes two integration paths:
 | **C ABI** (`P3DSketch_Solve`, `P3DSpline_Curve`) | Native code linking the static library — the same JSON contract (see *C ABI* below) |
 | **Rust native API** (`ConstraintSolver`) | Server-side Rust or embedding ACS as a Rust crate |
 
-Both paths run the same dogleg solver with the same pre-solver optimization. The sections below cover each path and explain how to get the most out of the pre-solver.
+All three run the same dogleg solver with the same pre-solver optimization. The sections below cover each path and explain how to get the most out of the pre-solver.
 
 ---
 

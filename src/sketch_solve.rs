@@ -124,21 +124,30 @@ fn read_spline(id: &str, p: &Value) -> Result<Spline, String> {
         .map(|v| v.as_str().map(String::from))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| format!("{what}: 'points' must be point IDs"))?;
+    let (interpolated, knots) = read_spline_form(p).map_err(|e| format!("{what}: {e}"))?;
+    let spline = Spline::new(id.to_string(), points, interpolated, knots);
+    spline.check().map_err(|e| format!("{what}: {e}"))?;
+    Ok(spline)
+}
+
+/// A Spline's `interpolated` (required) and `knots` (optional; `null` is
+/// none), as a `spline` primitive and a [`spline_curve_json`] request
+/// both carry them.
+fn read_spline_form(p: &Value) -> Result<(bool, Option<Vec<f64>>), &'static str> {
     let interpolated = p
         .get("interpolated")
-        .and_then(Value::as_bool)
-        .ok_or_else(|| format!("{what}: missing field 'interpolated'"))?;
+        .ok_or("missing field 'interpolated'")?
+        .as_bool()
+        .ok_or("'interpolated' must be true or false")?;
     let knots = match p.get("knots") {
         None | Some(Value::Null) => None,
         Some(k) => Some(
             k.as_array()
                 .and_then(|k| k.iter().map(Value::as_f64).collect::<Option<Vec<_>>>())
-                .ok_or_else(|| format!("{what}: 'knots' must be an array of numbers"))?,
+                .ok_or("'knots' must be an array of numbers")?,
         ),
     };
-    let spline = Spline::new(id.to_string(), points, interpolated, knots);
-    spline.check().map_err(|e| format!("{what}: {e}"))?;
-    Ok(spline)
+    Ok((interpolated, knots))
 }
 
 /// Spline IDs mapped to the Splines that read (others are rejected when
@@ -348,19 +357,7 @@ fn spline_curve(request: &str) -> Result<BSpline, String> {
         })
         .collect::<Option<Vec<_>>>()
         .ok_or("'handles' must be [x, y] pairs of numbers")?;
-    let interpolated = root
-        .get("interpolated")
-        .ok_or("missing field 'interpolated'")?
-        .as_bool()
-        .ok_or("'interpolated' must be true or false")?;
-    let knots = match root.get("knots") {
-        None | Some(Value::Null) => None,
-        Some(k) => Some(
-            k.as_array()
-                .and_then(|k| k.iter().map(Value::as_f64).collect::<Option<Vec<_>>>())
-                .ok_or("'knots' must be an array of numbers")?,
-        ),
-    };
+    let (interpolated, knots) = read_spline_form(&root)?;
     BSpline::new(&handles, interpolated, knots.as_deref())
 }
 
