@@ -4,10 +4,14 @@
 
 use nalgebra::DMatrix;
 
-use crate::constraints::{Constraint, Var, set_row, xy};
+use crate::constraints::directions::set_direction_row;
+use crate::constraints::{Constraint, Var, xy};
 
-/// Two lines, p1 → p2 and p3 → p4, are parallel: the cross product of
-/// their directions is 0.
+/// Two lines, p1 → p2 and p3 → p4, are parallel (or antiparallel).
+///
+/// Residual, the angle between them modulo π, in radians (see SPEC.md,
+/// Notation, Units):
+///   R = atan2(d1 × d2, d1 · d2) wrapped into [−π/2, π/2),  d1 = p2 − p1, d2 = p4 − p3
 pub struct ParallelConstraint {
     /// Start of line L1.
     pub p1: String,
@@ -38,7 +42,7 @@ impl Constraint for ParallelConstraint {
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
         let (dx1, dy1) = (x[2] - x[0], x[3] - x[1]);
         let (dx2, dy2) = (x[6] - x[4], x[7] - x[5]);
-        r[0] = dx1 * dy2 - dy1 * dx2;
-        set_row(j, 0, &[-dy2, dx2, dy2, -dx2, dy1, -dx1, -dy1, dx1]);
+        let cross = dx1 * dy2 - dy1 * dx2;
+        set_direction_row([dx1, dy1], [dx2, dy2], 0.0, (cross, [dy2, -dx2], [-dy1, dx1]), r, j);
     }
 }

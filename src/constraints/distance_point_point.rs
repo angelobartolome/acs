@@ -5,12 +5,13 @@
 
 use nalgebra::DMatrix;
 
+use crate::constraints::directions::unit;
 use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Constrains the Euclidean distance between two points to a fixed value.
 ///
-/// Residual (squared form, smooth everywhere):
-///   R = (x2−x1)² + (y2−y1)² − d² = 0
+/// Residual, a length (see SPEC.md, Notation, Units):
+///   R = |p2 − p1| − d
 pub struct DistancePointPointConstraint {
     /// The first point.
     pub p1_id: String,
@@ -41,8 +42,8 @@ impl Constraint for DistancePointPointConstraint {
     }
 
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
-        let (dx, dy) = (x[2] - x[0], x[3] - x[1]);
-        r[0] = dx * dx + dy * dy - self.distance * self.distance;
-        set_row(j, 0, &[-2.0 * dx, -2.0 * dy, 2.0 * dx, 2.0 * dy]);
+        let (u, n) = unit(x[2] - x[0], x[3] - x[1]);
+        r[0] = n - self.distance;
+        set_row(j, 0, &[-u[0], -u[1], u[0], u[1]]);
     }
 }

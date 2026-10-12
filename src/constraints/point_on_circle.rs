@@ -5,6 +5,7 @@
 
 use nalgebra::DMatrix;
 
+use crate::constraints::directions::unit;
 use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Constrains a point to lie on the circumference of a circle.
@@ -14,7 +15,8 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///   - `circle_center_id`– the circle's center point (cx, cy)
 ///   - `circle_id`       – the circle entity (radius r at param index 0)
 ///
-/// Residual: (px − cx)² + (py − cy)² − r² = 0
+/// Residual, a length (see SPEC.md, Notation, Units):
+///   R = |p − c| − r
 pub struct PointOnCircleConstraint {
     /// The free point (x, y).
     pub point_id: String,
@@ -46,8 +48,8 @@ impl Constraint for PointOnCircleConstraint {
 
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
         // x = [px, py, cx, cy, r]
-        let (dx, dy, rad) = (x[0] - x[2], x[1] - x[3], x[4]);
-        r[0] = dx * dx + dy * dy - rad * rad;
-        set_row(j, 0, &[2.0 * dx, 2.0 * dy, -2.0 * dx, -2.0 * dy, -2.0 * rad]);
+        let (u, n) = unit(x[0] - x[2], x[1] - x[3]);
+        r[0] = n - x[4];
+        set_row(j, 0, &[u[0], u[1], -u[0], -u[1], -1.0]);
     }
 }

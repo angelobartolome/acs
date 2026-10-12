@@ -596,12 +596,13 @@ fn rectangle_with(extra: Value) -> Value {
     request(Value::Array(prims))
 }
 
-/// `req` with every coordinate and distance multiplied by `k`.
+/// `req` with every coordinate, radius and length multiplied by `k`.
 fn scaled(mut req: Value, k: f64) -> Value {
     for p in req["primitives"].as_array_mut().unwrap() {
         let keys: &[&str] = match p["type"].as_str().unwrap() {
             "point" => &["x", "y"],
-            "distance" => &["value"],
+            "circle" => &["radius"],
+            "distance" | "x" | "y" => &["value"],
             _ => &[],
         };
         for key in keys {
@@ -629,6 +630,65 @@ fn diagnosis_is_the_same_at_any_scale() {
         assert_eq!(resp["status"], "converged", "scale {k}");
         for key in ["conflicting", "redundant", "dof", "fullyConstrained"] {
             assert_eq!(resp[key], unit[key], "{key} at scale {k}");
+        }
+    }
+}
+
+#[test]
+fn every_constraint_converges_at_any_scale() {
+    // Each kernel's residual is a length, or a sine, cosine or angle for a
+    // relation between directions: never a product of lengths, whose
+    // rounding (about 2e-16 times the coordinates times the lengths)
+    // outgrows TOLF at coordinates in the thousands. From a start off the
+    // solution, through point–point distance, on a circle, equal lengths,
+    // circle–circle tangency, parallel, perpendicular and angle.
+    let req = request(json!([
+        { "id": "a", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
+        { "id": "b", "type": "point", "x": 4.2, "y": 0.3 },
+        { "id": "c", "type": "point", "x": 4.1, "y": 3.2 },
+        { "id": "d", "type": "point", "x": -0.2, "y": 2.9 },
+        { "id": "ab", "type": "line", "p1_id": "a", "p2_id": "b" },
+        { "id": "bc", "type": "line", "p1_id": "b", "p2_id": "c" },
+        { "id": "cd", "type": "line", "p1_id": "c", "p2_id": "d" },
+        { "id": "da", "type": "line", "p1_id": "d", "p2_id": "a" },
+        { "id": "o", "type": "point", "x": 6.4, "y": 1.6 },
+        { "id": "q", "type": "point", "x": 10.0, "y": 1.5, "fixed": true },
+        { "id": "k1", "type": "circle", "c_id": "o", "radius": 1.8 },
+        { "id": "k2", "type": "circle", "c_id": "q", "radius": 1.5, "fixed": true },
+        { "id": "e", "type": "point", "x": 8.3, "y": 1.6 },
+        { "id": "f", "type": "point", "x": 12.1, "y": 1.4 },
+        { "id": "ef", "type": "line", "p1_id": "e", "p2_id": "f" },
+        { "id": "h", "type": "horizontal", "line": "ab" },
+        { "id": "dist", "type": "distance", "a": "a", "b": "b", "value": 4.0 },
+        { "id": "perp", "type": "perpendicular", "a": "ab", "b": "bc" },
+        { "id": "height", "type": "distance", "a": "b", "b": "c", "value": 3.0 },
+        { "id": "par", "type": "parallel", "a": "ab", "b": "cd" },
+        { "id": "ang", "type": "angle", "a": "ab", "b": "da", "value": std::f64::consts::FRAC_PI_2 },
+        { "id": "ox", "type": "x", "point": "o", "value": 6.5 },
+        { "id": "oy", "type": "y", "point": "o", "value": 1.5 },
+        { "id": "tan", "type": "tangent", "a": "k1", "b": "k2" },
+        { "id": "on", "type": "on", "point": "e", "curve": "k1" },
+        { "id": "ey", "type": "y", "point": "e", "value": 1.5 },
+        { "id": "hef", "type": "horizontal", "line": "ef" },
+        { "id": "eq", "type": "equal", "a": "ab", "b": "ef" }
+    ]));
+    let unit = solve(req.clone());
+    assert_eq!(unit["status"], "converged");
+    assert_eq!(unit["dof"], 0);
+    assert_eq!(unit["redundant"], json!([]));
+    for (id, x, y) in [("c", 4.0, 3.0), ("d", 0.0, 3.0), ("e", 8.5, 1.5), ("f", 12.5, 1.5)] {
+        let (px, py) = point(&unit, id);
+        assert!((px - x).abs() < 1e-9 && (py - y).abs() < 1e-9, "{id} at ({px}, {py})");
+    }
+    for k in [1e-3, 1e3, 1e4, 1e5] {
+        let resp = solve(scaled(req.clone(), k));
+        assert_eq!(resp["status"], "converged", "scale {k}: {}", resp["stats"]);
+        for key in ["conflicting", "redundant", "dof", "fullyConstrained"] {
+            assert_eq!(resp[key], unit[key], "{key} at scale {k}");
+        }
+        for id in ["b", "c", "d", "e", "f"] {
+            let ((ux, uy), (sx, sy)) = (point(&unit, id), point(&resp, id));
+            assert!((sx / k - ux).abs() < 1e-9 && (sy / k - uy).abs() < 1e-9, "{id} at scale {k}");
         }
     }
 }
@@ -907,7 +967,11 @@ fn a_drag_sequence_across_the_fold_moves_smoothly() {
         at = fold_positions(&resp);
     }
     eprintln!("fold drag: iterations per step {per_step:?}");
-    assert!(worst <= 40, "{worst} iterations in one step");
+    // The step leaving the fold, where the real Jacobian is nearly singular,
+    // is the costliest: 41 since distances and angles became lengths and
+    // angles rather than products of lengths (34 before), while the whole
+    // drag takes a fifth fewer iterations (654 against 819).
+    assert!(worst <= 45, "{worst} iterations in one step");
 }
 
 // ── Parameters and property references ─────────────────────────────────────

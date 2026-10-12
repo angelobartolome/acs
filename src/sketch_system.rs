@@ -481,6 +481,11 @@ pub struct Analysis {
 const ZERO_EIG: f64 = 1e-9;
 /// Threshold for a nonzero motion within the null space.
 const MOTION_EPS: f64 = 1e-7;
+/// A row or column of J with norm at most this fraction of the largest is
+/// numerically zero (see [`unit_rows`]): far below any real ratio between
+/// rows (an angle row in a sketch a million across against a distance
+/// row is 1e-6), far above rounding.
+const NUMERIC_ZERO: f64 = 1e-12;
 /// Most trial steps (each shrinking the trust region) for one goal step in
 /// [`solve_with_goals`].
 const MAX_TRIALS: usize = 30;
@@ -497,32 +502,47 @@ const CURVATURE_EPS: f64 = 1e-6;
 /// `jac` with its rows, then its columns, scaled to unit length, and `r`
 /// with the row scales: the system the analysis works on.
 ///
-/// Constraints' rows come in different units (a distance's gradient is
-/// unitless, a cross product's grows with the lengths it multiplies), so
-/// JᵀJ's eigenvalues, and their rounding noise, grow with the sketch's
-/// scale, and the absolute `ZERO_EIG` would read noise as rank in a sketch
-/// a hundred times larger. Scaling rows and columns by nonzero factors
+/// Rows come in different units (a distance's gradient is unitless, an
+/// angle's goes as 1/length), so JᵀJ's eigenvalues scale with the sketch,
+/// and the absolute `ZERO_EIG` would read an angle row in a sketch in the
+/// hundred thousands as zero. Scaling rows and columns by nonzero factors
 /// changes neither the rank nor which rows a dependency involves nor which
 /// variables a null motion moves, so degrees of freedom, diagnosis and
-/// full constraint mean the same at every scale. A row or column with norm
-/// at most √`ZERO_EIG` is numerically zero and is left as it is (scaling
-/// it up would turn rounding noise into a direction).
+/// full constraint mean the same at every scale.
 fn equilibrate(mut r: DVector<f64>, mut jac: DMatrix<f64>) -> (DVector<f64>, DMatrix<f64>) {
-    let floor = ZERO_EIG.sqrt();
-    for i in 0..jac.nrows() {
-        let n = jac.row(i).norm();
-        if n > floor {
-            jac.row_mut(i).unscale_mut(n);
-            r[i] /= n;
-        }
+    for (i, n) in unit_rows(&mut jac).into_iter().enumerate() {
+        r[i] /= n;
     }
-    for k in 0..jac.ncols() {
-        let n = jac.column(k).norm();
+    let norms: Vec<f64> = jac.column_iter().map(|c| c.norm()).collect();
+    let floor = NUMERIC_ZERO * norms.iter().copied().fold(0.0, f64::max);
+    for (k, n) in norms.into_iter().enumerate() {
         if n > floor {
             jac.column_mut(k).unscale_mut(n);
         }
     }
     (r, jac)
+}
+
+/// Scales each row of `jac` to unit length, returning the scales (1 for a
+/// row left alone). A row whose norm is within `NUMERIC_ZERO` of the
+/// largest row's is numerically zero (rounding, or exactly 0) and is left
+/// as it is: scaling it up would turn noise into a direction. Row scaling
+/// keeps J's null space, its rank and which rows depend on which.
+fn unit_rows(jac: &mut DMatrix<f64>) -> Vec<f64> {
+    let norms: Vec<f64> = jac.row_iter().map(|r| r.norm()).collect();
+    let floor = NUMERIC_ZERO * norms.iter().copied().fold(0.0, f64::max);
+    norms
+        .into_iter()
+        .enumerate()
+        .map(|(i, n)| {
+            if n > floor {
+                jac.row_mut(i).unscale_mut(n);
+                n
+            } else {
+                1.0
+            }
+        })
+        .collect()
 }
 
 /// Numerical rank of `jac`: the eigenvalues of JᵀJ above `ZERO_EIG`, as in
@@ -877,10 +897,14 @@ impl ReducedModel {
 
 /// An orthonormal basis (as columns) of the null space of `jac`: the
 /// eigenvectors of JᵀJ with eigenvalues within `ZERO_EIG`, as in the
-/// degrees-of-freedom analysis.
+/// degrees-of-freedom analysis, with J's rows at unit length first (the
+/// null space is the same; `ZERO_EIG` then means the same at every scale,
+/// where an angle row in a large sketch would fall under it).
 fn null_space_basis(jac: &DMatrix<f64>) -> DMatrix<f64> {
     let n = jac.ncols();
-    let eig = SymmetricEigen::new(jac.transpose() * jac);
+    let mut jac = jac.clone();
+    unit_rows(&mut jac);
+    let eig = SymmetricEigen::new(jac.transpose() * &jac);
     let null: Vec<usize> = (0..n).filter(|&k| eig.eigenvalues[k].abs() <= ZERO_EIG).collect();
     eig.eigenvectors.select_columns(null.iter())
 }

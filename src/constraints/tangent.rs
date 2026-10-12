@@ -4,6 +4,7 @@
 
 use nalgebra::DMatrix;
 
+use crate::constraints::directions::unit;
 use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// External tangency between two circles: distance between centres = r1 + r2.
@@ -14,7 +15,8 @@ use crate::constraints::{Constraint, Var, set_row, xy};
 ///   - `c2_center_id` – center point of circle 2
 ///   - `c2_id`        – circle 2 entity (radius at param 0)
 ///
-/// Residual: (cx2−cx1)² + (cy2−cy1)² − (r1+r2)² = 0
+/// Residual, a length (see SPEC.md, Notation, Units):
+///   R = |c2 − c1| − (r1 + r2)
 pub struct TangentConstraint {
     /// Center point of circle 1.
     pub c1_center_id: String,
@@ -54,12 +56,8 @@ impl Constraint for TangentConstraint {
 
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
         // x = [cx1, cy1, r1, cx2, cy2, r2]
-        let (ddx, ddy, sum_r) = (x[3] - x[0], x[4] - x[1], x[2] + x[5]);
-        r[0] = ddx * ddx + ddy * ddy - sum_r * sum_r;
-        set_row(
-            j,
-            0,
-            &[-2.0 * ddx, -2.0 * ddy, -2.0 * sum_r, 2.0 * ddx, 2.0 * ddy, -2.0 * sum_r],
-        );
+        let (u, n) = unit(x[3] - x[0], x[4] - x[1]);
+        r[0] = n - (x[2] + x[5]);
+        set_row(j, 0, &[-u[0], -u[1], -1.0, u[0], u[1], -1.0]);
     }
 }

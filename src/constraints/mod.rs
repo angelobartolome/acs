@@ -7,6 +7,7 @@ pub mod angle;
 pub mod base;
 pub mod coincident;
 pub mod difference;
+pub(crate) mod directions;
 pub mod concentric;
 pub mod distance_point_extension;
 pub mod distance_point_line;
