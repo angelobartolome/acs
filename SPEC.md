@@ -24,6 +24,26 @@ vocabulary in full.
 Residuals are written so that **R = 0** encodes the constraint.  All Jacobian
 entries not listed are **0**.
 
+**Units.** Every residual is a length, or, for a relation between
+directions, an angle in radians. Never a product of lengths: that rounds to
+about 2e-16 × the coordinates × the lengths, which outgrows the solver's
+absolute tolerance (`TOLF`, 1e-10) at coordinates in the thousands, so a
+sketch in mm that holds exactly reports `failed`. A distance is `|v| − d`
+with `∂|v|/∂v = v/|v|` (`(1, 0)` at `v = 0`, a subgradient, so coincident
+points still have a direction to move along). A direction relation is the
+angle `φ = atan2(d1 × d2, d1 · d2)` from `d1` to `d2`, wrapped modulo π into
+`[−π/2, π/2)` around its target, with
+
+```
+∂φ/∂d1 = (dy1, −dx1)/|d1|²,   ∂φ/∂d2 = (−dy2, dx2)/|d2|²
+```
+
+(`src/constraints/directions.rs`). Not its sine or cosine: those are flat
+where they peak, so a cosine row for lines that start parallel has a zero
+gradient and never moves them. The wrapped angle changes at rate 1
+everywhere and crosses zero linearly. A zero-length line has no direction;
+its row falls back to the bilinear form (cross or dot product).
+
 **Guides.** Some constraints copy across an input: a mirror's axis (17), a
 rotation's center (18), a translation's direction (19). Their partials,
 Guides included, are exact like every other, so every solve, drags
@@ -37,7 +57,7 @@ included, moves a free Guide as the constraints need (see Solver Notes).
 |------|----------|-----------|
 | `Vertical(p1, p2)` | 2 points | `x1 − x2 = 0` |
 | `Horizontal(p1, p2)` | 2 points | `y1 − y2 = 0` |
-| `Parallel(p1,p2,p3,p4)` | 4 points (2 lines) | `dx1·dy2 − dy1·dx2 = 0` |
+| `Parallel(p1,p2,p3,p4)` | 4 points (2 lines) | `φ` wrapped into `[−π/2, π/2)` `= 0` (parallel or antiparallel; see Units) |
 | `Coincident(p1, p2)` | 2 points | `x1−x2 = 0`, `y1−y2 = 0` |
 | `EqualX(p, val)` | 1 point | `x − val = 0` |
 | `EqualY(p, val)` | 1 point | `y − val = 0` |
@@ -118,26 +138,23 @@ solution, which stalls convergence and hides the removed degree of freedom.
 
 **Geometric meaning:** the lines meet at a 90° angle.
 
-**Residual (1 equation):**
+**Residual (1 equation)**, the angle between them less π/2, modulo π (see
+Units):
 
 ```
-R = dx1·dx2 + dy1·dy2 = 0
+R = φ − π/2, wrapped into [−π/2, π/2),   φ = atan2(d1 × d2, d1 · d2)
 ```
 
-where `dx1 = x2−x1`, `dy1 = y2−y1`, `dx2 = x4−x3`, `dy2 = y4−y3`.
+where `d1 = p2 − p1`, `d2 = p4 − p3`. Roots at `φ = ±π/2`.
 
-**Jacobian:**
+**Jacobian:** `∂R = ∂φ`:
 
 | Parameter | ∂R/∂param |
 |-----------|-----------|
-| `x1` | `−dx2` |
-| `y1` | `−dy2` |
-| `x2` | `dx2` |
-| `y2` | `dy2` |
-| `x3` | `−dx1` |
-| `y3` | `−dy1` |
-| `x4` | `dx1` |
-| `y4` | `dy1` |
+| `x1`, `y1` | `−dy1/|d1|²`, `dx1/|d1|²` |
+| `x2`, `y2` | `dy1/|d1|²`, `−dx1/|d1|²` |
+| `x3`, `y3` | `dy2/|d2|²`, `−dx2/|d2|²` |
+| `x4`, `y4` | `−dy2/|d2|²`, `dx2/|d2|²` |
 
 ---
 
@@ -171,18 +188,18 @@ circle entity `c` (for its radius `r`).
 **Residual (1 equation):**
 
 ```
-R = (px − cx)² + (py − cy)² − r² = 0
+R = |p − c| − r = 0
 ```
+
+Let `u = (p − c)/|p − c|`.
 
 **Jacobian:**
 
 | Parameter | ∂R/∂param |
 |-----------|-----------|
-| `px` | `2(px − cx)` |
-| `py` | `2(py − cy)` |
-| `cx` | `−2(px − cx)` |
-| `cy` | `−2(py − cy)` |
-| `r`  | `−2r` |
+| `px`, `py` | `ux`, `uy` |
+| `cx`, `cy` | `−ux`, `−uy` |
+| `r`  | `−1` |
 
 ---
 
@@ -197,21 +214,19 @@ i.e. the distance between centers equals the sum of their radii.
 **Residual (1 equation):**
 
 ```
-R = (cx2 − cx1)² + (cy2 − cy1)² − (r1 + r2)² = 0
+R = |c2 − c1| − (r1 + r2) = 0
 ```
 
-Let `Δx = cx2 − cx1`, `Δy = cy2 − cy1`.
+Let `u = (c2 − c1)/|c2 − c1|`.
 
 **Jacobian:**
 
 | Parameter | ∂R/∂param |
 |-----------|-----------|
-| `cx1` | `−2Δx` |
-| `cy1` | `−2Δy` |
-| `cx2` | `2Δx` |
-| `cy2` | `2Δy` |
-| `r1`  | `−2(r1 + r2)` |
-| `r2`  | `−2(r1 + r2)` |
+| `cx1`, `cy1` | `−ux`, `−uy` |
+| `cx2`, `cy2` | `ux`, `uy` |
+| `r1`  | `−1` |
+| `r2`  | `−1` |
 
 ---
 
@@ -260,22 +275,20 @@ R₁ = cy1 − cy2 = 0
 
 **Geometric meaning:** the Euclidean distance between the two points equals `d`.
 
-**Residual (1 equation) — squared form to keep it smooth:**
+**Residual (1 equation):**
 
 ```
-R = (x2 − x1)² + (y2 − y1)² − d² = 0
+R = |p2 − p1| − d = 0
 ```
 
-Let `Δx = x2 − x1`, `Δy = y2 − y1`.
+Let `u = (p2 − p1)/|p2 − p1|` (`(1, 0)` when they coincide).
 
 **Jacobian:**
 
 | Parameter | ∂R/∂param |
 |-----------|-----------|
-| `x1` | `−2Δx` |
-| `y1` | `−2Δy` |
-| `x2` | `2Δx` |
-| `y2` | `2Δy` |
+| `x1`, `y1` | `−ux`, `−uy` |
+| `x2`, `y2` | `ux`, `uy` |
 
 ---
 
@@ -303,38 +316,19 @@ d = 0:  R = S(p; a, b)     = 0   (same as PointOnLine; |·| has no usable gradie
 **Entities:** four points `(p1, p2, p3, p4)` defining two lines `L1 = p1→p2`,
 `L2 = p3→p4`; a target angle `θ` in radians.
 
-**Geometric meaning:** the (directed) angle from `L1` to `L2` equals `θ`.
+**Geometric meaning:** the (directed) angle from `L1` to `L2` equals `θ`
+(or `θ + π`: `L2` reversed).
 
-Let `dx1 = x2−x1`, `dy1 = y2−y1`, `dx2 = x4−x3`, `dy2 = y4−y3`.
-
-```
-dot   = dx1·dx2 + dy1·dy2
-cross = dx1·dy2 − dy1·dx2
-```
-
-**Residual (1 equation):**
+**Residual (1 equation)**, with `φ = atan2(d1 × d2, d1 · d2)` (see Units):
 
 ```
-R = dot·sin(θ) − cross·cos(θ) = 0
+R = φ − θ, wrapped into [−π/2, π/2)
 ```
 
-This encodes `tan(θ) = cross/dot`, i.e. `atan2(cross, dot) = θ`.
+Roots at `φ = θ` and `φ = θ + π`, as the earlier `dot·sin θ − cross·cos θ`
+(`= |d1||d2|·sin(θ − φ)`) had.
 
-**Jacobian:**
-
-| Parameter | ∂R/∂param |
-|-----------|-----------|
-| `x1` | `−dx2·sin θ + dy2·cos θ` |
-| `y1` | `−dy2·sin θ − dx2·cos θ` |
-| `x2` | `dx2·sin θ − dy2·cos θ` |
-| `y2` | `dy2·sin θ + dx2·cos θ` |
-| `x3` | `−dx1·sin θ − dy1·cos θ` |
-| `y3` | `−dy1·sin θ + dx1·cos θ` |
-| `x4` | `dx1·sin θ + dy1·cos θ` |
-| `y4` | `dy1·sin θ − dx1·cos θ` |
-
-Derivation: `∂dot/∂x1 = −dx2`, `∂cross/∂x1 = −dy2`, etc.
-`∂R/∂p = (∂dot/∂p)·sin θ − (∂cross/∂p)·cos θ`.
+**Jacobian:** `∂R = ∂φ`, the same table as Perpendicular (1).
 
 ---
 
@@ -370,26 +364,22 @@ R₁ = my − (ay + by)/2 = 0
 
 **Geometric meaning:** segment `p1p2` has the same length as segment `p3p4`.
 
-Let `dx1 = x2−x1`, `dy1 = y2−y1`, `dx2 = x4−x3`, `dy2 = y4−y3`.
-
-**Residual (1 equation) — squared form:**
+**Residual (1 equation):**
 
 ```
-R = (dx1² + dy1²) − (dx2² + dy2²) = 0
+R = |p2 − p1| − |p4 − p3| = 0
 ```
+
+Let `u1 = (p2 − p1)/|p2 − p1|`, `u2 = (p4 − p3)/|p4 − p3|`.
 
 **Jacobian:**
 
 | Parameter | ∂R/∂param |
 |-----------|-----------|
-| `x1` | `−2dx1` |
-| `y1` | `−2dy1` |
-| `x2` | `2dx1` |
-| `y2` | `2dy1` |
-| `x3` | `2dx2` |
-| `y3` | `2dy2` |
-| `x4` | `−2dx2` |
-| `y4` | `−2dy2` |
+| `x1`, `y1` | `−u1x`, `−u1y` |
+| `x2`, `y2` | `u1x`, `u1y` |
+| `x3`, `y3` | `u2x`, `u2y` |
+| `x4`, `y4` | `−u2x`, `−u2y` |
 
 ---
 
@@ -1082,15 +1072,17 @@ uses). The same threshold is used by the pre-solver to decide whether a
 component is already satisfied and can be skipped, and the only condition under
 which a solve reports `Converged`.
 
-The squared-distance form used by `DistancePointPoint`, `EqualLength`, and
-`PointOnCircle` keeps residuals and Jacobians smooth everywhere (no
-discontinuities at zero), but note the residual magnitude is in units².  For
-well-conditioned problems this is fine; if large coordinate values are involved,
-consider normalising geometry before solving.
-
-The `Angle` residual mixes units (`dot · sin θ` has units of length²), so for
-problems with very different length scales, a scaling pre-pass may help
-convergence.
+Every residual is a length or an angle (Notation, Units), so `TOLF` holds a
+length to 1e-10 and an angle to 1e-10 rad at any scale: rounding stays below
+it up to coordinates around 1e5. (`DistancePointPoint`, `EqualLength`,
+`PointOnCircle`, `Tangent`, `Parallel`, `Perpendicular` and `Angle` once
+used squared or bilinear forms in units², which stalled just above `TOLF`
+in sketches in the thousands.) The analysis (degrees of freedom, diagnosis,
+full constraint) and the soft-goal null space work on the Jacobian with its
+rows at unit length (and, for the analysis, its columns), so their
+thresholds read the same at every scale too
+(`tests/sketch_json_test.rs`: `every_constraint_converges_at_any_scale`,
+`diagnosis_is_the_same_at_any_scale`).
 
 **Guides in a solve.** Components are grouped by everything a constraint
 reads, Guides included, and Guides are Component columns like any other

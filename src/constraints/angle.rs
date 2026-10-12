@@ -5,6 +5,7 @@
 
 use nalgebra::DMatrix;
 
+use crate::constraints::directions::set_direction_row;
 use crate::constraints::{Constraint, Var, xy};
 
 /// Constrains the directed angle from line L1 to line L2 to a specific value.
@@ -17,9 +18,12 @@ use crate::constraints::{Constraint, Var, xy};
 ///     dot   = dx1·dx2 + dy1·dy2
 ///     cross = dx1·dy2 − dy1·dx2
 ///
-/// Residual: dot·sin(θ) − cross·cos(θ) = 0
+/// Residual, φ = atan2(cross, dot) less θ, modulo π, in radians (see SPEC.md,
+/// Notation, Units):
+///   R = φ − θ wrapped into [−π/2, π/2)
 ///
-/// This encodes atan2(cross, dot) = θ, i.e. the angle from d1 to d2 is θ.
+/// Like the earlier `dot·sin(θ) − cross·cos(θ)` (|d1||d2|·sin(θ − φ)), it
+/// vanishes at φ = θ and also at φ = θ + π (d2 reversed).
 pub struct AngleConstraint {
     /// Start of line L1.
     pub p1: String,
@@ -61,12 +65,10 @@ impl Constraint for AngleConstraint {
         let dot = dx1 * dx2 + dy1 * dy2;
         let cross = dx1 * dy2 - dy1 * dx2;
         let (s, c) = self.angle.sin_cos();
-        r[0] = dot * s - cross * c;
-
-        let d_dot = [-dx2, -dy2, dx2, dy2, -dx1, -dy1, dx1, dy1];
-        let d_cross = [-dy2, dx2, dy2, -dx2, dy1, -dx1, -dy1, dx1];
-        for k in 0..8 {
-            j[(0, k)] = d_dot[k] * s - d_cross[k] * c;
-        }
+        // ∂dot/∂d1 = d2, ∂cross/∂d1 = (dy2, −dx2); ∂dot/∂d2 = d1,
+        // ∂cross/∂d2 = (−dy1, dx1).
+        let df1 = [dx2 * s - dy2 * c, dy2 * s + dx2 * c];
+        let df2 = [dx1 * s + dy1 * c, dy1 * s - dx1 * c];
+        set_direction_row([dx1, dy1], [dx2, dy2], self.angle, (dot * s - cross * c, df1, df2), r, j);
     }
 }

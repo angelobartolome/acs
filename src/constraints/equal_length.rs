@@ -5,16 +5,15 @@
 
 use nalgebra::DMatrix;
 
+use crate::constraints::directions::unit;
 use crate::constraints::{Constraint, Var, set_row, xy};
 
 /// Constrains two line segments to have the same length.
 ///
 /// Segment 1: p1 → p2, Segment 2: p3 → p4.
 ///
-/// Residual (squared form, smooth everywhere):
-///   R = (dx1² + dy1²) − (dx2² + dy2²) = 0
-///
-/// where dx1 = x2−x1, dy1 = y2−y1, dx2 = x4−x3, dy2 = y4−y3.
+/// Residual, a length (see SPEC.md, Notation, Units):
+///   R = |p2 − p1| − |p4 − p3|
 pub struct EqualLengthConstraint {
     /// Start of segment 1.
     pub p1: String,
@@ -43,22 +42,9 @@ impl Constraint for EqualLengthConstraint {
     }
 
     fn eval(&self, x: &[f64], r: &mut [f64], j: &mut DMatrix<f64>) {
-        let (dx1, dy1) = (x[2] - x[0], x[3] - x[1]);
-        let (dx2, dy2) = (x[6] - x[4], x[7] - x[5]);
-        r[0] = (dx1 * dx1 + dy1 * dy1) - (dx2 * dx2 + dy2 * dy2);
-        set_row(
-            j,
-            0,
-            &[
-                -2.0 * dx1,
-                -2.0 * dy1,
-                2.0 * dx1,
-                2.0 * dy1,
-                2.0 * dx2,
-                2.0 * dy2,
-                -2.0 * dx2,
-                -2.0 * dy2,
-            ],
-        );
+        let (u1, n1) = unit(x[2] - x[0], x[3] - x[1]);
+        let (u2, n2) = unit(x[6] - x[4], x[7] - x[5]);
+        r[0] = n1 - n2;
+        set_row(j, 0, &[-u1[0], -u1[1], u1[0], u1[1], u2[0], u2[1], -u2[0], -u2[1]]);
     }
 }
