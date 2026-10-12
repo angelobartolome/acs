@@ -93,6 +93,13 @@ pub fn field_path(name: &str) -> (&str, Option<usize>) {
         .unwrap_or((name, None))
 }
 
+/// The `true`/`false` field `name` of constraint `c`, `None` when absent.
+pub(crate) fn flag(c: &Value, name: &str) -> Result<Option<bool>, String> {
+    c.get(name)
+        .map(|v| v.as_bool().ok_or_else(|| format!("field '{name}' is not true or false")))
+        .transpose()
+}
+
 /// The value of field `name` of constraint `c`, reading into an array for
 /// `name[i]` (see [`field_path`]).
 pub fn field_value<'v>(c: &'v Value, name: &str) -> Option<&'v Value> {
@@ -814,13 +821,7 @@ impl ConstraintSpec {
             }
         }
         for &name in self.options {
-            args.options.push(match c.get(name) {
-                None => None,
-                Some(v) => Some(
-                    v.as_bool()
-                        .ok_or_else(|| format!("field '{name}' is not true or false"))?,
-                ),
-            });
+            args.options.push(flag(c, name)?);
         }
         if let Some(check) = self.check {
             check(&args)?;

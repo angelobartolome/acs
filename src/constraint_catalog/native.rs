@@ -17,7 +17,7 @@ use serde_json::Value;
 
 use super::{
     ConstraintSpec as S, ExtensionFlag, FieldKind, InternalFlag, References, field_path,
-    field_value,
+    field_value, flag,
 };
 use crate::{ConstraintType, Operand};
 
@@ -499,13 +499,8 @@ pub(super) fn parse(
     if variants.is_empty() {
         return Err(format!("unknown type '{json_type}'"));
     }
-    let flag = |name: &str| match c.get(name) {
-        None => Ok(false),
-        Some(v) => v
-            .as_bool()
-            .ok_or_else(|| format!("field '{name}' is not true or false")),
-    };
-    let (extension, internal) = (flag("extension")?, flag("internal")?);
+    let set = |name: &str| flag(c, name).map(|f| f.unwrap_or(false));
+    let (extension, internal) = (set("extension")?, set("internal")?);
     let swapped = COMMUTATIVE.contains(&json_type).then(|| swap_a_b(c));
     let matching = |spec: &S| {
         std::iter::once(c)
