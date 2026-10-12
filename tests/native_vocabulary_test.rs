@@ -440,6 +440,22 @@ fn mirror_rotation_translation() {
     ]));
     close(&resp, "r", 1.0, 3.0);
 
+    // With `count`, the copy is `angle × count` about the center: copies of a
+    // circular array share one `angle`.
+    let resp = solve(json!([
+        { "id": "step", "type": "param", "value": std::f64::consts::FRAC_PI_4 },
+        { "id": "c", "type": "point", "x": 1.0, "y": 1.0, "fixed": true },
+        { "id": "s", "type": "point", "x": 3.0, "y": 1.0, "fixed": true },
+        { "id": "r2", "type": "point", "x": 0.0, "y": 2.0 },
+        { "id": "r4", "type": "point", "x": 0.0, "y": 0.0 },
+        { "id": "k2", "type": "rotation", "source": "s", "copy": "r2", "center": "c",
+          "angle": "step", "count": 2 },
+        { "id": "k4", "type": "rotation", "source": "s", "copy": "r4", "center": "c",
+          "angle": "step", "count": 4 }
+    ]));
+    close(&resp, "r2", 1.0, 3.0);
+    close(&resp, "r4", -1.0, 1.0);
+
     let resp = solve(json!([
         { "id": "f", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "t", "type": "point", "x": 0.0, "y": 5.0, "fixed": true },

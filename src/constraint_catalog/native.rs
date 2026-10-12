@@ -430,8 +430,12 @@ pub(super) static SPECS: &[S] = &[
             ("center", Point),
             ("angle", Scalar),
         ],
-        |a| ConstraintType::CircularInstance(a.p(0), a.p(1), a.p(2), a.s(0)),
-    ),
+        // The copy is `angle × count` about the center, so a circular
+        // array's copies can share one `angle` (a Parameter), as a linear
+        // array's share `distance`; without `count`, `angle` is the copy's.
+        |a| ConstraintType::CircularInstance(a.p(0), a.p(1), a.p(2), a.s(0) * a.s(1)),
+    )
+    .defaults(&[("count", 1.0)]),
     S::new(
         "translation",
         &[

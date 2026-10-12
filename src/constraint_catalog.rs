@@ -42,12 +42,14 @@ pub fn parse(json_type: &str, c: &Value, refs: &References) -> Result<Constraint
 
 /// The catalog as JSON, one object per row:
 /// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?,
-/// "internal"?, "options"? }]`. A type with several variants has several
+/// "internal"?, "options"?, "defaults"? }]`. A type with several variants has several
 /// rows; `extension` is present on rows that take the flag (`false`: the
 /// segment variant, `true`: the Extension variant), and `internal` likewise
 /// (`false`: outside, `true`: the inside variant). `options` names the
 /// optional `true`/`false` fields a row reads (`angle` between Lines:
-/// `reverseA`, `reverseB`). A field with an `index` is that element of the
+/// `reverseA`, `reverseB`). `defaults` maps the optional scalar fields a
+/// row reads to the values they take when absent (`rotation`: `count`, 1).
+/// A field with an `index` is that element of the
 /// array field `name`.
 pub fn catalog_json() -> String {
     let specs: Vec<Value> = specs()
@@ -76,6 +78,11 @@ pub fn catalog_json() -> String {
             }
             if !s.options.is_empty() {
                 row["options"] = json!(s.options);
+            }
+            if !s.defaults.is_empty() {
+                let defaults: serde_json::Map<String, Value> =
+                    s.defaults.iter().map(|&(name, v)| (name.to_string(), json!(v))).collect();
+                row["defaults"] = Value::Object(defaults);
             }
             row
         })
@@ -651,6 +658,10 @@ pub struct ConstraintSpec {
     /// Optional `true`/`false` fields the row reads, in order (see
     /// [`Args::options`]); they don't select the row.
     pub options: &'static [&'static str],
+    /// Optional scalar fields the row reads after `fields`, each with the
+    /// value it takes when absent (`rotation`'s `count`: 1); they don't
+    /// select the row.
+    pub defaults: &'static [(&'static str, f64)],
     /// A test of the resolved fields a row can only pass or fail once it
     /// sees which entities they are (e.g. a shared endpoint), run before
     /// `build`.
@@ -672,6 +683,7 @@ impl ConstraintSpec {
             extension: ExtensionFlag::NotAccepted,
             internal: InternalFlag::NotAccepted,
             options: &[],
+            defaults: &[],
             check: None,
             build,
         }
@@ -688,6 +700,12 @@ impl ConstraintSpec {
     /// This row reading the optional `true`/`false` fields `options`.
     pub const fn options(self, options: &'static [&'static str]) -> Self {
         ConstraintSpec { options, ..self }
+    }
+
+    /// This row reading the optional scalar fields `defaults` after its
+    /// fields, each taking its value when absent (see [`Self::defaults`]).
+    pub const fn defaults(self, defaults: &'static [(&'static str, f64)]) -> Self {
+        ConstraintSpec { defaults, ..self }
     }
 
     /// This row as the segment variant of a type that has an Extension one.
@@ -822,6 +840,12 @@ impl ConstraintSpec {
         }
         for &name in self.options {
             args.options.push(flag(c, name)?);
+        }
+        for &(name, default) in self.defaults {
+            args.scalars.push(match c.get(name) {
+                Some(field) => refs.scalar(name, field)?,
+                None => default,
+            });
         }
         if let Some(check) = self.check {
             check(&args)?;

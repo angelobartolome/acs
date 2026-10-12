@@ -67,6 +67,12 @@ export interface ConstraintDef {
    * demo doesn't send them
    */
   options?: string[];
+  /**
+   * optional scalar JSON fields the catalog row reads, with the value each
+   * takes when absent, as the catalog's `defaults` lists them
+   * (`rotation`'s `count`); the demo doesn't send them
+   */
+  defaults?: Record<string, number>;
   label: string;
   /** short text drawn on the canvas next to the constrained entities */
   badge: string;
@@ -1189,6 +1195,7 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     description: "Second point is the first rotated about the third (center) by an angle",
     selection: [P(3)],
     entityFields: ["source", "copy", "center"],
+    defaults: { count: 1 },
     scalarParams: [
       {
         key: "angle",

@@ -49,6 +49,7 @@ describe("ConstraintRegistry", () => {
       extension?: boolean;
       internal?: boolean;
       options?: string[];
+      defaults?: Record<string, number>;
     };
     const catalog = JSON.parse(acs.acsConstraintCatalog()) as Row[];
     const asRow = (def: ConstraintDef): Row => {
@@ -70,6 +71,7 @@ describe("ConstraintRegistry", () => {
       if (def.extension !== undefined) row.extension = def.extension;
       if (def.internal !== undefined) row.internal = def.internal;
       if (def.options !== undefined) row.options = def.options;
+      if (def.defaults !== undefined) row.defaults = def.defaults;
       return row;
     };
     const key = (r: Row) =>
@@ -79,6 +81,7 @@ describe("ConstraintRegistry", () => {
         r.extension ?? null,
         r.internal ?? null,
         r.options ?? null,
+        r.defaults ?? null,
       ]);
     expect(CONSTRAINT_DEFS.map(asRow).map(key).sort()).toEqual(
       catalog.map(key).sort(),

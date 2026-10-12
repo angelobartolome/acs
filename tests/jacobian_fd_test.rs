@@ -282,6 +282,8 @@ fn args_for(spec: &ConstraintSpec) -> Args {
         }
     }
     args.options = vec![None; spec.options.len()];
+    // Optional scalars (`rotation`'s `count`) follow the fields' scalars.
+    args.scalars.extend(spec.defaults.iter().map(|_| 2.0));
     args
 }
 

@@ -514,7 +514,8 @@ partials w.r.t. the line's points.) A degenerate axis (`l² ≈ 0`) uses
 ### 18  CircularInstance
 
 `CircularInstance(p0, pk, c, θ)` (`rotation`): `pk` is `p0` rotated
-by `θ` (counter-clockwise) about `c`. With `v = p0 − c`:
+by `θ` (counter-clockwise) about `c`. `rotation`'s `θ` is `angle × count`
+(`count` optional, 1), a constant: the partials below don't change. With `v = p0 − c`:
 
 ```
 R₀ = pkx − (cx + cosθ·vx − sinθ·vy)

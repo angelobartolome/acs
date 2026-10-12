@@ -226,6 +226,10 @@ fn acs_constraint_catalog_describes_every_row() {
     ] {
         assert!(types.contains(t), "{t} missing from the catalog");
     }
+    // `rotation`'s `count` is optional, 1 when absent.
+    let rotation = rows.iter().find(|r| r["type"] == "rotation").unwrap();
+    assert_eq!(rotation["defaults"], serde_json::json!({ "count": 1.0 }));
+    assert!(rows.iter().filter(|r| r["type"] != "rotation").all(|r| r.get("defaults").is_none()));
     // `distance` from a point to a Line: a segment row and an Extension row.
     let point_line: Vec<&Value> = rows
         .iter()
