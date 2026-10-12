@@ -281,6 +281,7 @@ fn args_for(spec: &ConstraintSpec) -> Args {
             args.operands.push(next_operand.next().unwrap());
         }
     }
+    args.options = vec![None; spec.options.len()];
     args
 }
 
@@ -288,10 +289,16 @@ fn args_for(spec: &ConstraintSpec) -> Args {
 /// to an Arc, again with the line starting at the arc's start point, and
 /// for a row relating two Arcs, again with the second starting where the
 /// first starts: a shared point is what selects the angle-at-point form of
-/// tangency.
+/// tangency. A row with options is built again with them set (`angle`'s
+/// `reverseA`/`reverseB` select `RayAngle`).
 fn build_from_spec(spec: &ConstraintSpec) -> Vec<ConstraintType> {
     let args = args_for(spec);
     let mut out = vec![spec.build(&args)];
+    if !spec.options.is_empty() {
+        let mut set = args.clone();
+        set.options = (0..spec.options.len()).map(|i| Some(i % 2 == 0)).collect();
+        out.push(spec.build(&set));
+    }
     let kinds: Vec<FieldKind> = spec.fields.iter().map(|&(_, k)| k).collect();
     if kinds.contains(&FieldKind::Line) && kinds.contains(&FieldKind::Arc) {
         let mut shared = args.clone();
@@ -360,6 +367,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         DistancePointPoint(..) => "DistancePointPoint",
         DistancePointLine(..) => "DistancePointLine",
         Angle(..) => "Angle",
+        RayAngle(..) => "RayAngle",
         Midpoint(..) => "Midpoint",
         EqualLength(..) => "EqualLength",
         MidpointOfLineOnLine(..) => "MidpointOfLineOnLine",
@@ -416,7 +424,7 @@ fn variant_name(ct: &ConstraintType) -> &'static str {
         TangentSplinesAtPoint(..) => "TangentSplinesAtPoint",
     }
 }
-const ALL_VARIANTS: [&str; 71] = [
+const ALL_VARIANTS: [&str; 72] = [
     "Vertical",
     "Horizontal",
     "Parallel",
@@ -434,6 +442,7 @@ const ALL_VARIANTS: [&str; 71] = [
     "DistancePointPoint",
     "DistancePointLine",
     "Angle",
+    "RayAngle",
     "Midpoint",
     "EqualLength",
     "MidpointOfLineOnLine",
@@ -611,6 +620,7 @@ fn shared_point_constraints() -> Vec<ConstraintType> {
         ConstraintType::Parallel(s("p0"), s("p1"), s("p1"), s("p2")),
         ConstraintType::Perpendicular(s("p0"), s("p1"), s("p1"), s("p2")),
         ConstraintType::Angle(s("p0"), s("p1"), s("p1"), s("p2"), 0.7),
+        ConstraintType::RayAngle(s("p0"), s("p1"), s("p1"), s("p2"), 0.7),
         ConstraintType::EqualLength(s("p0"), s("p1"), s("p1"), s("p2")),
         ConstraintType::MidpointOfLineOnLine(s("p0"), s("p1"), s("p1"), s("p2")),
         ConstraintType::DistancePointLine(s("p0"), s("p1"), s("p0"), 1.0),

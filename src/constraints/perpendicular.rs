@@ -3,7 +3,7 @@
 
 #![allow(non_snake_case)]
 
-use std::f64::consts::FRAC_PI_2;
+use std::f64::consts::{FRAC_PI_2, PI};
 
 use nalgebra::DMatrix;
 
@@ -48,6 +48,6 @@ impl Constraint for PerpendicularConstraint {
         let (dx1, dy1) = (x[2] - x[0], x[3] - x[1]);
         let (dx2, dy2) = (x[6] - x[4], x[7] - x[5]);
         let dot = dx1 * dx2 + dy1 * dy2;
-        set_direction_row([dx1, dy1], [dx2, dy2], FRAC_PI_2, (dot, [dx2, dy2], [dx1, dy1]), r, j);
+        set_direction_row([dx1, dy1], [dx2, dy2], FRAC_PI_2, PI, (dot, [dx2, dy2], [dx1, dy1]), r, j);
     }
 }

@@ -317,18 +317,29 @@ d = 0:  R = S(p; a, b)     = 0   (same as PointOnLine; |·| has no usable gradie
 `L2 = p3→p4`; a target angle `θ` in radians.
 
 **Geometric meaning:** the (directed) angle from `L1` to `L2` equals `θ`
-(or `θ + π`: `L2` reversed).
+(or `θ + π`: `L2` reversed). Between rays (`RayAngle`), only `θ`.
 
 **Residual (1 equation)**, with `φ = atan2(d1 × d2, d1 · d2)` (see Units):
 
 ```
-R = φ − θ, wrapped into [−π/2, π/2)
+Angle:     R = φ − θ, wrapped into [−π/2, π/2)
+RayAngle:  R = φ − θ, wrapped into [−π, π)
 ```
 
-Roots at `φ = θ` and `φ = θ + π`, as the earlier `dot·sin θ − cross·cos θ`
-(`= |d1||d2|·sin(θ − φ)`) had.
+`Angle` has roots at `φ = θ` and `φ = θ + π`, as the earlier
+`dot·sin θ − cross·cos θ` (`= |d1||d2|·sin(θ − φ)`) had: the lines taken
+either way, so a solve that starts nearer `θ + π` lands there. `RayAngle`
+has one root, `φ = θ`: the angle between the rays `p1→p2` and `p3→p4`, as
+`direction` (16) has none at `θ + π`.
 
-**Jacobian:** `∂R = ∂φ`, the same table as Perpendicular (1).
+Native `angle` between Lines builds `Angle` unless `reverseA` or `reverseB`
+is present (`true` or `false`); with either, `RayAngle`, each Line measured
+`p2 → p1` (its points swapped) when its flag is `true`. A client measuring
+rays from where the Lines meet sets the flag on each Line whose `p2` is that
+corner, and the value is the angle it shows.
+
+**Jacobian:** `∂R = ∂φ` for both, the same table as Perpendicular (1); a
+`true` flag swaps the two points of its line.
 
 ---
 

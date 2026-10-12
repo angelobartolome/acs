@@ -40,7 +40,7 @@ ACS names constraints by relationship (its **native vocabulary**, used by the JS
 | `parallel` / `perpendicular` | line, line | Two lines are parallel / perpendicular |
 | `collinear` | line, line | Both lines lie on one infinite line (the segments need not overlap) |
 | `normal` | line, circle or arc | The line's Extension passes through the curve's center |
-| `angle` | line, line; or arc | Directed angle between two lines; or an arc's sweep, `0 < value < 2π` (radians) |
+| `angle` | line, line; or arc | Directed angle between two lines (taken either way, or as rays with `reverseA`/`reverseB`); or an arc's sweep, `0 < value < 2π` (radians) |
 | `direction` | line, or two points | Direction from +X (radians, counter-clockwise) |
 | `distance` | point–point, point–line (`extension?`), point–circle, point–arc (`internal?`), line–circle, line–arc (`extension?`), circle–circle, circle–arc, arc–arc (`internal?`), line–line | Point–point distance; point–segment distance (with `extension`, to the line's Extension); the gap from a point, segment (or Extension) or circle to a circle's outside (with `internal`, inside it), and to or between arcs the same way with the nearest points on each arc's span; two parallel lines `value` apart (both of `b`'s endpoints from `a`'s Extension) |
 | `offset` | point, line | Distance from a point to a line's Extension on a given side (Linked Offsets) |

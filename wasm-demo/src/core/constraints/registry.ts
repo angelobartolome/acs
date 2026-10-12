@@ -61,6 +61,12 @@ export interface ConstraintDef {
    * for its outside sibling, absent when the type has none
    */
   internal?: boolean;
+  /**
+   * optional `true`/`false` JSON fields the catalog row reads, as the
+   * catalog's `options` lists them (`angle`'s `reverseA`/`reverseB`); the
+   * demo doesn't send them
+   */
+  options?: string[];
   label: string;
   /** short text drawn on the canvas next to the constrained entities */
   badge: string;
@@ -336,6 +342,7 @@ export const CONSTRAINT_DEFS: readonly ConstraintDef[] = [
     description: "Directed angle from the first line to the second",
     selection: [L(2)],
     entityFields: ["a", "b"],
+    options: ["reverseA", "reverseB"],
     scalarParams: [
       { key: "value", label: "Angle", unit: "angle", defaultFrom: lineAngle },
     ],

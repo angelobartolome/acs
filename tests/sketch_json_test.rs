@@ -641,7 +641,8 @@ fn every_constraint_converges_at_any_scale() {
     // rounding (about 2e-16 times the coordinates times the lengths)
     // outgrows TOLF at coordinates in the thousands. From a start off the
     // solution, through point–point distance, on a circle, equal lengths,
-    // circle–circle tangency, parallel, perpendicular and angle.
+    // circle–circle tangency, parallel, perpendicular, angle and angle
+    // between rays.
     let req = request(json!([
         { "id": "a", "type": "point", "x": 0.0, "y": 0.0, "fixed": true },
         { "id": "b", "type": "point", "x": 4.2, "y": 0.3 },
@@ -658,6 +659,8 @@ fn every_constraint_converges_at_any_scale() {
         { "id": "e", "type": "point", "x": 8.3, "y": 1.6 },
         { "id": "f", "type": "point", "x": 12.1, "y": 1.4 },
         { "id": "ef", "type": "line", "p1_id": "e", "p2_id": "f" },
+        { "id": "g", "type": "point", "x": 9.3, "y": 3.0 },
+        { "id": "ge", "type": "line", "p1_id": "g", "p2_id": "e" },
         { "id": "h", "type": "horizontal", "line": "ab" },
         { "id": "dist", "type": "distance", "a": "a", "b": "b", "value": 4.0 },
         { "id": "perp", "type": "perpendicular", "a": "ab", "b": "bc" },
@@ -670,13 +673,17 @@ fn every_constraint_converges_at_any_scale() {
         { "id": "on", "type": "on", "point": "e", "curve": "k1" },
         { "id": "ey", "type": "y", "point": "e", "value": 1.5 },
         { "id": "hef", "type": "horizontal", "line": "ef" },
-        { "id": "eq", "type": "equal", "a": "ab", "b": "ef" }
+        { "id": "eq", "type": "equal", "a": "ab", "b": "ef" },
+        { "id": "ray", "type": "angle", "a": "ef", "b": "ge", "value": std::f64::consts::FRAC_PI_3,
+          "reverseA": false, "reverseB": true },
+        { "id": "eg", "type": "distance", "a": "e", "b": "g", "value": 2.0 }
     ]));
     let unit = solve(req.clone());
     assert_eq!(unit["status"], "converged");
     assert_eq!(unit["dof"], 0);
     assert_eq!(unit["redundant"], json!([]));
-    for (id, x, y) in [("c", 4.0, 3.0), ("d", 0.0, 3.0), ("e", 8.5, 1.5), ("f", 12.5, 1.5)] {
+    let gy = 1.5 + 3.0_f64.sqrt();
+    for (id, x, y) in [("c", 4.0, 3.0), ("d", 0.0, 3.0), ("e", 8.5, 1.5), ("f", 12.5, 1.5), ("g", 9.5, gy)] {
         let (px, py) = point(&unit, id);
         assert!((px - x).abs() < 1e-9 && (py - y).abs() < 1e-9, "{id} at ({px}, {py})");
     }
@@ -686,7 +693,7 @@ fn every_constraint_converges_at_any_scale() {
         for key in ["conflicting", "redundant", "dof", "fullyConstrained"] {
             assert_eq!(resp[key], unit[key], "{key} at scale {k}");
         }
-        for id in ["b", "c", "d", "e", "f"] {
+        for id in ["b", "c", "d", "e", "f", "g"] {
             let ((ux, uy), (sx, sy)) = (point(&unit, id), point(&resp, id));
             assert!((sx / k - ux).abs() < 1e-9 && (sy / k - uy).abs() < 1e-9, "{id} at scale {k}");
         }

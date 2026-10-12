@@ -42,11 +42,13 @@ pub fn parse(json_type: &str, c: &Value, refs: &References) -> Result<Constraint
 
 /// The catalog as JSON, one object per row:
 /// `[{ "type", "fields": [{ "name", "index"?, "kind" }], "extension"?,
-/// "internal"? }]`. A type with several variants has several rows;
-/// `extension` is present on rows that take the flag (`false`: the segment
-/// variant, `true`: the Extension variant), and `internal` likewise
-/// (`false`: outside, `true`: the inside variant). A field with an `index`
-/// is that element of the array field `name`.
+/// "internal"?, "options"? }]`. A type with several variants has several
+/// rows; `extension` is present on rows that take the flag (`false`: the
+/// segment variant, `true`: the Extension variant), and `internal` likewise
+/// (`false`: outside, `true`: the inside variant). `options` names the
+/// optional `true`/`false` fields a row reads (`angle` between Lines:
+/// `reverseA`, `reverseB`). A field with an `index` is that element of the
+/// array field `name`.
 pub fn catalog_json() -> String {
     let specs: Vec<Value> = specs()
         .iter()
@@ -71,6 +73,9 @@ pub fn catalog_json() -> String {
                 InternalFlag::NotAccepted => {}
                 InternalFlag::External => row["internal"] = json!(false),
                 InternalFlag::Internal => row["internal"] = json!(true),
+            }
+            if !s.options.is_empty() {
+                row["options"] = json!(s.options);
             }
             row
         })
@@ -274,6 +279,8 @@ pub struct Args {
     pub axes: Vec<EllipseAxis>,
     /// Each Spline field, in field order.
     pub splines: Vec<Spline>,
+    /// Each of the row's options, in order: `None` when absent.
+    pub options: Vec<Option<bool>>,
     /// The constraint's JSON `id`: curve parameters it owns are named
     /// after it (`"<id>#0"`, `"<id>#1"`).
     pub id: String,
@@ -312,6 +319,24 @@ impl Args {
     fn arc_end(&self, i: usize) -> String {
         self.arc_ends[i].1.clone()
     }
+    /// The angle (scalar 0) from Line field 0 (points 0 and 1) to Line
+    /// field 1 (points 2 and 3), each measured p2 → p1 when its option
+    /// (`reverseA`, `reverseB`) is `true`. With either option present, the
+    /// angle between those rays (`RayAngle`, one root); with neither,
+    /// between the Lines taken either way (`Angle`, two roots).
+    fn angle(&self) -> ConstraintType {
+        let ray = |i: usize| match self.options[i] {
+            Some(true) => (self.p(2 * i + 1), self.p(2 * i)),
+            _ => (self.p(2 * i), self.p(2 * i + 1)),
+        };
+        let ((p1, p2), (p3, p4)) = (ray(0), ray(1));
+        if self.options.iter().any(Option::is_some) {
+            ConstraintType::RayAngle(p1, p2, p3, p4, self.s(0))
+        } else {
+            ConstraintType::Angle(p1, p2, p3, p4, self.s(0))
+        }
+    }
+
     /// The Line (points 0 and 1) tangent to Arc field 0. When a line
     /// endpoint is one of the arc's endpoints, tangency is the angle at that
     /// shared point (`TangentAtPoint`); measuring it by distance there is
@@ -616,6 +641,9 @@ pub struct ConstraintSpec {
     pub extension: ExtensionFlag,
     /// Whether the row takes `internal`, and which value selects it.
     pub internal: InternalFlag,
+    /// Optional `true`/`false` fields the row reads, in order (see
+    /// [`Args::options`]); they don't select the row.
+    pub options: &'static [&'static str],
     /// A test of the resolved fields a row can only pass or fail once it
     /// sees which entities they are (e.g. a shared endpoint), run before
     /// `build`.
@@ -636,6 +664,7 @@ impl ConstraintSpec {
             fields,
             extension: ExtensionFlag::NotAccepted,
             internal: InternalFlag::NotAccepted,
+            options: &[],
             check: None,
             build,
         }
@@ -647,6 +676,11 @@ impl ConstraintSpec {
             check: Some(check),
             ..self
         }
+    }
+
+    /// This row reading the optional `true`/`false` fields `options`.
+    pub const fn options(self, options: &'static [&'static str]) -> Self {
+        ConstraintSpec { options, ..self }
     }
 
     /// This row as the segment variant of a type that has an Extension one.
@@ -778,6 +812,15 @@ impl ConstraintSpec {
                 }
                 FieldKind::Scalar | FieldKind::Value | FieldKind::Axis => unreachable!(),
             }
+        }
+        for &name in self.options {
+            args.options.push(match c.get(name) {
+                None => None,
+                Some(v) => Some(
+                    v.as_bool()
+                        .ok_or_else(|| format!("field '{name}' is not true or false"))?,
+                ),
+            });
         }
         if let Some(check) = self.check {
             check(&args)?;

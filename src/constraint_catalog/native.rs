@@ -69,11 +69,15 @@ pub(super) static SPECS: &[S] = &[
     S::new("normal", &[("line", Line), ("curve", Arc)], |a| {
         ConstraintType::PointOnExtension(a.center(0), a.p(0), a.p(1))
     }),
+    // `reverseA` / `reverseB` measure a Line p2 → p1, and either one makes
+    // the angle between rays (one root) rather than between Lines taken
+    // either way (two roots, θ and θ + π).
     S::new(
         "angle",
         &[("a", Line), ("b", Line), ("value", Scalar)],
-        |a| ConstraintType::Angle(a.p(0), a.p(1), a.p(2), a.p(3), a.s(0)),
-    ),
+        |a| a.angle(),
+    )
+    .options(&["reverseA", "reverseB"]),
     S::new("angle", &[("arc", Arc), ("value", Scalar)], |a| {
         ConstraintType::ArcSweep(a.c(0), a.s(0))
     }),

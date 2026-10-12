@@ -418,9 +418,15 @@ pub enum ConstraintType {
     /// (point_id, line_pa_id, line_pb_id, distance)
     DistancePointLine(String, String, String, f64),
 
-    /// Fixed directed angle (in radians) from line L1 to line L2.
+    /// Fixed directed angle (in radians) from line L1 to line L2, the lines
+    /// taken either way: roots at the angle and the angle + π.
     /// (L1P1, L1P2, L2P1, L2P2, angle_radians)
     Angle(String, String, String, String, f64),
+
+    /// Fixed directed angle (in radians) from ray L1P1 → L1P2 to ray
+    /// L2P1 → L2P2: one root.
+    /// (L1P1, L1P2, L2P1, L2P2, angle_radians)
+    RayAngle(String, String, String, String, f64),
 
     /// Force a point to be the midpoint of a segment.
     /// (midpoint_id, endpoint_a_id, endpoint_b_id)
@@ -775,7 +781,10 @@ pub fn create_constraint(constraint_type: ConstraintType) -> Result<Box<dyn Cons
             ),
         )),
         ConstraintType::Angle(p1, p2, p3, p4, theta) => Ok(Box::new(
-            crate::constraints::angle::AngleConstraint::new(p1, p2, p3, p4, theta),
+            crate::constraints::angle::AngleConstraint::new(p1, p2, p3, p4, theta, false),
+        )),
+        ConstraintType::RayAngle(p1, p2, p3, p4, theta) => Ok(Box::new(
+            crate::constraints::angle::AngleConstraint::new(p1, p2, p3, p4, theta, true),
         )),
         ConstraintType::Midpoint(m, a, b) => Ok(Box::new(
             crate::constraints::midpoint::MidpointConstraint::new(m, a, b),

@@ -2,6 +2,8 @@
 
 #![allow(non_snake_case)] // Makes sense for mathematical variables
 
+use std::f64::consts::PI;
+
 use nalgebra::DMatrix;
 
 use crate::constraints::directions::set_direction_row;
@@ -43,6 +45,6 @@ impl Constraint for ParallelConstraint {
         let (dx1, dy1) = (x[2] - x[0], x[3] - x[1]);
         let (dx2, dy2) = (x[6] - x[4], x[7] - x[5]);
         let cross = dx1 * dy2 - dy1 * dx2;
-        set_direction_row([dx1, dy1], [dx2, dy2], 0.0, (cross, [dy2, -dx2], [-dy1, dx1]), r, j);
+        set_direction_row([dx1, dy1], [dx2, dy2], 0.0, PI, (cross, [dy2, -dx2], [-dy1, dx1]), r, j);
     }
 }
