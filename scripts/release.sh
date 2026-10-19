@@ -7,6 +7,7 @@
 #   acs-<version>-ios-arm64.tar.gz            aarch64-apple-ios
 #   acs-<version>-ios-arm64-simulator.tar.gz  aarch64-apple-ios-sim
 #   acs-<version>-linux-x86_64.tar.gz         x86_64-unknown-linux-gnu
+#   acs-<version>-linux-arm64.tar.gz          aarch64-unknown-linux-gnu
 #   acs-<version>-xcframework.zip             ACS.xcframework: the same three as frameworks
 #   acs-<version>.tgz                         wasm-pack --target web, npm pack (package acs-solver)
 #
@@ -19,11 +20,11 @@
 # personality routine in an image of its own: beside Swift's, C++'s and Objective-C's it is a
 # fourth, one more than compact unwind can encode in one image.
 #
-# The Linux library is built on its own, as a static library only: it needs no Linux linker,
-# so it builds on macOS too. A Linux program links it with -lpthread -ldl -lm.
+# The Linux libraries are built on their own, as static libraries only: they need no Linux
+# linker, so they build on macOS too, and either architecture builds on either. A Linux program links it with -lpthread -ldl -lm.
 #
 # Usage: scripts/release.sh [macos-arm64 | ios-arm64 | ios-arm64-simulator | linux-x86_64 |
-#                            xcframework | wasm ...]
+#                            linux-arm64 | xcframework | wasm ...]
 # With no argument it builds everything, in parallel: one cargo invocation for every Apple
 # target, and the WASM package alongside it. CI builds one piece per job.
 # Needs rustup (targets are added if missing), Xcode for the iOS SDKs (Apple pieces), and
@@ -43,12 +44,13 @@ target_of() {
     ios-arm64) echo aarch64-apple-ios ;;
     ios-arm64-simulator) echo aarch64-apple-ios-sim ;;
     linux-x86_64) echo x86_64-unknown-linux-gnu ;;
+    linux-arm64) echo aarch64-unknown-linux-gnu ;;
     *) return 1 ;;
   esac
 }
 
 PIECES=("$@")
-[ ${#PIECES[@]} -gt 0 ] || PIECES=(macos-arm64 ios-arm64 ios-arm64-simulator linux-x86_64 xcframework wasm)
+[ ${#PIECES[@]} -gt 0 ] || PIECES=(macos-arm64 ios-arm64 ios-arm64-simulator linux-x86_64 linux-arm64 xcframework wasm)
 PLATFORMS=()
 BUILD_WASM=false
 BUILD_XCFRAMEWORK=false
@@ -60,16 +62,19 @@ for piece in "${PIECES[@]}"; do
   elif target_of "$piece" > /dev/null; then
     PLATFORMS+=("$piece")
   else
-    echo "Unknown piece '$piece'; expected macos-arm64, ios-arm64, ios-arm64-simulator, linux-x86_64, xcframework or wasm" >&2
+    echo "Unknown piece '$piece'; expected macos-arm64, ios-arm64, ios-arm64-simulator, linux-x86_64, linux-arm64, xcframework or wasm" >&2
     exit 2
   fi
 done
 
 # The Apple targets build together; the XCFramework is built from every one of them.
 TARGET_PLATFORMS=()
-BUILD_LINUX=false
+LINUX_PLATFORMS=()
 for platform in ${PLATFORMS[@]+"${PLATFORMS[@]}"}; do
-  [ "$platform" = linux-x86_64 ] && BUILD_LINUX=true || TARGET_PLATFORMS+=("$platform")
+  case "$platform" in
+    linux-*) LINUX_PLATFORMS+=("$platform") ;;
+    *) TARGET_PLATFORMS+=("$platform") ;;
+  esac
 done
 if $BUILD_XCFRAMEWORK; then
   for platform in macos-arm64 ios-arm64 ios-arm64-simulator; do
@@ -117,12 +122,12 @@ if [ ${#TARGET_PLATFORMS[@]} -gt 0 ]; then
   CARGO_PROFILE_RELEASE_OPT_LEVEL=$NATIVE_OPT_LEVEL cargo build --release --lib --features c-abi "${target_args[@]}"
 fi
 
-if $BUILD_LINUX; then
-  target="$(target_of linux-x86_64)"
+for platform in ${LINUX_PLATFORMS[@]+"${LINUX_PLATFORMS[@]}"}; do
+  target="$(target_of "$platform")"
   rustup target list --installed | grep -qx "$target" || rustup target add "$target"
-  echo "Building the static library for linux-x86_64..."
+  echo "Building the static library for $platform..."
   CARGO_PROFILE_RELEASE_OPT_LEVEL=$NATIVE_OPT_LEVEL cargo rustc --release --lib --features c-abi --target "$target" --crate-type staticlib
-fi
+done
 
 if [ ${#PLATFORMS[@]} -gt 0 ]; then
 
