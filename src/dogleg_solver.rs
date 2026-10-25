@@ -20,6 +20,13 @@ use crate::SolverResult;
 /// when every residual is within it.
 pub(crate) const TOLF: f64 = 1e-10;
 
+/// Relative rank cutoff of the Gauss-Newton solve (see
+/// `ParametricDogLegSolver::compute_gn_step`): singular values of the
+/// Jacobian below this fraction of the largest count as zero. The test suite
+/// passes from 1e-10 to 1e-6: at 1e-12 a Redundant constraint can still
+/// collapse a sketch, at 1e-4 constraints stop converging at large scales.
+const RANK_RTOL: f64 = 1e-8;
+
 /// Residuals and their Jacobian with respect to the parameter vector.
 pub(crate) type System = (DVector<f64>, DMatrix<f64>);
 
@@ -245,20 +252,27 @@ impl ParametricDogLegSolver {
         }
     }
 
-    /// Computes the Gauss-Newton step.
-    /// Returns `None` only if every fallback fails.
+    /// Computes the Gauss-Newton step: the least-squares, minimum-norm
+    /// solution of `J h = −f`, with singular values below `RANK_RTOL` of the
+    /// largest treated as zero.
+    ///
+    /// The cutoff is what keeps a Redundant constraint harmless. Its rows are
+    /// exactly dependent only at a solution; a step that breaks the other
+    /// constraints slightly (any step short of Gauss-Newton does) leaves a
+    /// singular value around 1e-9 instead of 0. Solving through it divides
+    /// the residual by it: a step of hundreds along the near-null direction,
+    /// e.g. every x scaled to 0, which can still satisfy every constraint, so
+    /// the sketch converges collapsed (`tests/sketch_json_test.rs`
+    /// `a_redundant_constraint_does_not_collapse_the_sketch`).
+    ///
+    /// Always the SVD, square systems included: an LU solve has no rank
+    /// cutoff, so it solves through the same tiny pivots.
+    ///
+    /// Returns `None` if the SVD fails.
     fn compute_gn_step(&self, jac: &DMatrix<f64>, fx: &DVector<f64>) -> Option<DVector<f64>> {
-        let neg_fx = -fx;
-        let svd_fallback = || jac.clone().svd(true, true).solve(&neg_fx, 1e-12).ok();
-
-        // Direct solve J h = -f; avoids forming the normal equations J^T J.
-        // nalgebra's full_piv_lu panics on non-square matrices, so fall back to SVD
-        // for rectangular systems (under/overdetermined).
-        if jac.nrows() == jac.ncols() {
-            jac.clone().full_piv_lu().solve(&neg_fx).or_else(svd_fallback)
-        } else {
-            svd_fallback()
-        }
+        let svd = jac.clone().svd(true, true);
+        let eps = (RANK_RTOL * svd.singular_values.max()).max(f64::MIN_POSITIVE);
+        svd.solve(&-fx, eps).ok()
     }
 }
 
