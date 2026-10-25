@@ -514,6 +514,9 @@ pub(super) fn parse(
     let accepts = |s: &S| s.extension.accepts(extension) && s.internal.accepts(internal);
     for spec in variants.iter().filter(|s| accepts(s)) {
         if let Some(obj) = matching(spec) {
+            if other_form_field(spec, &variants, obj) {
+                return Err(two_forms(json_type, &variants));
+            }
             return spec.parse(obj, refs);
         }
     }
@@ -538,6 +541,44 @@ pub(super) fn parse(
         ));
     }
     Err(unsupported(json_type, &variants, c, refs, extension, internal))
+}
+
+/// The names of the fields a row reads: its fields (an array field once), options and
+/// defaults.
+fn field_names(spec: &S) -> Vec<&'static str> {
+    let mut names: Vec<&str> = Vec::new();
+    let fields = spec.fields.iter().map(|&(name, _)| field_path(name).0);
+    let rest = spec.options.iter().copied().chain(spec.defaults.iter().map(|&(name, _)| name));
+    for name in fields.chain(rest) {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// Whether `c` also has a field only another row of its type reads: both of a type's
+/// forms at once (`horizontal` with a `line` and `a`), which would be read as the one
+/// that matched with the other's fields silently ignored.
+fn other_form_field(spec: &S, variants: &[&S], c: &Value) -> bool {
+    let own = field_names(spec);
+    variants
+        .iter()
+        .flat_map(|s| field_names(s))
+        .any(|name| !own.contains(&name) && c.get(name).is_some())
+}
+
+/// The error for [`other_form_field`]: `'horizontal' takes (line) or (a, b), not fields of
+/// both`.
+fn two_forms(json_type: &str, variants: &[&S]) -> String {
+    let mut forms: Vec<String> = Vec::new();
+    for s in variants {
+        let form = format!("({})", field_names(s).join(", "));
+        if !forms.contains(&form) {
+            forms.push(form);
+        }
+    }
+    format!("'{json_type}' takes {}, not fields of both", forms.join(" or "))
 }
 
 /// `c` with its `a` and `b` fields exchanged.

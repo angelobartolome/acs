@@ -2,15 +2,16 @@
 
 ## Overview
 
-ACS exposes three integration paths:
+ACS exposes four integration paths:
 
 | Path | Use when |
 |------|----------|
 | **WASM JSON API** (`acsSolveSketch`) | Browser / JS frontend — send a JSON description of the sketch in ACS's native constraint vocabulary, receive updated positions back |
+| **Typed API** (`acsSolve` in TypeScript, `solve` in Swift and Rust) | The same contract as types: generated TypeScript declarations, Swift through UniFFI (see *Typed API* below) |
 | **C ABI** (`P3DSketch_Solve`, `P3DSpline_Curve`) | Native code linking the static library — the same JSON contract (see *C ABI* below) |
 | **Rust native API** (`ConstraintSolver`) | Server-side Rust or embedding ACS as a Rust crate |
 
-All three run the same dogleg solver with the same pre-solver optimization. The sections below cover each path and explain how to get the most out of the pre-solver.
+All of them run the same dogleg solver with the same pre-solver optimization. The sections below cover each path and explain how to get the most out of the pre-solver.
 
 ---
 
@@ -36,6 +37,7 @@ const response = JSON.parse(acsSolveSketch(JSON.stringify(sketchInput)));
 | `acsSolveSketch(request)` | solves a sketch |
 | `acsConstraintCatalog()` | the constraint catalog |
 | `acsSplineCurve(request)` | a spline's curve, without solving (see *Spline curves*) |
+| `acsSolve(request)`, `acsCurve(request)` | the same two over typed objects (see *Typed API*) |
 | `P3DSketch_Solve` (C ABI, `--features c-abi`) | solves a sketch |
 | `P3DSpline_Curve` (C ABI, `--features c-abi`) | a spline's curve, without solving |
 
@@ -192,7 +194,45 @@ A failed solve is a normal response, not an error.
 
 ### Rejected requests
 
-A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..." }` and nothing is solved. When the problem is a constraint, the response also has `constraintId`, and the error reads like `constraint k1: missing field 'value'`, `constraint k1: unknown type 'made_up'`, `constraint k1: 'ghost' is not a point` or `constraint k1: unsupported combination for 'distance': got a: point, b: ellipse; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension) or (a: point, b: circle) or (a: point, b: circle, internal) or (a: point, b: arc) or (a: point, b: arc, internal) or (a: line, b: circle) or (a: line, b: circle, extension) or (a: line, b: arc) or (a: line, b: arc, extension) or (a: circle, b: circle) or (a: circle, b: circle, internal) or (a: circle, b: arc) or (a: circle, b: arc, internal) or (a: arc, b: arc) or (a: arc, b: arc, internal) or (a: line, b: line)`. Other rejections include a wrong `version` or `maxIterations`, a duplicate id, geometry referencing a missing point (`line l1: 'p9' is not a point`), a Parameter without a numeric `value` (`param d: missing field 'value'`), an unknown Parameter id (`constraint k1: field 'value': unknown Parameter 'd9'`), and a bad property reference (`constraint k1: field 'a': circle 'c1' has no property 'diameter'`, `... 'ghost' is not an entity`).
+A request ACS can't read gets `{ "version": 1, "status": "invalid", "error": "..." }` and nothing is solved. When the problem is a constraint, the response also has `constraintId`, and the error reads like `constraint k1: missing field 'value'`, `constraint k1: unknown type 'made_up'`, `constraint k1: 'ghost' is not a point` or `constraint k1: unsupported combination for 'distance': got a: point, b: ellipse; expected (a: point, b: point) or (a: point, b: line) or (a: point, b: line, extension) or (a: point, b: circle) or (a: point, b: circle, internal) or (a: point, b: arc) or (a: point, b: arc, internal) or (a: line, b: circle) or (a: line, b: circle, extension) or (a: line, b: arc) or (a: line, b: arc, extension) or (a: circle, b: circle) or (a: circle, b: circle, internal) or (a: circle, b: arc) or (a: circle, b: arc, internal) or (a: arc, b: arc) or (a: arc, b: arc, internal) or (a: line, b: line)`. Other rejections include a wrong `version` or `maxIterations`, a duplicate id, geometry referencing a missing point (`line l1: 'p9' is not a point`), a Parameter without a numeric `value` (`param d: missing field 'value'`), an unknown Parameter id (`constraint k1: field 'value': unknown Parameter 'd9'`), a bad property reference (`constraint k1: field 'a': circle 'c1' has no property 'diameter'`, `... 'ghost' is not an entity`), and a constraint with fields of both of its type's forms (`constraint k1: 'horizontal' takes (line) or (a, b), not fields of both`; before 0.1.18 the other form's fields were ignored).
+
+### Typed API
+
+The same contract as types (`src/sketch_types.rs`): `SolveRequest` in, `SolveResponse` out, each primitive a case of `Primitive`. A typed request serializes to exactly the JSON above and goes through the same parser, so it means what its JSON means; a rejection is the same message. A type whose catalog rows read different fields has them as a nested choice, flattened into the constraint on the wire: `horizontal`, `vertical`, `horizontal_distance`, `vertical_distance` and `direction` take a line or two points (`LineOrPoints`), `angle` two lines or an arc (`AngleOf`), `ellipse_axis` one point or a pair (`AxisPoints`). `Scalar` fields are a number or a Parameter id; `Operand` fields (`equal`, `difference`) also take `{entity, property}`.
+
+**TypeScript.** The WASM package declares the types (tsify) and exports `acsSolve(request: SolveRequest): SolveResult` and `acsCurve(request: CurveRequest): CurveResult`, over objects. `SolveResult` is `SolveResponse | SolveRejection`, narrowed on `status` (`"invalid"`: `error`, `constraintId?`); a request that doesn't match the types is a rejection too. `Primitive` is the wire shape, a union discriminated by `type`:
+
+```ts
+import init, { acsSolve, type Primitive } from './pkg/acs.js';
+await init();
+const primitives: Primitive[] = [
+  { type: "point", id: "a", x: 0, y: 0, fixed: true },
+  { type: "point", id: "b", x: 4, y: 1 },
+  { type: "horizontal", id: "h", a: "a", b: "b" },   // or { line: "ab" }
+  { type: "distance", id: "d", a: "a", b: "b", value: 10 },
+];
+const result = acsSolve({ version: 1, primitives });
+if (result.status !== "invalid") console.log(result.dof, result.primitives);
+```
+
+**Swift.** With `--features uniffi` the library carries UniFFI's scaffolding, and `uniffi-bindgen` (`--features uniffi-cli`, configured by `uniffi.toml`) generates the module `ACSSketch` over the FFI module `ACS`. The release's Swift package (`acs-<version>-swift-package.zip`) holds it with `ACS.xcframework`, whose module `ACS` exports both UniFFI's header and the C ABI's; add the unpacked `ACS` folder as a local package and depend on the product `ACSSketch`. Cases take labelled fields, optional ones default to `nil`, and a rejection throws:
+
+```swift
+import ACSSketch
+
+let response = try solve(request: SolveRequest(primitives: [
+    .point(id: "a", x: 0, y: 0, fixed: true),
+    .point(id: "b", x: 4, y: 1),
+    .horizontal(id: "h", of: .points(a: "a", b: "b")),
+    .distance(id: "d", a: "a", b: "b", value: .number(10)),
+]))
+// catch SketchError.Invalid(let message, let constraintId)
+let curve = try splineCurve(handles: [Xy(x: 0, y: 0), Xy(x: 1, y: 2), Xy(x: 3, y: 2.5), Xy(x: 4, y: -1)], interpolated: true)
+```
+
+Fields the JSON API passes through are typed too (`isReference`, `isConstruction`, `group`; a Parameter's `name`); others aren't kept. The XCFramework's iOS Simulator slice is arm64 only.
+
+**Rust.** `acs::sketch_types::solve(request)` and `spline_curve(handles, interpolated, knots)`.
 
 ### C ABI
 

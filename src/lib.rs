@@ -75,10 +75,15 @@ pub mod solver;
 
 pub mod dogleg_solver;
 pub mod sketch_solve;
+pub mod sketch_types;
 pub mod component_graph;
 mod sketch_system;
 pub mod constraint_catalog;
 pub mod spline;
+
+// Swift and Kotlin bindings of `sketch_types`: UniFFI's scaffolding for the library.
+#[cfg(feature = "uniffi")]
+uniffi::setup_scaffolding!();
 
 // The sketch solver C ABI, for the static library.
 #[cfg(feature = "c-abi")]

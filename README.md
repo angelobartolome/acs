@@ -6,7 +6,7 @@ A geometric constraint solver written in Rust with WebAssembly bindings for web 
 
 ## Overview
 
-ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numerical solver with analytical Jacobians. It ships as a Rust crate, a WASM module callable from JavaScript, and a static library behind a C ABI.
+ACS solves 2-D geometric constraint systems using a Dog-Leg (trust-region) numerical solver with analytical Jacobians. It ships as a Rust crate, a WASM module callable from JavaScript (with TypeScript declarations for its typed API), a static library behind a C ABI, and a Swift package (UniFFI bindings over an XCFramework).
 
 - **Components:** each sketch is split into independent connected components, each solved on its own. A built-in pre-solver skips any component whose constraints already hold, about 5–8× faster on the bundled drag benchmark (`cargo test --release --test presolver_bench -- --nocapture`).
 - **Diagnosis:** every solve reports the **Conflicting** constraints (they can't all hold), the **Redundant** ones (they repeat what others already fix), the sketch's remaining **degrees of freedom**, and which entities are **fully constrained**.
@@ -201,7 +201,7 @@ int  P3DSketch_Solve(const char *requestJson, char **responseJson);
 void P3DSketch_Free(char *p); // releases *responseJson
 ```
 
-The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, exactly as `acsSolveSketch` answers it. (Before 0.1.7 `P3DSketch_Solve` took a `vocabulary` argument between the request and the response pointer. The symbol name is unchanged, so nothing catches a caller built against the old header at link time: rebuild it against the new one.) `scripts/release.sh` builds macOS arm64, iOS arm64, iOS Simulator and Linux x86_64 archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`; a Linux program links it with `-lpthread -ldl -lm`), the Apple three as dynamic frameworks in one XCFramework (`dist/acs-<version>-xcframework.zip`, unpacking to `ACS.xcframework`, module `ACS`), and the WASM npm tarball (`dist/acs-<version>.tgz`).
+The request and response are the [WASM JSON API](USAGE.md#wasm-json-api) contract, exactly as `acsSolveSketch` answers it. (Before 0.1.7 `P3DSketch_Solve` took a `vocabulary` argument between the request and the response pointer. The symbol name is unchanged, so nothing catches a caller built against the old header at link time: rebuild it against the new one.) `scripts/release.sh` builds macOS arm64, iOS arm64, iOS Simulator and Linux x86_64 archives (`dist/acs-<version>-<platform>.tar.gz`, unpacking to `acs/{include, lib/libp3d_sketch_solver.a, VERSION}`; a Linux program links it with `-lpthread -ldl -lm`), the Apple three as dynamic frameworks in one XCFramework (`dist/acs-<version>-xcframework.zip`, unpacking to `ACS.xcframework`, module `ACS`), the Swift package (`dist/acs-<version>-swift-package.zip`, below), and the WASM npm tarball (`dist/acs-<version>.tgz`).
 
 An app on Apple platforms links the XCFramework rather than the static library. Rust's exception personality routine, beside Swift's, C++'s and Objective-C's, is one more than compact unwind can encode in one image; in a framework of its own it no longer counts against the app's three.
 
@@ -211,9 +211,20 @@ cargo build --release --features c-abi
 ./scripts/release.sh ios-arm64 wasm   # or only some pieces (macos-arm64, ios-arm64, ios-arm64-simulator, linux-x86_64, linux-arm64, xcframework, wasm)
 ```
 
+### Swift and TypeScript (typed API)
+
+The JSON contract is also a set of types (`src/sketch_types.rs`, see [Typed API](USAGE.md#typed-api)): TypeScript declarations in the WASM package (`acsSolve`, `acsCurve`), and Swift through [UniFFI](https://github.com/mozilla/uniffi-rs). The `xcframework` piece of `scripts/release.sh` also builds the Swift package, `dist/acs-<version>-swift-package.zip`: unpacked, `ACS/` holds `Package.swift`, `ACS.xcframework` and the generated `Sources/ACSSketch`. Add it as a local package and `import ACSSketch`. To generate the Swift yourself:
+
+```bash
+cargo build --lib --features uniffi
+cargo run --features uniffi-cli --bin uniffi-bindgen -- generate --language swift \
+  --library target/debug/libacs.dylib --out-dir generated   # ACSSketch.swift + acs_uniffi.h
+cargo test --features uniffi --test swift_test               # compiles and runs tests/swift/main.swift (macOS)
+```
+
 ### Releases
 
-Each release publishes the crate to crates.io (`acs-solver`) and prebuilt artifacts on the [Releases](https://github.com/angelobartolome/acs/releases) page: the static library for macOS arm64, iOS arm64, the iOS Simulator and Linux x86_64 (`acs-<version>-<platform>.tar.gz`), the Apple three as an XCFramework (`acs-<version>-xcframework.zip`), and the WASM npm package (`acs-<version>.tgz`, package `acs-solver`, installable with `npm install ./acs-<version>.tgz`).
+Each release publishes the crate to crates.io (`acs-solver`) and prebuilt artifacts on the [Releases](https://github.com/angelobartolome/acs/releases) page: the static library for macOS arm64, iOS arm64, the iOS Simulator and Linux x86_64 (`acs-<version>-<platform>.tar.gz`), the Apple three as an XCFramework (`acs-<version>-xcframework.zip`) and as a Swift package with the typed API (`acs-<version>-swift-package.zip`), and the WASM npm package (`acs-<version>.tgz`, package `acs-solver`, installable with `npm install ./acs-<version>.tgz`).
 
 To cut a release, set `version` in `Cargo.toml`, merge it, then push a matching tag:
 
@@ -221,7 +232,7 @@ To cut a release, set `version` in `Cargo.toml`, merge it, then push a matching 
 git tag v0.1.4 && git push origin v0.1.4
 ```
 
-The [Release workflow](.github/workflows/release.yml) checks that the tag matches the crate version, then runs in parallel jobs: clippy, the tests and `cargo publish --dry-run`; one macOS job per Apple platform (`scripts/release.sh <platform>`) and one for the XCFramework (`scripts/release.sh xcframework`); and on Linux the static libraries (`scripts/release.sh linux-x86_64`, `linux-arm64`) and the WASM package (`scripts/release.sh wasm`). A last job collects the artifacts, publishes the GitHub Release, then publishes the crate with the `CARGO_REGISTRY_TOKEN` repository secret. Run it manually (Actions → Release → Run workflow) to build the artifacts without publishing.
+The [Release workflow](.github/workflows/release.yml) checks that the tag matches the crate version, then runs in parallel jobs: clippy, the tests and `cargo publish --dry-run`; one macOS job per Apple platform (`scripts/release.sh <platform>`) and one for the XCFramework and the Swift package (`scripts/release.sh xcframework`); and on Linux the static libraries (`scripts/release.sh linux-x86_64`, `linux-arm64`) and the WASM package (`scripts/release.sh wasm`). A last job collects the artifacts, publishes the GitHub Release, then publishes the crate with the `CARGO_REGISTRY_TOKEN` repository secret. Run it manually (Actions → Release → Run workflow) to build the artifacts without publishing.
 
 ---
 
