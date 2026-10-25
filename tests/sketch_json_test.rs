@@ -2087,3 +2087,69 @@ fn fixed_values_come_back_bit_for_bit() {
         assert!(out.contains(literal), "{literal} should come back unchanged in {out}");
     }
 }
+
+/// A rectangle centered on the origin (a diagonal's midpoint) with a
+/// horizontal line across it, held `value` below the top edge by a line–line
+/// `distance`. The distance already holds the lines parallel, so the inner
+/// line's `horizontal` is Redundant.
+fn rectangle_with_a_ledge(value: f64) -> Value {
+    let (w, h, ledge) = (63.641927083331794, 38.56121719733145, 20.089853794919364);
+    request(json!([
+        { "id": "o", "type": "point", "x": 0.0, "y": 0.0, "isReference": true },
+        { "id": "tl", "type": "point", "x": -w, "y": h },
+        { "id": "tr", "type": "point", "x": w, "y": h },
+        { "id": "br", "type": "point", "x": w, "y": -h },
+        { "id": "bl", "type": "point", "x": -w, "y": -h },
+        { "id": "lr", "type": "point", "x": w, "y": ledge },
+        { "id": "ll", "type": "point", "x": -w, "y": ledge },
+        { "id": "top", "type": "line", "p1_id": "tl", "p2_id": "tr" },
+        { "id": "right", "type": "line", "p1_id": "tr", "p2_id": "br" },
+        { "id": "bottom", "type": "line", "p1_id": "br", "p2_id": "bl" },
+        { "id": "left", "type": "line", "p1_id": "bl", "p2_id": "tl" },
+        { "id": "diagonal", "type": "line", "p1_id": "tl", "p2_id": "br", "isConstruction": true },
+        { "id": "rise_r", "type": "line", "p1_id": "tr", "p2_id": "lr" },
+        { "id": "ledge", "type": "line", "p1_id": "lr", "p2_id": "ll" },
+        { "id": "rise_l", "type": "line", "p1_id": "ll", "p2_id": "tl" },
+        { "id": "k1", "type": "horizontal", "line": "top" },
+        { "id": "k2", "type": "vertical", "line": "right" },
+        { "id": "k3", "type": "horizontal", "line": "bottom" },
+        { "id": "k4", "type": "vertical", "line": "left" },
+        { "id": "k5", "type": "midpoint", "entities": ["o", "diagonal"] },
+        { "id": "k6", "type": "vertical", "line": "rise_r" },
+        { "id": "k7", "type": "horizontal", "line": "ledge" },
+        { "id": "k8", "type": "vertical", "line": "rise_l" },
+        { "id": "k9", "type": "distance", "a": "ledge", "b": "top", "value": value }
+    ]))
+}
+
+/// Setting the ledge's distance far from where it is: the first Dog-Leg steps
+/// break the horizontals slightly, so the redundancy is no longer exact and
+/// the Jacobian has singular values of 1e-10..1e-8. A Gauss-Newton step that
+/// kept them divided by them, scaling every x to 0, and the sketch collapsed
+/// to zero width (still `converged`). Only the height may change.
+#[test]
+fn a_redundant_constraint_does_not_collapse_the_sketch() {
+    assert_ledge_moves_alone(1.0);
+}
+
+/// The same sketch ×100 (a sketch in millimetres drawn at centimetre scale's
+/// numbers, or metres): the rank cutoff is relative, so it behaves the same.
+#[test]
+fn a_redundant_constraint_does_not_collapse_the_sketch_x100() {
+    assert_ledge_moves_alone(100.0);
+}
+
+/// Solves [`rectangle_with_a_ledge`] scaled by `k` with the distance set to
+/// each of several values: the width stays, the distance holds, and only the
+/// ledge's `horizontal` is Redundant.
+fn assert_ledge_moves_alone(k: f64) {
+    for value in [1.0, 5.0, 12.0, 30.0, 60.0] {
+        let resp = solve(scaled(rectangle_with_a_ledge(value), k));
+        assert_eq!(resp["status"], "converged", "×{k} {value}: {resp}");
+        assert_eq!(resp["redundant"], json!(["k7"]), "×{k} {value}");
+        let (x, top) = point(&resp, "tr");
+        assert!((x / k - 63.641927083331794).abs() < 1e-6, "×{k} {value}: width/2 = {x}");
+        let (_, ledge) = point(&resp, "lr");
+        assert!(((top - ledge) / k - value).abs() < 1e-8, "×{k} {value}: {top} - {ledge}");
+    }
+}
