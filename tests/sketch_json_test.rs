@@ -981,6 +981,65 @@ fn a_drag_sequence_across_the_fold_moves_smoothly() {
     assert!(worst <= 45, "{worst} iterations in one step");
 }
 
+// ── Drag goals with free geometry ──────────────────────────────────────────
+//
+// A corner `a` with two lines to a circle about the fixed origin: `ab` is
+// tangent at `b` (held `on` the circle, so built as TangentAtPoint), `ac`
+// ends at `c`, on the circle straight below the center. The radius is free.
+
+/// The tangent-corner sketch with its free values at `at` and a drag goal
+/// on `a`.
+fn corner_request(at: &Value, goal: (f64, f64)) -> Value {
+    let (a, b, c, r) = (&at["a"], &at["b"], &at["c"], &at["r"]);
+    request(json!([
+        { "type": "point", "id": "o", "x": 0, "y": 0, "fixed": true },
+        { "type": "circle", "id": "circ", "c_id": "o", "radius": r },
+        { "type": "point", "id": "a", "x": a[0], "y": a[1] },
+        { "type": "point", "id": "b", "x": b[0], "y": b[1] },
+        { "type": "point", "id": "c", "x": c[0], "y": c[1] },
+        { "type": "line", "id": "ab", "p1_id": "a", "p2_id": "b" },
+        { "type": "line", "id": "ac", "p1_id": "a", "p2_id": "c" },
+        { "type": "on", "id": "on_b", "point": "b", "curve": "circ" },
+        { "type": "tangent", "id": "t", "a": "ab", "b": "circ" },
+        { "type": "on", "id": "on_c", "point": "c", "curve": "circ" },
+        { "type": "vertical", "id": "v", "a": "o", "b": "c" },
+        { "type": "x", "id": "gx", "point": "a", "value": goal.0, "temporary": true },
+        { "type": "y", "id": "gy", "point": "a", "value": goal.1, "temporary": true },
+    ]))
+}
+
+/// Dragging the corner toward the center shortens the lines and leaves the
+/// free radius nearly alone until the corner nears the circle, the
+/// smallest change. Before, the drag scaled the whole sketch about the
+/// center: the step's curvature from the TangentAtPoint row made scaling
+/// the only motion it didn't penalize.
+#[test]
+fn a_drag_toward_a_circle_moves_the_lines_before_the_radius() {
+    let r0 = 46.07932421008114;
+    let start = (-115.8372395833333, -37.51173750585468);
+    let mut at = json!({
+        "a": [start.0, start.1],
+        "b": [-29.730573411713507, 35.20507242242918],
+        "c": [0.0, -r0],
+        "r": r0,
+    });
+    let frames = 40;
+    for k in 1..=frames {
+        let t = 0.8 * k as f64 / frames as f64;
+        let cursor = (start.0 * (1.0 - t), start.1 * (1.0 - t));
+        let resp = solve(corner_request(&at, cursor));
+        assert_eq!(resp["status"], "converged", "frame {k}: {resp}");
+        let a = point(&resp, "a");
+        assert!((a.0 - cursor.0).abs() < 1e-8 && (a.1 - cursor.1).abs() < 1e-8, "frame {k}: a at {a:?}");
+        let r = primitive(&resp, "circ")["radius"].as_f64().unwrap();
+        if cursor.0.hypot(cursor.1) >= 2.0 * r0 {
+            assert!(r > 0.97 * r0, "frame {k}: radius {r} with the corner {} away", cursor.0.hypot(cursor.1));
+        }
+        let (b, c) = (point(&resp, "b"), point(&resp, "c"));
+        at = json!({ "a": [a.0, a.1], "b": [b.0, b.1], "c": [c.0, c.1], "r": r });
+    }
+}
+
 // ── Parameters and property references ─────────────────────────────────────
 
 fn primitive<'a>(resp: &'a Value, id: &str) -> &'a Value {
