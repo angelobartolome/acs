@@ -27,6 +27,9 @@ pub(crate) const TOLF: f64 = 1e-10;
 /// collapse a sketch, at 1e-4 constraints stop converging at large scales.
 const RANK_RTOL: f64 = 1e-8;
 
+/// The first trust radius of [`ParametricDogLegSolver::solve_dl`].
+const INITIAL_RADIUS: f64 = 0.1;
+
 /// Residuals and their Jacobian with respect to the parameter vector.
 pub(crate) type System = (DVector<f64>, DMatrix<f64>);
 
@@ -77,6 +80,16 @@ impl ParametricDogLegSolver {
         x: &mut DVector<f64>,
         eval: &mut dyn FnMut(&DVector<f64>) -> System,
     ) -> SolverResult {
+        self.solve_dl_from(x, eval, INITIAL_RADIUS)
+    }
+
+    /// [`solve_dl`](Self::solve_dl) with the first trust radius `delta`.
+    pub(crate) fn solve_dl_from(
+        &self,
+        x: &mut DVector<f64>,
+        eval: &mut dyn FnMut(&DVector<f64>) -> System,
+        delta: f64,
+    ) -> SolverResult {
         let (mut fx, mut jac) = eval(x);
         if x.is_empty() {
             // Nothing to move: solved only if it already is.
@@ -106,7 +119,7 @@ impl ParametricDogLegSolver {
         let mut g_inf = g.amax();
         let mut fx_inf = fx.amax();
 
-        let mut delta = 0.1_f64;
+        let mut delta = delta;
         let mut nu = 2.0_f64;
         let mut reduce = 0i32;
         let mut iter = 0usize;

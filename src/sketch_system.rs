@@ -489,9 +489,20 @@ const NUMERIC_ZERO: f64 = 1e-12;
 /// Most trial steps (each shrinking the trust region) for one goal step in
 /// [`solve_with_goals`].
 const MAX_TRIALS: usize = 30;
+/// The first Dog-Leg trust radius in [`solve_with_goals`], as a fraction of
+/// the largest value (at least 1): a drag's steps scale with the sketch,
+/// and a fixed radius cost a sketch in the thousands iterations growing it
+/// (×3 each). Only drags: they start where the real constraints hold and
+/// re-project short goal steps, while a plain solve's first step (a new
+/// dimension, far off) keeps Dog-Leg's fixed radius, so it settles on the
+/// same solution as ever.
+const GOAL_DL_RADIUS: f64 = 0.1;
 /// The first trust radius in [`solve_with_goals`] is at most this many
 /// times the goal error.
 const INITIAL_RADIUS_FACTOR: f64 = 10.0;
+/// [`solve_with_goals`] tries the Gauss–Newton step only when its model
+/// removes at least this fraction of the goal error.
+const GAUSS_NEWTON_REACH: f64 = 0.9;
 /// Central-difference step for the Lagrangian Hessian, relative to the
 /// largest variable.
 const FD_STEP: f64 = 1e-5;
@@ -602,10 +613,17 @@ fn values(pm: &VarRegistry, comp: &Component) -> DVector<f64> {
 ///    [central differences](https://en.wikipedia.org/wiki/Finite_difference#Basic_types) of
 ///    ∇L = J_Bᵀr_B + J_Aᵀλ along each column of Z (the analytical
 ///    Jacobians; two evaluations per column).
-/// 3. *Step*: the [Newton step](https://en.wikipedia.org/wiki/Newton%27s_method_in_optimization)
+/// 3. *Step*: first the Gauss–Newton model (H = ZᵀJ_BᵀJ_BZ, λ = 0), one
+///    trial, when its Newton step removes most of the goal error
+///    (`GAUSS_NEWTON_REACH`); it is accepted only if m predicted the drop
+///    well (ρ ≥ ¼). Its pseudo-inverse step is the smallest motion that
+///    meets the goals to first order, so free geometry the goals don't
+///    need stays put. Otherwise the second-order model: the
+///    [Newton step](https://en.wikipedia.org/wiki/Newton%27s_method_in_optimization)
 ///    when it fits the trust radius Δ and earns at
 ///    least half the predicted decrease, else argmin m(u) over ‖u‖ ≤ Δ
 ///    (exact, by H's eigen-decomposition, `ReducedModel::trust_region_step`).
+///    Each model keeps its own Δ.
 /// 4. *Re-project*: Dog-Leg on the real constraints from x + Z·u, which
 ///    lands back on their solution set. Accept when f drops; grow or shrink
 ///    Δ by how well m predicted the drop.
@@ -626,6 +644,14 @@ fn values(pm: &VarRegistry, comp: &Component) -> DVector<f64> {
 /// case*) the step goes along it to the trust boundary, and once tilted,
 /// first-order motion exists again. Near a goal that can be met, λ → 0 and H tends to
 /// the Gauss–Newton ZᵀJ_BᵀJ_BZ: Newton steps, fast local convergence.
+///
+/// Why Gauss–Newton first: away from a fold the λ-terms of ∇L still curve
+/// the model along motions the goals don't need, and so choose how free
+/// geometry moves, by how the constraints happen to be written. A corner
+/// dragged toward a circle it is tangent to (TangentAtPoint, radius free)
+/// scaled the whole sketch about the center: the angle row's curvature
+/// left scaling the only free motion (`tests/sketch_json_test.rs`
+/// `a_drag_toward_a_circle_moves_the_lines_before_the_radius`).
 ///
 /// Every accepted x satisfies the real constraints, so after a successful
 /// restore the result is Converged whatever the goals ask; unreachable goals
@@ -648,10 +674,14 @@ fn solve_with_goals(
 
     // Dog-Leg on `which` from `x`, leaving the result in `x` and `pm`.
     let run = |pm: &mut VarRegistry, x: &mut DVector<f64>, which: &[usize], iterations: &mut usize| {
-        let result = dogleg.solve_dl(x, &mut |x| {
-            set_columns(pm, comp, x);
-            evaluate(pm, constraints, comp, which)
-        });
+        let result = dogleg.solve_dl_from(
+            x,
+            &mut |x| {
+                set_columns(pm, comp, x);
+                evaluate(pm, constraints, comp, which)
+            },
+            GOAL_DL_RADIUS * x.amax().max(1.0),
+        );
         set_columns(pm, comp, x);
         let (SolverResult::Converged { iterations: it, .. }
         | SolverResult::MaxIterationsReached { iterations: it, .. }) = result;
@@ -679,49 +709,60 @@ fn solve_with_goals(
     }
 
     let mut r_goal = evaluate(pm, constraints, comp, goals).0;
-    let mut radius: Option<f64> = None;
+    // One trust radius per model: [Gauss–Newton, second order].
+    let mut radius: [Option<f64>; 2] = [None, None];
     'outer: for _ in 0..dogleg.max_iterations() {
         if r_goal.amax() <= TOLF {
             break;
         }
-        let Some(model) = ReducedModel::at(pm, constraints, comp, &x) else {
-            break;
-        };
-        let negligible = 1e-12 * (1.0 + x.norm());
-        let f = 0.5 * r_goal.norm_squared();
-        // First radius: the Newton step, unless it is far longer than the
-        // goal error (near a fold, where the tangent model is poor), or
-        // vanishes (at a fold, where only the curvature leads anywhere).
-        let delta = radius.get_or_insert_with(|| {
-            let newton = model.newton_step().norm();
-            let goal = r_goal.norm();
-            if newton > 0.0 { newton.min(INITIAL_RADIUS_FACTOR * goal) } else { goal }
-        });
-
-        for _ in 0..MAX_TRIALS {
-            let u = model.step(*delta);
-            let step = u.norm();
-            let predicted = -model.change(&u);
-            if step <= negligible || predicted <= 0.0 {
+        // The Gauss–Newton step first, one trial, when its model meets most
+        // of the goal; the second-order model when it doesn't (at a fold)
+        // or the step gets nowhere.
+        for second_order in [false, true] {
+            let Some(model) = ReducedModel::at(pm, constraints, comp, &x, second_order) else {
                 break 'outer;
+            };
+            let negligible = 1e-12 * (1.0 + x.norm());
+            let f = 0.5 * r_goal.norm_squared();
+            if !second_order && -model.change(&model.newton_step()) < GAUSS_NEWTON_REACH * f {
+                continue;
             }
-            let mut x_try = &x + &model.z * &u;
-            if run(pm, &mut x_try, real, &mut iterations) {
-                let r = evaluate(pm, constraints, comp, goals).0;
-                let actual = f - 0.5 * r.norm_squared();
-                if actual > 0.0 {
-                    let rho = actual / predicted;
-                    if rho < 0.25 {
-                        *delta = step / 4.0;
-                    } else if rho > 0.75 && step >= 0.99 * *delta {
-                        *delta *= 4.0;
-                    }
-                    iterations += 1;
-                    (x, r_goal) = (x_try, r);
-                    continue 'outer;
+            // First radius: the Newton step, unless it is far longer than the
+            // goal error (near a fold, where the tangent model is poor), or
+            // vanishes (at a fold, where only the curvature leads anywhere).
+            let delta = radius[usize::from(second_order)].get_or_insert_with(|| {
+                let newton = model.newton_step().norm();
+                let goal = r_goal.norm();
+                if newton > 0.0 { newton.min(INITIAL_RADIUS_FACTOR * goal) } else { goal }
+            });
+
+            for _ in 0..if second_order { MAX_TRIALS } else { 1 } {
+                let u = model.step(*delta);
+                let step = u.norm();
+                let predicted = -model.change(&u);
+                if step <= negligible || predicted <= 0.0 {
+                    break;
                 }
+                let mut x_try = &x + &model.z * &u;
+                if run(pm, &mut x_try, real, &mut iterations) {
+                    let r = evaluate(pm, constraints, comp, goals).0;
+                    let actual = f - 0.5 * r.norm_squared();
+                    let rho = actual / predicted;
+                    // A Gauss–Newton step the model mispredicts is left to
+                    // the second-order model: accepting it would creep.
+                    if actual > 0.0 && (second_order || rho >= 0.25) {
+                        if rho < 0.25 {
+                            *delta = step / 4.0;
+                        } else if rho > 0.75 && step >= 0.99 * *delta {
+                            *delta *= 4.0;
+                        }
+                        iterations += 1;
+                        (x, r_goal) = (x_try, r);
+                        continue 'outer;
+                    }
+                }
+                *delta = step / 4.0;
             }
-            *delta = step / 4.0;
         }
         break;
     }
@@ -742,19 +783,21 @@ struct ReducedModel {
     z: DMatrix<f64>,
     /// Reduced gradient Zᵀ·J_Bᵀ·r_B.
     g: DVector<f64>,
-    /// Reduced Hessian of the Lagrangian, Zᵀ·∇²L·Z, as eigenvalues and
-    /// eigenvectors.
+    /// Reduced Hessian of the Lagrangian, Zᵀ·∇²L·Z (or its Gauss–Newton
+    /// part ZᵀJ_BᵀJ_BZ), as eigenvalues and eigenvectors.
     eig: SymmetricEigen<f64, nalgebra::Dyn>,
 }
 
 impl ReducedModel {
-    /// The model at the feasible `x` (also left in `pm`); `None` when the
-    /// real constraints allow no motion.
+    /// The model at the feasible `x` (also left in `pm`), with the
+    /// Lagrangian's curvature when `second_order`, else Gauss–Newton;
+    /// `None` when the real constraints allow no motion.
     fn at(
         pm: &mut VarRegistry,
         constraints: &Constraints,
         comp: &Component,
         x: &DVector<f64>,
+        second_order: bool,
     ) -> Option<Self> {
         let (real, goals) = (&comp.diagnosed, &comp.goals);
         set_columns(pm, comp, x);
@@ -765,6 +808,15 @@ impl ReducedModel {
             return None;
         }
         let grad = j_goal.transpose() * &r_goal;
+        if !second_order {
+            let jz = &j_goal * &z;
+            let eig = SymmetricEigen::new(jz.transpose() * jz);
+            return Some(Self {
+                g: z.transpose() * grad,
+                z,
+                eig,
+            });
+        }
         // Least-squares multipliers: ∇L = J_Bᵀr_B + J_Aᵀλ is as small as it
         // gets (zero along J_A's row space).
         let lambda = j_real
