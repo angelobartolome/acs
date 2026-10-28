@@ -489,6 +489,14 @@ const NUMERIC_ZERO: f64 = 1e-12;
 /// Most trial steps (each shrinking the trust region) for one goal step in
 /// [`solve_with_goals`].
 const MAX_TRIALS: usize = 30;
+/// The first Dog-Leg trust radius in [`solve_with_goals`], as a fraction of
+/// the largest value (at least 1): a drag's steps scale with the sketch,
+/// and a fixed radius cost a sketch in the thousands iterations growing it
+/// (×3 each). Only drags: they start where the real constraints hold and
+/// re-project short goal steps, while a plain solve's first step (a new
+/// dimension, far off) keeps Dog-Leg's fixed radius, so it settles on the
+/// same solution as ever.
+const GOAL_DL_RADIUS: f64 = 0.1;
 /// The first trust radius in [`solve_with_goals`] is at most this many
 /// times the goal error.
 const INITIAL_RADIUS_FACTOR: f64 = 10.0;
@@ -666,10 +674,14 @@ fn solve_with_goals(
 
     // Dog-Leg on `which` from `x`, leaving the result in `x` and `pm`.
     let run = |pm: &mut VarRegistry, x: &mut DVector<f64>, which: &[usize], iterations: &mut usize| {
-        let result = dogleg.solve_dl(x, &mut |x| {
-            set_columns(pm, comp, x);
-            evaluate(pm, constraints, comp, which)
-        });
+        let result = dogleg.solve_dl_from(
+            x,
+            &mut |x| {
+                set_columns(pm, comp, x);
+                evaluate(pm, constraints, comp, which)
+            },
+            GOAL_DL_RADIUS * x.amax().max(1.0),
+        );
         set_columns(pm, comp, x);
         let (SolverResult::Converged { iterations: it, .. }
         | SolverResult::MaxIterationsReached { iterations: it, .. }) = result;

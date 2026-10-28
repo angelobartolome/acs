@@ -27,8 +27,7 @@ pub(crate) const TOLF: f64 = 1e-10;
 /// collapse a sketch, at 1e-4 constraints stop converging at large scales.
 const RANK_RTOL: f64 = 1e-8;
 
-/// The first trust radius, as a fraction of the largest parameter (at least
-/// 1): a sketch's steps scale with its size.
+/// The first trust radius of [`ParametricDogLegSolver::solve_dl`].
 const INITIAL_RADIUS: f64 = 0.1;
 
 /// Residuals and their Jacobian with respect to the parameter vector.
@@ -81,6 +80,16 @@ impl ParametricDogLegSolver {
         x: &mut DVector<f64>,
         eval: &mut dyn FnMut(&DVector<f64>) -> System,
     ) -> SolverResult {
+        self.solve_dl_from(x, eval, INITIAL_RADIUS)
+    }
+
+    /// [`solve_dl`](Self::solve_dl) with the first trust radius `delta`.
+    pub(crate) fn solve_dl_from(
+        &self,
+        x: &mut DVector<f64>,
+        eval: &mut dyn FnMut(&DVector<f64>) -> System,
+        delta: f64,
+    ) -> SolverResult {
         let (mut fx, mut jac) = eval(x);
         if x.is_empty() {
             // Nothing to move: solved only if it already is.
@@ -110,9 +119,7 @@ impl ParametricDogLegSolver {
         let mut g_inf = g.amax();
         let mut fx_inf = fx.amax();
 
-        // The first trust radius scales with the sketch (a fixed 0.1 cost a
-        // sketch in the thousands extra iterations growing it, ×3 each).
-        let mut delta = INITIAL_RADIUS * x.amax().max(1.0);
+        let mut delta = delta;
         let mut nu = 2.0_f64;
         let mut reduce = 0i32;
         let mut iter = 0usize;
