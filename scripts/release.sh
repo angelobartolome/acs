@@ -85,11 +85,14 @@ fi
 mkdir -p "$DIST"
 
 # The WASM package builds in the background, in its own target directory: cargo locks a
-# target directory, so sharing one would serialize the two builds.
+# target directory, so sharing one would serialize the two builds. Without the Apple
+# deployment targets: on a macOS host MACOSX_DEPLOYMENT_TARGET reaches the host build
+# scripts, and wasm-bindgen's (0.2.126) then can't find its renamed `rustversion`.
 WASM_PID=""
 if $BUILD_WASM; then
   echo "Building the WASM npm package (in the background)..."
-  CARGO_TARGET_DIR="$ROOT/target/wasm-release" wasm-pack build --release --target web --out-dir pkg \
+  env -u MACOSX_DEPLOYMENT_TARGET -u IPHONEOS_DEPLOYMENT_TARGET \
+    CARGO_TARGET_DIR="$ROOT/target/wasm-release" wasm-pack build --release --target web --out-dir pkg \
     > "$DIST/_wasm-pack.log" 2>&1 &
   WASM_PID=$!
 fi
