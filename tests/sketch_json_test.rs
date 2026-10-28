@@ -876,8 +876,14 @@ const FOLD_POINTS: [(&str, (f64, f64)); 7] = [
     ("ac", (25.0, 35.0)),
 ];
 
-/// The fold sketch with its free points at `at` and a drag goal on `a`.
-fn fold_request(at: &[(&str, (f64, f64))], goal: (f64, f64)) -> Value {
+/// [`FOLD_POINTS`] at scale `k`.
+fn fold_points(k: f64) -> Vec<(&'static str, (f64, f64))> {
+    FOLD_POINTS.iter().map(|&(id, (x, y))| (id, (x * k, y * k))).collect()
+}
+
+/// The fold sketch at scale `k` with its free points at `at` and a drag
+/// goal on `a`.
+fn fold_request(at: &[(&str, (f64, f64))], goal: (f64, f64), k: f64) -> Value {
     let mut primitives = vec![json!({ "type": "point", "id": "o", "x": 0, "y": 0, "fixed": true })];
     for (id, (x, y)) in at {
         primitives.push(json!({ "type": "point", "id": id, "x": x, "y": y, "fixed": false }));
@@ -890,9 +896,9 @@ fn fold_request(at: &[(&str, (f64, f64))], goal: (f64, f64)) -> Value {
         json!({ "type": "vertical", "id": "v", "line": "da" }),
         json!({ "type": "line", "id": "diag", "p1_id": "a", "p2_id": "c" }),
         json!({ "type": "midpoint", "id": "s", "entities": ["o", "diag"] }),
-        json!({ "type": "distance", "id": "w", "a": "c", "b": "d", "value": 80 }),
+        json!({ "type": "distance", "id": "w", "a": "c", "b": "d", "value": 80.0 * k }),
         json!({ "type": "arc", "id": "arc", "c_id": "ac", "start_id": "as", "end_id": "ae",
-                "radius": 15, "start_angle": 0, "end_angle": std::f64::consts::FRAC_PI_2 }),
+                "radius": 15.0 * k, "start_angle": 0, "end_angle": std::f64::consts::FRAC_PI_2 }),
         json!({ "type": "on", "id": "on", "point": "ae", "curve": "cd" }),
         json!({ "type": "x", "id": "gx", "point": "a", "value": goal.0, "temporary": true }),
         json!({ "type": "y", "id": "gy", "point": "a", "value": goal.1, "temporary": true }),
@@ -905,19 +911,19 @@ fn fold_positions(resp: &Value) -> Vec<(&'static str, (f64, f64))> {
     FOLD_POINTS.iter().map(|&(id, _)| (id, point(resp, id))).collect()
 }
 
-/// Every real constraint of the fold sketch holds in `resp`.
-fn assert_fold_constraints_hold(resp: &Value) {
+/// Every real constraint of the fold sketch at scale `k` holds in `resp`.
+fn assert_fold_constraints_hold(resp: &Value, k: f64) {
     let p = |id| point(resp, id);
     let (a, b, c, d, ae, ac, as_) = (p("a"), p("b"), p("c"), p("d"), p("ae"), p("ac"), p("as"));
-    let tol = 1e-9;
+    let tol = 1e-9 * k;
     assert!((a.1 - b.1).abs() < tol, "ab horizontal");
     assert!((d.0 - a.0).abs() < tol, "da vertical");
     assert!((a.0 + c.0).abs() < tol && (a.1 + c.1).abs() < tol, "symmetric about o");
-    assert!((((c.0 - d.0).powi(2) + (c.1 - d.1).powi(2)).sqrt() - 80.0).abs() < tol, "|cd| = 80");
+    assert!((((c.0 - d.0).powi(2) + (c.1 - d.1).powi(2)).sqrt() - 80.0 * k).abs() < tol, "|cd| = 80k");
     let (ux, uy) = (d.0 - c.0, d.1 - c.1);
     let t = ((ae.0 - c.0) * ux + (ae.1 - c.1) * uy) / (ux * ux + uy * uy);
     let off = ((ae.0 - c.0 - t * ux).powi(2) + (ae.1 - c.1 - t * uy).powi(2)).sqrt();
-    assert!(off < tol && (-tol..=1.0 + tol).contains(&t), "ae on segment cd");
+    assert!(off < tol && (-1e-9..=1.0 + 1e-9).contains(&t), "ae on segment cd");
     let arc = primitive(resp, "arc");
     let r = arc["radius"].as_f64().unwrap();
     let (s, e) = (arc["start_angle"].as_f64().unwrap(), arc["end_angle"].as_f64().unwrap());
@@ -929,16 +935,29 @@ fn assert_fold_constraints_hold(resp: &Value) {
 /// `converged`, after ~1700 iterations.
 #[test]
 fn a_drag_at_a_fold_reaches_the_cursor() {
-    let resp = solve(fold_request(&FOLD_POINTS, (-39.9, -49.9)));
-    assert_eq!(resp["status"], "converged", "{resp}");
-    assert_fold_constraints_hold(&resp);
+    drag_at_a_fold(1.0);
+}
+
+/// The fold repro in centimetres, millimetres and tenths of a millimetre.
+#[test]
+fn a_drag_at_a_fold_reaches_the_cursor_at_any_scale() {
+    for k in [10.0, 100.0, 1000.0] {
+        drag_at_a_fold(k);
+    }
+}
+
+/// The fold repro at scale `k`.
+fn drag_at_a_fold(k: f64) {
+    let resp = solve(fold_request(&fold_points(k), (-39.9 * k, -49.9 * k), k));
+    assert_eq!(resp["status"], "converged", "scale {k}: {resp}");
+    assert_fold_constraints_hold(&resp, k);
     let (x, y) = point(&resp, "a");
-    assert!((x + 39.9).abs() < 1e-8 && (y + 49.9).abs() < 1e-8, "a at ({x}, {y})");
+    assert!((x / k + 39.9).abs() < 1e-8 && (y / k + 49.9).abs() < 1e-8, "scale {k}: a at ({x}, {y})");
     assert_eq!(resp["conflicting"], json!([]));
     assert_eq!(resp["redundant"], json!([]));
     let iterations = resp["stats"]["iterations"].as_u64().unwrap();
-    eprintln!("fold repro: {iterations} iterations");
-    assert!(iterations <= 40, "{iterations} iterations");
+    eprintln!("fold repro at scale {k}: {iterations} iterations");
+    assert!(iterations <= 40, "scale {k}: {iterations} iterations");
 }
 
 /// A drag away from the fold, back and on past it, each result fed back as
@@ -947,38 +966,51 @@ fn a_drag_at_a_fold_reaches_the_cursor() {
 /// x = -40 (with `cd` horizontal again), level with the cursor.
 #[test]
 fn a_drag_sequence_across_the_fold_moves_smoothly() {
-    let mut at = FOLD_POINTS.to_vec();
-    let mut prev = (-40.0, -50.0);
+    drag_across_the_fold(1.0);
+}
+
+/// The drag across the fold in centimetres, millimetres and tenths of a
+/// millimetre.
+#[test]
+fn a_drag_sequence_across_the_fold_moves_smoothly_at_any_scale() {
+    for k in [10.0, 100.0, 1000.0] {
+        drag_across_the_fold(k);
+    }
+}
+
+/// The drag across the fold at scale `k`.
+fn drag_across_the_fold(k: f64) {
+    let mut at = fold_points(k);
+    let mut prev = (-40.0 * k, -50.0 * k);
     let mut worst = 0;
     let mut per_step = Vec::new();
     let steps = 44;
-    for k in 1..=steps {
-        let t = (k as f64 - 0.5) / 40.0;
+    for step in 1..=steps {
+        let t = (step as f64 - 0.5) / 40.0;
         // Sideways in to x = -34 and back out past -40 while rising.
-        let cursor = (-40.0 + 6.0 * (std::f64::consts::PI * t).sin(), -50.0 + 4.0 * t);
-        let resp = solve(fold_request(&at, cursor));
-        assert_eq!(resp["status"], "converged", "step {k}: {resp}");
-        assert_fold_constraints_hold(&resp);
+        let cursor = (k * (-40.0 + 6.0 * (std::f64::consts::PI * t).sin()), k * (-50.0 + 4.0 * t));
+        let resp = solve(fold_request(&at, cursor, k));
+        assert_eq!(resp["status"], "converged", "scale {k} step {step}: {resp}");
+        assert_fold_constraints_hold(&resp, k);
         let a = point(&resp, "a");
-        let expected = (cursor.0.max(-40.0), cursor.1);
+        let expected = (cursor.0.max(-40.0 * k), cursor.1);
         assert!(
-            (a.0 - expected.0).abs() < 1e-8 && (a.1 - expected.1).abs() < 1e-8,
-            "step {k}: a at {a:?}, expected {expected:?}"
+            (a.0 - expected.0).abs() < 1e-8 * k && (a.1 - expected.1).abs() < 1e-8 * k,
+            "scale {k} step {step}: a at {a:?}, expected {expected:?}"
         );
         let jump = ((a.0 - prev.0).powi(2) + (a.1 - prev.1).powi(2)).sqrt();
-        assert!(jump < 1.0, "step {k} jumped {jump}");
+        assert!(jump < k, "scale {k} step {step} jumped {jump}");
         let iterations = resp["stats"]["iterations"].as_u64().unwrap();
         worst = worst.max(iterations);
         per_step.push(iterations);
         prev = a;
         at = fold_positions(&resp);
     }
-    eprintln!("fold drag: iterations per step {per_step:?}");
+    eprintln!("fold drag at scale {k}: iterations per step {per_step:?}");
     // The step leaving the fold, where the real Jacobian is nearly singular,
-    // is the costliest: 41 since distances and angles became lengths and
-    // angles rather than products of lengths (34 before), while the whole
-    // drag takes a fifth fewer iterations (654 against 819).
-    assert!(worst <= 45, "{worst} iterations in one step");
+    // is the costliest: 28 at ×1 to 34 at ×1000 since the Dog-Leg's first
+    // trust radius scales with the sketch (41 at ×1 and 52 at ×10 before).
+    assert!(worst <= 45, "scale {k}: {worst} iterations in one step");
 }
 
 // ── Drag goals with free geometry ──────────────────────────────────────────
@@ -1015,25 +1047,42 @@ fn corner_request(at: &Value, goal: (f64, f64)) -> Value {
 /// the only motion it didn't penalize.
 #[test]
 fn a_drag_toward_a_circle_moves_the_lines_before_the_radius() {
-    let r0 = 46.07932421008114;
-    let start = (-115.8372395833333, -37.51173750585468);
+    drag_toward_a_circle(1.0);
+}
+
+/// The corner drag in centimetres, millimetres and tenths of a millimetre.
+#[test]
+fn a_drag_toward_a_circle_moves_the_lines_before_the_radius_at_any_scale() {
+    for k in [10.0, 100.0, 1000.0] {
+        drag_toward_a_circle(k);
+    }
+}
+
+/// The corner drag at scale `k`.
+fn drag_toward_a_circle(k: f64) {
+    let r0 = 46.07932421008114 * k;
+    let start = (-115.8372395833333 * k, -37.51173750585468 * k);
     let mut at = json!({
         "a": [start.0, start.1],
-        "b": [-29.730573411713507, 35.20507242242918],
+        "b": [-29.730573411713507 * k, 35.20507242242918 * k],
         "c": [0.0, -r0],
         "r": r0,
     });
     let frames = 40;
-    for k in 1..=frames {
-        let t = 0.8 * k as f64 / frames as f64;
+    for frame in 1..=frames {
+        let t = 0.8 * frame as f64 / frames as f64;
         let cursor = (start.0 * (1.0 - t), start.1 * (1.0 - t));
         let resp = solve(corner_request(&at, cursor));
-        assert_eq!(resp["status"], "converged", "frame {k}: {resp}");
+        assert_eq!(resp["status"], "converged", "scale {k} frame {frame}: {resp}");
         let a = point(&resp, "a");
-        assert!((a.0 - cursor.0).abs() < 1e-8 && (a.1 - cursor.1).abs() < 1e-8, "frame {k}: a at {a:?}");
+        assert!(
+            (a.0 - cursor.0).abs() < 1e-8 * k && (a.1 - cursor.1).abs() < 1e-8 * k,
+            "scale {k} frame {frame}: a at {a:?}"
+        );
         let r = primitive(&resp, "circ")["radius"].as_f64().unwrap();
         if cursor.0.hypot(cursor.1) >= 2.0 * r0 {
-            assert!(r > 0.97 * r0, "frame {k}: radius {r} with the corner {} away", cursor.0.hypot(cursor.1));
+            let away = cursor.0.hypot(cursor.1);
+            assert!(r > 0.97 * r0, "scale {k} frame {frame}: radius {r} with the corner {away} away");
         }
         let (b, c) = (point(&resp, "b"), point(&resp, "c"));
         at = json!({ "a": [a.0, a.1], "b": [b.0, b.1], "c": [c.0, c.1], "r": r });
