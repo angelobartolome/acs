@@ -44,3 +44,15 @@ jobs:
       with:
         name: wasm-package
         path: pkg
+
+  swift:
+    # The typed API through its generated Swift (UniFFI), compiled with swiftc.
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - run: rustup toolchain install stable --profile minimal --no-self-update
+    - name: Cache
+      uses: Swatinem/rust-cache@v2
+    - name: Run the Swift test
+      run: cargo test --features uniffi --test swift_test

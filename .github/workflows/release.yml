@@ -98,7 +98,8 @@ jobs:
 
   xcframework:
     needs: version
-    # Builds all three Apple targets; xcodebuild packs them into ACS.xcframework.
+    # Builds all three Apple targets; xcodebuild packs them into ACS.xcframework, which the
+    # Swift package (with the generated ACSSketch) carries too.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,14 +112,16 @@ jobs:
         with:
           key: xcframework
 
-      - name: Build the XCFramework
+      - name: Build the XCFramework and the Swift package
         run: ./scripts/release.sh xcframework
 
-      - name: Upload it to the run
+      - name: Upload them to the run
         uses: actions/upload-artifact@v4
         with:
           name: acs-${{ needs.version.outputs.version }}-xcframework
-          path: dist/acs-${{ needs.version.outputs.version }}-xcframework.zip
+          path: |
+            dist/acs-${{ needs.version.outputs.version }}-xcframework.zip
+            dist/acs-${{ needs.version.outputs.version }}-swift-package.zip
           if-no-files-found: error
 
   linux:
@@ -207,6 +210,7 @@ jobs:
             "dist/acs-$VERSION-linux-x86_64.tar.gz" \
             "dist/acs-$VERSION-linux-arm64.tar.gz" \
             "dist/acs-$VERSION-xcframework.zip" \
+            "dist/acs-$VERSION-swift-package.zip" \
             "dist/acs-$VERSION.tgz"
 
       - name: Install Rust toolchain

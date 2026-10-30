@@ -420,9 +420,9 @@ fn build_params(typed: &[(&str, &str, &Value)]) -> Result<HashMap<String, f64>, 
 }
 
 /// Why a request couldn't be read, and the constraint it's about, if any.
-struct Rejection {
-    error: String,
-    constraint_id: Option<String>,
+pub(crate) struct Rejection {
+    pub(crate) error: String,
+    pub(crate) constraint_id: Option<String>,
 }
 
 impl From<String> for Rejection {
@@ -495,7 +495,13 @@ pub fn solve_sketch_json(request: &str) -> Result<String, String> {
 
 fn solve_request(request: &str) -> Result<String, Rejection> {
     let root: Value = serde_json::from_str(request).map_err(|e| format!("invalid JSON: {e}"))?;
-    check_version(&root)?;
+    solve_value(&root).map(|response| response.to_string())
+}
+
+/// [`solve_sketch_json`] over a parsed request: the response, or why the
+/// request couldn't be read.
+pub(crate) fn solve_value(root: &Value) -> Result<Value, Rejection> {
+    check_version(root)?;
     let primitives = root
         .get("primitives")
         .and_then(Value::as_array)
@@ -607,7 +613,7 @@ fn solve_request(request: &str) -> Result<String, Rejection> {
         response["dof"] = json!(analysis.dof);
         response["fullyConstrained"] = json!(fully_constrained);
     }
-    Ok(response.to_string())
+    Ok(response)
 }
 
 /// Starts constraint `index`'s curve parameters (a contact on a Spline)

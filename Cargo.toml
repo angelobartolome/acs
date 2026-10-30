@@ -11,7 +11,7 @@ keywords = ["constraint-solver", "geometry", "cad", "sketch", "wasm"]
 categories = ["mathematics", "graphics", "wasm"]
 # Only the library ships in the crate: not the demo (wasm-demo/), tests, scripts, CI,
 # docs/ or agent notes.
-include = ["/src/**/*.rs", "/include/p3d_sketch_solver.h", "/README.md", "/USAGE.md", "/SPEC.md", "/LICENSE"]
+include = ["/src/**/*.rs", "/include/p3d_sketch_solver.h", "/uniffi.toml", "/README.md", "/USAGE.md", "/SPEC.md", "/LICENSE"]
 
 [lib]
 # The crate is `acs-solver` on crates.io (`acs` is taken); the library keeps the name `acs`
@@ -23,6 +23,10 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 # Exports the sketch solver C ABI (`P3DSketch_Solve` / `P3DSketch_Free`,
 # include/p3d_sketch_solver.h) from the static library. Not needed for WASM.
 c-abi = []
+# The typed sketch API (`sketch_types`) for Swift and Kotlin through UniFFI: the library
+# exports UniFFI's scaffolding and `uniffi-bindgen` (`uniffi-cli`) generates the bindings.
+uniffi = ["dep:uniffi"]
+uniffi-cli = ["uniffi", "uniffi/cli"]
 
 [dependencies]
 wasm-bindgen = "0.2.84"
@@ -30,6 +34,16 @@ nalgebra = "0.33.2"
 serde = { version = "1.0", features = ["derive"] }
 # float_roundtrip: parse floats correctly rounded, so fixed values come back bit for bit.
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
+uniffi = { version = "0.32", optional = true }
+
+# TypeScript types for the typed sketch API, in the WASM package's .d.ts.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tsify = { version = "0.5.8", default-features = false, features = ["js"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi-cli"]
 
 [profile.release]
 # Optimize for small code size: the WASM package. `scripts/release.sh` builds the native

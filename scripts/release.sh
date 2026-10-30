@@ -9,6 +9,7 @@
 #   acs-<version>-linux-x86_64.tar.gz         x86_64-unknown-linux-gnu
 #   acs-<version>-linux-arm64.tar.gz          aarch64-unknown-linux-gnu
 #   acs-<version>-xcframework.zip             ACS.xcframework: the same three as frameworks
+#   acs-<version>-swift-package.zip           a Swift package: ACS.xcframework and ACSSketch
 #   acs-<version>.tgz                         wasm-pack --target web, npm pack (package acs-solver)
 #
 # Each archive unpacks to acs/{include/p3d_sketch_solver.h, lib/libp3d_sketch_solver.a,
@@ -19,6 +20,13 @@
 # same header). An app links it in place of the static library to keep Rust's exception
 # personality routine in an image of its own: beside Swift's, C++'s and Objective-C's it is a
 # fourth, one more than compact unwind can encode in one image.
+#
+# The Apple libraries also carry the typed API's UniFFI scaffolding (`--features uniffi`), and
+# the module `ACS` exports its header, acs_uniffi.h, too. The Swift package (the `xcframework`
+# piece builds it as well) unpacks to ACS/{Package.swift, ACS.xcframework,
+# Sources/ACSSketch/ACSSketch.swift}: the products ACSSketch (the typed API, Swift that
+# uniffi-bindgen generates from the macOS library) and ACS (the C ABI). An app adds it as a
+# local package.
 #
 # The Linux libraries are built on their own, as static libraries only: they need no Linux
 # linker, so they build on macOS too, and either architecture builds on either. A Linux program links it with -lpthread -ldl -lm.
@@ -122,7 +130,7 @@ if [ ${#TARGET_PLATFORMS[@]} -gt 0 ]; then
     export CARGO_PROFILE_RELEASE_STRIP=false
   fi
   echo "Building the libraries for ${TARGET_PLATFORMS[*]}..."
-  CARGO_PROFILE_RELEASE_OPT_LEVEL=$NATIVE_OPT_LEVEL cargo build --release --lib --features c-abi "${target_args[@]}"
+  CARGO_PROFILE_RELEASE_OPT_LEVEL=$NATIVE_OPT_LEVEL cargo build --release --lib --features c-abi,uniffi "${target_args[@]}"
 fi
 
 for platform in ${LINUX_PLATFORMS[@]+"${LINUX_PLATFORMS[@]}"}; do
@@ -173,10 +181,11 @@ make_framework() {
     min_os="$IPHONEOS_DEPLOYMENT_TARGET"
   fi
   mkdir -p "$contents/Headers" "$contents/Modules"
-  cp include/p3d_sketch_solver.h "$contents/Headers/"
+  cp include/p3d_sketch_solver.h "$SWIFT_GENERATED/acs_uniffi.h" "$contents/Headers/"
   cat > "$contents/Modules/module.modulemap" <<MODULEMAP
 framework module ACS {
     header "p3d_sketch_solver.h"
+    header "acs_uniffi.h"
     export *
 }
 MODULEMAP
@@ -220,6 +229,19 @@ PLIST
 }
 
 if $BUILD_XCFRAMEWORK; then
+  # The typed API's Swift and header, from the macOS library (uniffi.toml names the modules).
+  # The bindgen is a host binary: built in its own target directory, without the frameworks'
+  # install-name flags (the host is aarch64-apple-darwin too).
+  SWIFT_GENERATED="$DIST/_release-swift"
+  rm -rf "$SWIFT_GENERATED"
+  echo "Generating the Swift bindings..."
+  (
+    unset CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS
+    cargo run --quiet --features uniffi-cli --bin uniffi-bindgen --target-dir "$ROOT/target/uniffi-bindgen" -- \
+      generate --language swift --library "target/aarch64-apple-darwin/release/libacs.dylib" \
+      --out-dir "$SWIFT_GENERATED"
+  )
+
   staging="$DIST/_release-xcframework"
   rm -rf "$staging"
   framework_args=()
@@ -232,7 +254,35 @@ if $BUILD_XCFRAMEWORK; then
   rm -f "$DIST/$archive"
   # ditto keeps the macOS framework's symlinks, which SwiftPM's binary targets need.
   (cd "$staging" && ditto -c -k --keepParent ACS.xcframework "$DIST/$archive")
-  rm -rf "$staging"
+  echo "Packaged dist/$archive"
+
+  package="$staging/package/ACS"
+  mkdir -p "$package/Sources/ACSSketch"
+  ditto "$staging/ACS.xcframework" "$package/ACS.xcframework"
+  cp "$SWIFT_GENERATED/ACSSketch.swift" "$package/Sources/ACSSketch/"
+  cat > "$package/Package.swift" <<PACKAGE
+// swift-tools-version:5.9
+// ACS $VERSION: the typed sketch API (ACSSketch) and the C ABI (ACS) over ACS.xcframework.
+import PackageDescription
+
+let package = Package(
+    name: "ACS",
+    platforms: [.macOS("$MACOSX_DEPLOYMENT_TARGET"), .iOS("$IPHONEOS_DEPLOYMENT_TARGET")],
+    products: [
+        .library(name: "ACSSketch", targets: ["ACSSketch"]),
+        .library(name: "ACS", targets: ["ACS"]),
+    ],
+    targets: [
+        .binaryTarget(name: "ACS", path: "ACS.xcframework"),
+        .target(name: "ACSSketch", dependencies: ["ACS"], path: "Sources/ACSSketch"),
+    ]
+)
+PACKAGE
+  echo "$VERSION" > "$package/VERSION"
+  archive="acs-$VERSION-swift-package.zip"
+  rm -f "$DIST/$archive"
+  (cd "$staging/package" && ditto -c -k --keepParent ACS "$DIST/$archive")
+  rm -rf "$staging" "$SWIFT_GENERATED"
   echo "Packaged dist/$archive"
 fi
 
@@ -251,7 +301,7 @@ fi
 
 echo "Done."
 if [ $# -eq 0 ]; then
-  ls -lh "$DIST"/acs-"$VERSION"-*.tar.gz "$DIST"/acs-"$VERSION"-xcframework.zip "$DIST"/acs-"$VERSION".tgz
+  ls -lh "$DIST"/acs-"$VERSION"-*.tar.gz "$DIST"/acs-"$VERSION"-*.zip "$DIST"/acs-"$VERSION".tgz
   echo "Upload them to a release (the version is in every file name), e.g.:"
-  echo "  gh release upload <tag> -R <owner>/<repo> dist/acs-$VERSION-*.tar.gz dist/acs-$VERSION-xcframework.zip dist/acs-$VERSION.tgz"
+  echo "  gh release upload <tag> -R <owner>/<repo> dist/acs-$VERSION-*.tar.gz dist/acs-$VERSION-*.zip dist/acs-$VERSION.tgz"
 fi

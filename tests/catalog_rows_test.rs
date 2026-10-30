@@ -1,10 +1,11 @@
 //! Every row of the constraint catalog solves through every entry point:
-//! `solve_sketch_json`, `acsSolveSketch` and (with the `c-abi` feature)
-//! `P3DSketch_Solve`.
+//! `solve_sketch_json`, `acsSolveSketch`, the typed API (`sketch_types`) and
+//! (with the `c-abi` feature) `P3DSketch_Solve`.
 
 use acs::bindings::sketch_solve::{acs_constraint_catalog, acs_solve_sketch};
 use acs::constraint_catalog::{ConstraintSpec, ExtensionFlag, FieldKind, InternalFlag, field_path, specs};
 use acs::sketch_solve::solve_sketch_json;
+use acs::sketch_types::{self, SolveRequest};
 use serde_json::{Value, json};
 
 /// A sketch holding one constraint of `spec`'s row, with fresh geometry for
@@ -160,12 +161,39 @@ fn every_row_solves_through_every_entry_point() {
         let response = solve_sketch_json(&request).unwrap_or_else(|e| panic!("{what}: {e}"));
         assert_converged(&response, &what);
         assert_eq!(acs_solve_sketch(&request), response, "{what}");
+        assert_typed_solve(&request, &response, &what);
         #[cfg(feature = "c-abi")]
         assert_eq!(
             c_abi_solve(&request),
             (0, response),
             "{what}"
         );
+    }
+}
+
+/// The typed API reads `request` without losing or renaming a field and
+/// answers as the JSON API did.
+fn assert_typed_solve(request: &str, response: &str, what: &str) {
+    let json: Value = serde_json::from_str(request).unwrap();
+    let typed: SolveRequest = serde_json::from_value(json.clone()).unwrap_or_else(|e| panic!("{what}: {e}"));
+    let back = serde_json::to_value(&typed).unwrap();
+    assert!(same(&back, &json), "{what}: the typed request reads as {back}");
+    let typed_response = sketch_types::solve(typed).unwrap_or_else(|e| panic!("{what}: {e}"));
+    let expected: Value = serde_json::from_str(response).unwrap();
+    let got = serde_json::to_value(&typed_response).unwrap();
+    assert!(same(&got, &expected), "{what}: the typed response is {got}");
+}
+
+/// JSON equality with numbers compared as `f64` (a request's `1` comes back
+/// from the types as `1.0`).
+fn same(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => x.len() == y.len() && x.iter().zip(y).all(|(x, y)| same(x, y)),
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len() && x.iter().all(|(k, v)| y.get(k).is_some_and(|w| same(v, w)))
+        }
+        _ => a == b,
     }
 }
 

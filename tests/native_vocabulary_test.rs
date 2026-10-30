@@ -198,6 +198,34 @@ fn horizontal_and_direction_take_a_line_or_two_points() {
 }
 
 #[test]
+fn a_constraint_with_fields_of_both_forms_is_rejected() {
+    // Read as one form, the other's fields would be silently ignored.
+    let sketch = |constraint: Value| {
+        json!([
+            { "id": "a", "type": "point", "x": 0.0, "y": 0.0 },
+            { "id": "b", "type": "point", "x": 5.0, "y": 2.0 },
+            { "id": "c", "type": "point", "x": 1.0, "y": 4.0 },
+            { "id": "d", "type": "point", "x": 2.0, "y": 1.0 },
+            { "id": "ab", "type": "line", "p1_id": "a", "p2_id": "b" },
+            { "id": "cd", "type": "line", "p1_id": "c", "p2_id": "d" },
+            { "id": "o", "type": "point", "x": 9.0, "y": 0.0 },
+            { "id": "s", "type": "point", "x": 11.0, "y": 0.0 },
+            { "id": "e", "type": "point", "x": 9.0, "y": 2.0 },
+            { "id": "arc", "type": "arc", "c_id": "o", "start_id": "s", "end_id": "e",
+              "radius": 2.0, "start_angle": 0.0, "end_angle": std::f64::consts::FRAC_PI_2 },
+            constraint
+        ])
+    };
+    let (error, id) = reject(sketch(json!({ "id": "k", "type": "horizontal", "line": "ab", "a": "c", "b": "d" })));
+    assert_eq!(error, "constraint k: 'horizontal' takes (line) or (a, b), not fields of both");
+    assert_eq!(id, "k");
+    let (error, _) = reject(sketch(json!({ "id": "k", "type": "angle", "a": "ab", "b": "cd", "arc": "arc", "value": 1.0 })));
+    assert_eq!(error, "constraint k: 'angle' takes (a, b, value, reverseA, reverseB) or (arc, value), not fields of both");
+    let (error, _) = reject(sketch(json!({ "id": "k", "type": "angle", "arc": "arc", "value": 1.0, "reverseA": true })));
+    assert!(error.contains("not fields of both"), "{error}");
+}
+
+#[test]
 fn tangent_infers_line_circle_line_arc_and_circle_circle() {
     // Line y = 0 from (0,0) to (10,0); circle centered at (5, 3).
     let line_circle = |tangent: Value| {

@@ -1,0 +1,9 @@
+# UniFFI bindings of the typed sketch API (`src/sketch_types.rs`, `--features uniffi`).
+# The Swift module is ACSSketch. Its FFI is the module ACS, the framework in ACS.xcframework,
+# whose module map exports UniFFI's header (acs_uniffi.h) beside the C ABI's
+# (scripts/release.sh `swift-package`; tests/swift_test.rs).
+[bindings.swift]
+module_name = "ACSSketch"
+ffi_module_name = "ACS"
+ffi_module_filename = "acs_uniffi"
+generate_module_map = false
